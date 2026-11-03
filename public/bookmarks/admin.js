@@ -64,3 +64,22 @@ $('deleteItem').onclick=async()=>{
  try{await request('/'+id,'DELETE');$('editDialog').close();refresh();}catch(err){status(err.message,true);}
 };
 refresh();
+
+
+const tokenTools=document.createElement('div');
+tokenTools.className='token-tools';
+tokenTools.innerHTML='<button id="generateToken" type="button">產生 Tampermonkey Token</button><span class="hint"> 新 Token 產生後，舊 Token 立即失效。</span><div id="tokenResult" hidden><input id="tokenValue" readonly aria-label="一次性新增 Token"><button id="copyToken" type="button">複製 Token</button></div>';
+$('auth').after(tokenTools);
+$('generateToken').onclick=async()=>{
+ if(!confirm('確定產生新的 Tampermonkey Token？舊 Token 將失效。'))return;
+ try{
+  const result=await request('/ingest-token','POST',{});
+  $('tokenValue').value=result.token;
+  $('tokenResult').hidden=false;
+  status('已產生 Token。請複製至 Tampermonkey，離開後不再顯示。');
+ }catch(e){status(e.message,true);}
+};
+$('copyToken').onclick=async()=>{
+ try{await navigator.clipboard.writeText($('tokenValue').value);status('Token 已複製');}
+ catch{ $('tokenValue').select();status('請手動複製選取的 Token');}
+};
