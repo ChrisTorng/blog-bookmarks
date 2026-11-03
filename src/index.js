@@ -3,6 +3,7 @@ import { list, get, tagsList } from './data.js';
 import { api, opts } from './api.js';
 import { layout, listing, individual, adminPage } from './views.js';
 import { rss, shellPage } from './feeds.js';
+import { adminJavaScript, adminStylesheet } from './ui-assets.js';
 
 const response=(body,type='text/html; charset=utf-8',status=200)=>new Response(body,{status,headers:{'Content-Type':type,'X-Content-Type-Options':'nosniff','Cache-Control':'no-store'}});
 const worker={
@@ -16,8 +17,8 @@ const worker={
    return response(adminPage);
   }
   if(p==='/bookmarks/admin.js'||p==='/bookmarks/admin.css'){
-   if(!env.ASSETS)return response('Not Found','text/plain',404);
-   return env.ASSETS.fetch(req);
+   if(env.ASSETS)return env.ASSETS.fetch(req);
+   return response(p.endsWith('.css')?adminStylesheet:adminJavaScript,p.endsWith('.css')?'text/css; charset=utf-8':'text/javascript; charset=utf-8');
   }
   if(req.method!=='GET')return response('Method Not Allowed','text/plain',405);
   try{
