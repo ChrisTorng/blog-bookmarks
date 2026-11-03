@@ -1,8 +1,11 @@
 // ==UserScript==
-// @name         Blog Bookmarks - BetaCat
+// @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.1.0
-// @description  Collect BetaCat links into private Bookmarks
+// @version      0.2.0
+// @description  Collect links into private bookmarks
+// @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
+// @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
+// @downloadURL  https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
 // @match        https://hackernews.betacat.io/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
