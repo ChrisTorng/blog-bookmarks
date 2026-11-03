@@ -1,4 +1,5 @@
 import {isAdmin,safeOrigin,sameToken} from './auth.js';
+import {bulkStatus,updateTags} from './ingest.js';
 import {list,get,byUrl,create,patch,remove,tagsList} from './data.js';
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
 export function opts(url,privateList=false){return {privateList,filter:url.searchParams.get('filter')||(privateList?'unread':'published'),tag:url.searchParams.get('tag')||'',page:url.searchParams.get('page')||1,sort:url.searchParams.get('sort')||'new',q:url.searchParams.get('q')||''};}
