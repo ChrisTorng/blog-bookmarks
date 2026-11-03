@@ -1,4 +1,4 @@
-const fields = "b.id,b.url,b.normalized_url,b.title,b.summary,b.source,b.status,b.created_at,b.updated_at,b.read_at,b.published_at,b.starred_at,COALESCE((SELECT json_group_array(t.name) FROM bookmark_tags bt JOIN tags t ON t.id=bt.tag_id WHERE bt.bookmark_id=b.id),'[]') AS tags";
+const fields = "b.id,b.url,b.normalized_url,b.title,b.summary,b.source,b.status,b.created_at,b.updated_at,b.read_at,b.published_at,b.starred_at, CASE WHEN b.status=3 THEN COALESCE(b.starred_at,b.published_at,b.created_at) WHEN b.status=2 THEN COALESCE(b.published_at,b.created_at) ELSE b.created_at END AS status_at,COALESCE((SELECT json_group_array(t.name) FROM bookmark_tags bt JOIN tags t ON t.id=bt.tag_id WHERE bt.bookmark_id=b.id),'[]') AS tags";
 const decode = row => row && ({...row, tags:JSON.parse(row.tags || '[]')});
 export const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function normalUrl(input) {
@@ -39,7 +39,8 @@ export async function list(db, {privateList=false,filter='unread',page=1,tag='',
   if(q){conditions.push('(b.title LIKE ? OR b.url LIKE ? OR b.summary LIKE ?)');params.push(...Array(3).fill('%'+q.slice(0,100)+'%'));}
   const where=conditions.length?' WHERE '+conditions.join(' AND '):'';
   const total=(await db.prepare('SELECT COUNT(*) n FROM bookmarks b'+where).bind(...params).first()).n;
-  const order=sort==='old'?'b.created_at ASC,b.id ASC':sort==='title'?'b.title COLLATE NOCASE ASC,b.id DESC':sort==='recommended'?'b.status DESC,b.created_at DESC':'b.created_at DESC,b.id DESC';
+  const dateCol=privateList?'b.created_at':'status_at';
+  const order=sort==='old'?`${dateCol} ASC,b.id ASC`:sort==='title'?'b.title COLLATE NOCASE ASC,b.id DESC':sort==='recommended'?`b.status DESC,${dateCol} DESC,b.id DESC`:`${dateCol} DESC,b.id DESC`;
   const rows=await db.prepare(`SELECT ${fields} FROM bookmarks b${where} ORDER BY ${order} LIMIT 20 OFFSET ?`).bind(...params,(n-1)*20).all();
   return {items:rows.results.map(decode),page:n,pages:Math.max(1,Math.ceil(total/20)),total};
 }
@@ -72,7 +73,12 @@ export async function patch(db,id,raw) {
     const status=Number(raw.status);
     if(!Number.isInteger(status)||status<0||status>3)throw new Error('狀態無效');
     const now=new Date().toISOString();
-    await db.prepare('UPDATE bookmarks SET status=?,read_at=?,published_at=?,starred_at=?,updated_at=? WHERE id=?').bind(status,status>=1?(current.read_at||now):null,status>=2?(current.published_at||now):null,status===3?(current.starred_at||now):null,now,id).run();
+    if(current.status!==status){
+      const readAt=status>=1?(current.read_at||now):null;
+      const publishAt=status>=2?(current.status>=2&&current.published_at?current.published_at:now):null;
+      const starredAt=status===3?(current.status===3&&current.starred_at?current.starred_at:now):null;
+      await db.prepare('UPDATE bookmarks SET status=?,read_at=?,published_at=?,starred_at=?,updated_at=? WHERE id=?').bind(status,readAt,publishAt,starredAt,now,id).run();
+    }
   }
   if(['url','title','summary','tags'].some(x=>x in raw)){
     const x=validate({...current,...raw});
