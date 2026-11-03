@@ -5,7 +5,8 @@ const root='http://127.0.0.1:8788';
 const password='bookmarks-local-ci-auth-token-2026';
 const devVars='.dev.vars';
 writeFileSync(devVars,'AUTH_MODE=local\nLOCAL_ADMIN_TOKEN='+password+'\nBLOG_SHELL_URL=\n');
-const child=spawn(process.platform==='win32'?'npx.cmd':'npx',['wrangler','dev','--local','--port','8788','--infer-origin-from-routes=false','--var','AUTH_MODE:local','--var','LOCAL_ADMIN_TOKEN:'+password,'--var','BLOG_SHELL_URL:'],{stdio:['ignore','pipe','pipe']});
+const windows=process.platform==='win32';
+const child=spawn(windows?'npx.cmd':'npx',['wrangler','dev','--local','--port','8788','--infer-origin-from-routes=false','--var','AUTH_MODE:local','--var','LOCAL_ADMIN_TOKEN:'+password,'--var','BLOG_SHELL_URL:'],{stdio:['ignore','pipe','pipe'],detached:!windows,shell:windows});
 let output='';
 child.stdout.on('data',v=>output+=v.toString());
 child.stderr.on('data',v=>output+=v.toString());
@@ -55,6 +56,7 @@ try{
  assert.equal(deleted.body.deleted,true);
  console.log('Integration tests passed: auth, private queue, status transitions, URL de-duplication, RSS and ingest token.');
 }finally{
- child.kill();
+ if(windows)child.kill();
+ else {try{process.kill(-child.pid,'SIGTERM')}catch{child.kill()}}
  try{unlinkSync(devVars)}catch{}
 }
