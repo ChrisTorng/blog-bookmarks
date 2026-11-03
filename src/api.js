@@ -29,7 +29,7 @@ export async function api(req,env,url){
    if(req.method==='DELETE')return json({deleted:await remove(env.DB,match[1])});
   }
   if(p==='/bookmarks/api/ingest/tags'&&req.method==='GET'){
-   if(!await sameToken(req.headers.get('Authorization')?.replace(/^Bearer\\s+/i,''),env.INGEST_TOKEN))return json({error:'Token 無效'},401);
+   if(!await sameToken(req.headers.get('Authorization')?.replace(/^Bearer\s+/i,''),env.INGEST_TOKEN))return json({error:'Token 無效'},401);
    return json(await tagsList(env.DB,true));
   }
   if(p==='/bookmarks/api/ingest'&&req.method==='POST'){
