@@ -12,7 +12,7 @@ export async function api(req,env,url){
  const p=url.pathname;
  const privateApi=p==='/bookmarks/api/admin'||p.startsWith('/bookmarks/api/admin/');
  if(privateApi && !await isAdmin(req,env))return json({error:'未經管理員驗證'},401);
- if(p!=='/bookmarks/api/ingest' && !safeOrigin(req)&&!['GET','HEAD'].includes(req.method))return json({error:'Origin 不符'},403);
+ if(!p.startsWith('/bookmarks/api/ingest') && !safeOrigin(req)&&!['GET','HEAD'].includes(req.method))return json({error:'Origin 不符'},403);
  try{
   if(p==='/bookmarks/api/admin'||p==='/bookmarks/api/admin/'){
    if(req.method==='GET')return json(await list(env.DB,opts(url,true)));
@@ -27,6 +27,10 @@ export async function api(req,env,url){
    if(req.method==='GET')return json(await get(env.DB,match[1],true));
    if(req.method==='PATCH')return json(await patch(env.DB,match[1],await input(req)));
    if(req.method==='DELETE')return json({deleted:await remove(env.DB,match[1])});
+  }
+  if(p==='/bookmarks/api/ingest/tags'&&req.method==='GET'){
+   if(!await sameToken(req.headers.get('Authorization')?.replace(/^Bearer\\s+/i,''),env.INGEST_TOKEN))return json({error:'Token 無效'},401);
+   return json(await tagsList(env.DB,true));
   }
   if(p==='/bookmarks/api/ingest'&&req.method==='POST'){
    const token=req.headers.get('Authorization')?.replace(/^Bearer\s+/i,'');
