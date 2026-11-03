@@ -1,0 +1,5 @@
+# Copy to .dev.vars, choose a new local token and keep it untracked.
+AUTH_MODE=local
+LOCAL_ADMIN_TOKEN=replace-this-with-a-unique-30-character-value
+SITE_URL=http://localhost:3000
+BLOG_SHELL_URL=http://localhost:3000/notes-shell/
