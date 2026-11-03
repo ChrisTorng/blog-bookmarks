@@ -9,3 +9,5 @@
 CI 驗證包括 Worker 打包與 D1 CRUD 測試。
 
 本機模擬測試需關閉 routes origin inference，避免 localhost 管理驗證誤判。
+
+完整測試結束時要終止 Wrangler 子程序與 workerd。
