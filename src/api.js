@@ -1,5 +1,6 @@
 import {isAdmin,safeOrigin,sameToken} from './auth.js';
 import {bulkStatus,updateTags} from './ingest.js';
+import {validIngestToken,rotateIngestToken} from './token.js';
 import {list,get,byUrl,create,patch,remove,tagsList} from './data.js';
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
 export function opts(url,privateList=false){return {privateList,filter:url.searchParams.get('filter')||(privateList?'unread':'published'),tag:url.searchParams.get('tag')||'',page:url.searchParams.get('page')||1,sort:url.searchParams.get('sort')||'new',q:url.searchParams.get('q')||''};}
@@ -19,6 +20,7 @@ export async function api(req,env,url){
    if(req.method==='GET')return json(await list(env.DB,opts(url,true)));
    if(req.method==='POST')return json(await create(env.DB,await input(req)),201);
   }
+  if(p==='/bookmarks/api/admin/ingest-token'&&req.method==='POST')return json(await rotateIngestToken(env.DB));
   if(p==='/bookmarks/api/admin/tags'&&req.method==='GET')return json(await tagsList(env.DB,true));
   if(p==='/bookmarks/api/admin/check'&&req.method==='GET'){
    const target=url.searchParams.get('url');return json(target?await byUrl(env.DB,target):null);
@@ -32,12 +34,12 @@ export async function api(req,env,url){
   if(p==='/bookmarks/api/ingest/status'&&req.method==='POST')return bulkStatus(req,env);
   if(p==='/bookmarks/api/ingest/update-tags'&&req.method==='POST')return updateTags(req,env);
   if(p==='/bookmarks/api/ingest/tags'&&req.method==='GET'){
-   if(!await sameToken(req.headers.get('Authorization')?.replace(/^Bearer\s+/i,''),env.INGEST_TOKEN))return json({error:'Token 無效'},401);
+   if(!await validIngestToken(req,env))return json({error:'Token 無效'},401);
    return json(await tagsList(env.DB,true));
   }
   if(p==='/bookmarks/api/ingest'&&req.method==='POST'){
    const token=req.headers.get('Authorization')?.replace(/^Bearer\s+/i,'');
-   if(!await sameToken(token,env.INGEST_TOKEN))return json({error:'無效的新增 Token'},401);
+   if(!await validIngestToken(req,env))return json({error:'無效的新增 Token'},401);
    return json(await create(env.DB,{...await input(req),source:'tampermonkey'}),201);
   }
   if((p==='/bookmarks/api'||p==='/bookmarks/api/')&&req.method==='GET')return json(await list(env.DB,opts(url)));
