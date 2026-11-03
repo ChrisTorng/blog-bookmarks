@@ -5,3 +5,5 @@
 - 公開頁：桌面標籤側欄、手機標籤選單，按狀態設定時間排序與顯示。
 - Tampermonkey：通用名稱、GitHub Raw 更新網址、既有收藏預先查詢。
 - 舊 CloudMark：未修改、未移除。
+
+CI 驗證包括 Worker 打包與 D1 CRUD 測試。
