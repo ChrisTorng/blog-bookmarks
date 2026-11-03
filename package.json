@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "npm run build:ui && wrangler dev --local --port 8788",
+    "dev": "npm run build:ui && wrangler dev --local --ip 127.0.0.1 --port 8788 --infer-origin-from-routes=false",
     "db:migrate": "wrangler d1 migrations apply DB --local",
     "check": "node scripts/sync-ui.mjs --check && node --test tests/*.test.js",
     "deploy": "npm run build:ui && wrangler deploy",
@@ -13,6 +13,6 @@
   },
   "dependencies": {},
   "devDependencies": {
-    "wrangler": "^4.45.0"
+    "wrangler": "^4.153.0"
   }
 }

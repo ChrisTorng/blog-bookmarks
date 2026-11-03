@@ -1,6 +1,6 @@
 import {readFileSync,writeFileSync} from 'node:fs';
-const js=readFileSync('public/bookmarks/admin.js','utf8');
-const css=readFileSync('public/bookmarks/admin.css','utf8');
+const js=readFileSync('public/bookmarks/admin.js','utf8').replaceAll('\r\n','\n');
+const css=readFileSync('public/bookmarks/admin.css','utf8').replaceAll('\r\n','\n');
 const content='// Generated from public/bookmarks/admin.js and admin.css. Do not edit manually.\n'
  +'export const adminJavaScript = '+JSON.stringify(js)+';\n'
  +'export const adminStylesheet = '+JSON.stringify(css)+';\n';
