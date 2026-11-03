@@ -5,7 +5,7 @@ const root='http://127.0.0.1:8788';
 const password='bookmarks-local-ci-auth-token-2026';
 const devVars='.dev.vars';
 writeFileSync(devVars,'AUTH_MODE=local\nLOCAL_ADMIN_TOKEN='+password+'\nBLOG_SHELL_URL=\n');
-const child=spawn(process.platform==='win32'?'npx.cmd':'npx',['wrangler','dev','--local','--port','8788'],{stdio:['ignore','pipe','pipe']});
+const child=spawn(process.platform==='win32'?'npx.cmd':'npx',['wrangler','dev','--local','--port','8788','--var','AUTH_MODE:local','--var','LOCAL_ADMIN_TOKEN:'+password,'--var','BLOG_SHELL_URL:'],{stdio:['ignore','pipe','pipe']});
 let output='';
 child.stdout.on('data',v=>output+=v.toString());
 child.stderr.on('data',v=>output+=v.toString());
@@ -26,7 +26,7 @@ try{
  const denied=await req('/bookmarks/api/ingest','POST',{url:'https://test.example/test',title:'denied'});
  assert.equal(denied.status,401);
  const created=await req('/bookmarks/api/admin/','POST',{url:'https://example.org/sample?keep=1#fragment',title:'Sample article',summary:'Imported description',tags:['AI','AI']},true);
- assert.equal(created.status,201,created.text);
+ assert.equal(created.status,201,created.text+'\n'+output.slice(-3000));
  assert.equal(created.body.item.status,0);
  const id=created.body.item.id;
  assert.equal((await req('/bookmarks/api/')).body.total,0);
