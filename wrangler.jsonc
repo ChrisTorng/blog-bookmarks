@@ -20,6 +20,6 @@
     "BLOG_SHELL_URL":"https://christorng.idv.tw/notes-shell/",
     "AUTH_MODE": "access",
     "ACCESS_TEAM_DOMAIN": "https://christorng.cloudflareaccess.com",
-    "ACCESS_AUD": ""
+    "ACCESS_AUD": "6b0e80ebc88296549323cf796dbfa719bff9f95c26601da07ef5fd67ed696453"
   }
 }
