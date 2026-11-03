@@ -38,7 +38,7 @@
   const value=prompt('請輸入 blog-bookmarks 的新增 Token（僅儲存在 Tampermonkey 本機設定）',token);
   if(value===null)return;
   token=value.trim();GM_setValue(tokenKey,token);
-  updateCategories();
+  checked.clear();updateCategories();schedulePreload();
  }
  async function updateCategories(){
   if(!token)return;
@@ -117,13 +117,19 @@
   }
  }
  function install(){
+  let additions=0;
   for(const a of document.querySelectorAll('main a[href],article a[href]')){
    if(cached.has(a))continue;
    const data=story(a);if(!data)continue;
    cached.add(a);
    const b=button(a,'☆');b.title='收藏（預設未讀與私人）';
+   const url=new URL(data.url);url.hash='';
+   if(!entries.has(url.href))entries.set(url.href,[]);
+   entries.get(url.href).push({button:b,data});
+   additions++;
    b.onclick=e=>{e.preventDefault();e.stopPropagation();selector(b,data);};
   }
+  if(additions)schedulePreload();
  }
  const config=document.createElement('button');
  config.textContent='Bookmarks 設定';
