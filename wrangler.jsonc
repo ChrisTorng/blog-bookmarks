@@ -21,5 +21,9 @@
     "AUTH_MODE": "access",
     "ACCESS_TEAM_DOMAIN": "https://christorng.cloudflareaccess.com",
     "ACCESS_AUD": "6b0e80ebc88296549323cf796dbfa719bff9f95c26601da07ef5fd67ed696453"
-  }
+  },
+  "routes": [
+    {"pattern":"christorng.idv.tw/bookmarks","zone_id":"c5475506538ba09563cacc12b8acb3d0"},
+    {"pattern":"christorng.idv.tw/bookmarks/*","zone_id":"c5475506538ba09563cacc12b8acb3d0"}
+  ]
 }
