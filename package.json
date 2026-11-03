@@ -1,0 +1,18 @@
+{
+  "name": "blog-bookmarks",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local --port 8788",
+    "db:migrate": "wrangler d1 migrations apply DB --local",
+    "check": "node --test tests/*.test.js",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "jose": "^6.1.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.45.0"
+  }
+}
