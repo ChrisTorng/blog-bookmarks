@@ -1,4 +1,4 @@
-import { isAdmin } from './auth.js';
+import { isAdmin, isLocal } from './auth.js';
 import { list, get, tagsList } from './data.js';
 import { api, opts } from './api.js';
 import { layout, listing, individual, adminPage } from './views.js';
@@ -12,7 +12,7 @@ const worker={
   if(req.method==='OPTIONS')return response('','text/plain',405);
   if(p.startsWith('/bookmarks/api'))return api(req,env,url);
   if(p==='/bookmarks/admin'||p==='/bookmarks/admin/'){
-   if(!await isAdmin(req,env))return response('管理員驗證失敗','text/plain',401);
+   if(!(isLocal(req) && env.AUTH_MODE==='local') && !await isAdmin(req,env))return response('管理員驗證失敗','text/plain',401);
    return response(adminPage);
   }
   if(p==='/bookmarks/admin.js'||p==='/bookmarks/admin.css'){
