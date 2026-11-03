@@ -54,8 +54,7 @@ export async function verifyAccessToken(token,{issuer,audience,email}) {
  return crypto.subtle.verify({name:'RSASSA-PKCS1-v1_5'},key,base64url(parts[2]),new TextEncoder().encode(parts[0]+'.'+parts[1]));
 }
 export async function isAdmin(req,env){
- if(isLocal(req)&&env.AUTH_MODE==='local') {
-  if(!env.LOCAL_ADMIN_TOKEN || env.LOCAL_ADMIN_TOKEN.length<20)return false;
+ if(isLocal(req)&&typeof env.LOCAL_ADMIN_TOKEN==='string'&&env.LOCAL_ADMIN_TOKEN.length>=20) {
   return sameToken(req.headers.get('Authorization')?.replace(/^Bearer\s+/i,''),env.LOCAL_ADMIN_TOKEN);
  }
  const {ACCESS_TEAM_DOMAIN:domain,ACCESS_AUD:aud,ACCESS_ALLOWED_EMAIL:email}=env;
