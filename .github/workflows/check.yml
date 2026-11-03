@@ -19,3 +19,5 @@ jobs:
       - run: npx wrangler deploy --dry-run --outdir .wrangler-verify
       - name: Validate local schema
         run: npx wrangler d1 migrations apply DB --local
+      - name: Verify Worker and D1 end-to-end
+        run: npm run test:integration
