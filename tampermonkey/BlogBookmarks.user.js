@@ -93,6 +93,29 @@
    save(data,b,category).then(()=>box.remove());
   };
  }
+ function schedulePreload(){
+  if(!token)return;
+  clearTimeout(preloadTimer);
+  preloadTimer=setTimeout(preload,250);
+ }
+ async function preload(){
+  const pending=[...entries.keys()].filter(url=>!checked.has(url));
+  for(let i=0;i<pending.length;i+=75){
+   const urls=pending.slice(i,i+75);
+   try{
+    const existing=await request('/status','POST',{urls});
+    for(const url of urls)checked.add(url);
+    for(const record of existing){
+     const links=entries.get(record.url)||[];
+     for(const {button:b} of links){
+      mark(b);
+      b.dataset.tags=JSON.stringify(record.tags||[]);
+      b.title='已收藏 · '+(record.tags||[]).join(', ');
+     }
+    }
+   }catch(error){console.warn('Bookmarks status prefetch:',error.message);return;}
+  }
+ }
  function install(){
   for(const a of document.querySelectorAll('main a[href],article a[href]')){
    if(cached.has(a))continue;
