@@ -14,7 +14,9 @@ export function validate(raw) {
   const title=String(raw.title || url).trim();
   const summary=raw.summary == null ? null : String(raw.summary).trim();
   if (title.length > 500 || (summary && summary.length > 5000)) throw new Error('標題或摘要過長');
-  const tags=Array.isArray(raw.tags) ? [...new Map(raw.tags.map(x=>String(x).trim()).filter(Boolean).map(x=>[x.toLowerCase(),x])).values()] : [];
+  const tagNames=Array.isArray(raw.tags) ? raw.tags.map(x=>String(x).trim()).filter(Boolean) : [];
+  const tagMap=new Map();for(const name of tagNames)if(!tagMap.has(name.toLowerCase()))tagMap.set(name.toLowerCase(),name);
+  const tags=[...tagMap.values()];
   if(tags.length>30 || tags.some(x=>x.length>80)) throw new Error('標籤過多或過長');
   return {url,normalized_url,title,summary,tags};
 }
