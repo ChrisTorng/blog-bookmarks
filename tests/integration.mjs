@@ -5,7 +5,7 @@ const root='http://127.0.0.1:8788';
 const password='bookmarks-local-ci-auth-token-2026';
 const devVars='.dev.vars';
 writeFileSync(devVars,'AUTH_MODE=local\nLOCAL_ADMIN_TOKEN='+password+'\nBLOG_SHELL_URL=\n');
-const child=spawn(process.platform==='win32'?'npx.cmd':'npx',['wrangler','dev','--local','--port','8788','--var','AUTH_MODE:local','--var','LOCAL_ADMIN_TOKEN:'+password,'--var','BLOG_SHELL_URL:'],{stdio:['ignore','pipe','pipe']});
+const child=spawn(process.platform==='win32'?'npx.cmd':'npx',['wrangler','dev','--local','--port','8788','--infer-origin-from-routes=false','--var','AUTH_MODE:local','--var','LOCAL_ADMIN_TOKEN:'+password,'--var','BLOG_SHELL_URL:'],{stdio:['ignore','pipe','pipe']});
 let output='';
 child.stdout.on('data',v=>output+=v.toString());
 child.stderr.on('data',v=>output+=v.toString());
