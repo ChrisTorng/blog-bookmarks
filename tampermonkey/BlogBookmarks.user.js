@@ -60,8 +60,9 @@
   b.style.cssText='margin-left:7px;cursor:pointer;font:inherit;font-size:.88em;border:1px solid #8888;border-radius:5px;background:transparent;padding:1px 5px';
   el.after(b);return b;
  }
- function mark(b){
-  b.textContent='✓';b.title='已收藏到 Bookmarks';
+ function mark(b,tags=[]){
+  b.dataset.tags=JSON.stringify(tags);
+  b.textContent=tags.length?tags.slice(0,2).join(', '):'✓';b.title='已收藏到 Bookmarks';
   b.style.opacity='.7';
   b.dataset.saved='1';
  }
@@ -69,7 +70,7 @@
   const tags=category?[category]:[];
   const saved=b.dataset.saved==='1';
   return request(saved?'/update-tags':'', 'POST', saved?{url:data.url,tags}:{...data,tags}).then(x=>{
-   mark(b);return x;
+   mark(b,tags);return x;
   }).catch(e=>{b.textContent='!';b.title=e.message;});
  }
  function selector(b,data){
@@ -77,7 +78,8 @@
   const box=document.createElement('span');box.className='blog-bookmark-panel';
   box.style.cssText='display:inline-flex;gap:5px;align-items:center;margin-left:6px;padding:6px;border:1px solid #8888;border-radius:5px;background:Canvas;color:CanvasText;z-index:9999';
   const select=document.createElement('select');
-  const current=GM_getValue(categoryKey,'default');
+  const existingTags=JSON.parse(b.dataset.tags||'[]');
+  const current=existingTags[0]||GM_getValue(categoryKey,'default');
   for(const v of [...new Set(['default',current,...categories])]){
    const opt=new Option(v,v);select.add(opt);
   }
@@ -108,8 +110,7 @@
     for(const record of existing){
      const links=entries.get(record.url)||[];
      for(const {button:b} of links){
-      mark(b);
-      b.dataset.tags=JSON.stringify(record.tags||[]);
+      mark(b,record.tags||[]);
       b.title='已收藏 · '+(record.tags||[]).join(', ');
      }
     }
