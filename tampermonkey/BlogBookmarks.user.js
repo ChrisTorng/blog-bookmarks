@@ -19,6 +19,8 @@
  let token=GM_getValue(tokenKey,''), categories=[];
  const cached=new WeakSet();
  const entries=new Map();
+ const checked=new Set();
+ let preloadTimer;
  function request(path,method='GET',body) {
   return new Promise((resolve,reject)=>{
    if(!token) return reject(Error('尚未設定新增 Token'));
@@ -60,11 +62,13 @@
  }
  function mark(b){
   b.textContent='✓';b.title='已收藏到 Bookmarks';
-  b.style.opacity='.6';
+  b.style.opacity='.7';
+  b.dataset.saved='1';
  }
  function save(data,b,category){
   const tags=category?[category]:[];
-  return request('', 'POST', {...data,tags}).then(x=>{
+  const saved=b.dataset.saved==='1';
+  return request(saved?'/update-tags':'', 'POST', saved?{url:data.url,tags}:{...data,tags}).then(x=>{
    mark(b);return x;
   }).catch(e=>{b.textContent='!';b.title=e.message;});
  }
