@@ -59,10 +59,10 @@ function href(tag,sort='new',page=1) {
 export function listing(data,tags,opt) {
  const active=opt.tag||'',sort=opt.sort||'new';
  const activeName=tags.find(x=>x.id===active)?.name||active;
- const categories=[{id:'',name:'所有書籤',count:data.total},...tags];
- const links=categories.map(t=>`<li><a href="${esc(href(t.id,sort))}"${active===t.id?' aria-current="page"':''}><span>${esc(t.name)}</span><span class="bm-count">${t.count}</span></a></li>`).join('');
+ const categories=[{id:'',name:'所有書籤',count:null},...tags];
+ const links=categories.map(t=>`<li><a href="${esc(href(t.id,sort))}"${active===t.id?' aria-current="page"':''}><span>${esc(t.name)}</span>${t.count===null?'':`<span class="bm-count">${t.count}</span>`}</a></li>`).join('');
  const sidebar=`<aside class="bm-sidebar" aria-label="書籤標籤"><h2>標籤</h2><ul class="bm-categories">${links}</ul></aside>`;
- const options=categories.map(t=>`<option value="${esc(t.id)}"${t.id===active?' selected':''}>${esc(t.name)} (${t.count})</option>`).join('');
+ const options=categories.map(t=>`<option value="${esc(t.id)}"${t.id===active?' selected':''}>${esc(t.name)}${t.count===null?'':` (${t.count})`}</option>`).join('');
  const sortOptions=[['new','最新分享'],['old','最早分享'],['recommended','推薦優先'],['title','依標題']].map(([id,name])=>`<option value="${id}"${sort===id?' selected':''}>${name}</option>`).join('');
  const toolbar=`<form method="get" action="/bookmarks/" class="bm-toolbar"><label class="bm-mobile-tag">標籤 <select name="tag" aria-label="選擇書籤標籤">${options}</select></label><label>排序 <select name="sort" aria-label="書籤排序">${sortOptions}</select></label><button type="submit" class="bm-submit">套用</button></form>`;
  const entries=data.items.map(b=>{
