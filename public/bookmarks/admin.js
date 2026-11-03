@@ -42,7 +42,16 @@ $('cancelEdit').onclick=()=>$('editDialog').close();
 $('items').addEventListener('click',async e=>{
  const node=e.target.closest('[data-read]');if(!node)return;
  const b=state.items.find(x=>x.id===node.dataset.read);
- if(b&&b.status===0){request('/'+b.id,'PATCH',{status:1}).then(refresh).catch(err=>status(err.message,true));}
+ if(b&&b.status===0){
+   const card=node.closest('[data-id]');
+   b.status=1;
+   card?.querySelectorAll('[data-level]').forEach(x=>x.checked=Number(x.dataset.level)<=1);
+   request('/'+b.id,'PATCH',{status:1}).then(()=>status('已標為已讀，可直接選擇公開或推薦。')).catch(err=>{
+    b.status=0;
+    card?.querySelectorAll('[data-level]').forEach(x=>x.checked=false);
+    status(err.message,true);
+   });
+  }
 });
 $('items').addEventListener('change',async e=>{
  const control=e.target.closest('[data-level]');if(!control)return;
