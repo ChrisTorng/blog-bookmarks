@@ -29,6 +29,8 @@ export async function api(req,env,url){
    if(req.method==='PATCH')return json(await patch(env.DB,match[1],await input(req)));
    if(req.method==='DELETE')return json({deleted:await remove(env.DB,match[1])});
   }
+  if(p==='/bookmarks/api/ingest/status'&&req.method==='POST')return bulkStatus(req,env);
+  if(p==='/bookmarks/api/ingest/update-tags'&&req.method==='POST')return updateTags(req,env);
   if(p==='/bookmarks/api/ingest/tags'&&req.method==='GET'){
    if(!await sameToken(req.headers.get('Authorization')?.replace(/^Bearer\s+/i,''),env.INGEST_TOKEN))return json({error:'Token 無效'},401);
    return json(await tagsList(env.DB,true));
