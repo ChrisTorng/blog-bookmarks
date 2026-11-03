@@ -12,7 +12,7 @@ export async function api(req,env,url){
  const p=url.pathname;
  const privateApi=p==='/bookmarks/api/admin'||p.startsWith('/bookmarks/api/admin/');
  if(privateApi && !await isAdmin(req,env))return json({error:'未經管理員驗證'},401);
- if(!safeOrigin(req)&&!['GET','HEAD'].includes(req.method))return json({error:'Origin 不符'},403);
+ if(p!=='/bookmarks/api/ingest' && !safeOrigin(req)&&!['GET','HEAD'].includes(req.method))return json({error:'Origin 不符'},403);
  try{
   if(p==='/bookmarks/api/admin'||p==='/bookmarks/api/admin/'){
    if(req.method==='GET')return json(await list(env.DB,opts(url,true)));
