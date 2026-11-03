@@ -18,6 +18,7 @@
  const categoryKey='blog-bookmarks-last-category';
  let token=GM_getValue(tokenKey,''), categories=[];
  const cached=new WeakSet();
+ const entries=new Map();
  function request(path,method='GET',body) {
   return new Promise((resolve,reject)=>{
    if(!token) return reject(Error('尚未設定新增 Token'));
