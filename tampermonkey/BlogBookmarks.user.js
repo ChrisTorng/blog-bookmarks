@@ -71,7 +71,7 @@
   const saved=b.dataset.saved==='1';
   return request(saved?'/update-tags':'', 'POST', saved?{url:data.url,tags}:{...data,tags}).then(x=>{
    mark(b,tags);return x;
-  }).catch(e=>{b.textContent='!';b.title=e.message;});
+  }).catch(e=>{b.textContent='!';b.title=e.message;throw e;});
  }
  function selector(b,data){
   document.querySelectorAll('.blog-bookmark-panel').forEach(x=>x.remove());
@@ -92,7 +92,8 @@
   saveButton.onclick=()=>{
    const category=input.value.trim()||select.value;
    GM_setValue(categoryKey,category);
-   save(data,b,category).then(()=>box.remove());
+   box.remove();
+   save(data,b,category).catch(()=>selector(b,data));
   };
  }
  function schedulePreload(){
