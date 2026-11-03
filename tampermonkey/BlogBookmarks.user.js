@@ -164,6 +164,7 @@
         const urls = [...new Set([...controls.values()].map(item => item.url))]
             .filter(url => !checked.has(url) && !pending.has(url));
         if (!urls.length) return;
+        let loadedSuccessfully = true;
         preloadTask = (async () => {
             for (let i = 0; i < urls.length; i += 75) {
                 const batch = urls.slice(i, i + 75);
@@ -184,10 +185,10 @@
                 render();
                 updateMenuCategories();
             }
-        })().catch(error => console.warn('Blog Bookmarks preload:', error.message))
+        })().catch(error => { loadedSuccessfully = false; console.warn('Blog Bookmarks preload:', error.message); })
             .finally(() => { preloadTask = null; });
         await preloadTask;
-        if (currentToken === token) {
+        if (loadedSuccessfully && currentToken === token) {
             const remain = [...controls.values()].some(item => !checked.has(item.url) && !pending.has(item.url));
             if (remain) schedulePreload();
         }
@@ -264,8 +265,8 @@
         if (!token) return openSettings(link);
         if (pending.has(url)) return;
         const selected = [...new Set(nextTags.map(String).map(s => s.trim()).filter(Boolean))];
-        const existing = saved.get(url);
-        if (existing && JSON.stringify(existing.tags) === JSON.stringify(selected)) {
+        let existing = saved.get(url);
+        if (checked.has(url) && existing && JSON.stringify(existing.tags) === JSON.stringify(selected)) {
             closeMenu();
             return;
         }
@@ -276,6 +277,18 @@
         showFailures();
         render();
         try {
+            // A fast tap can race with the background prefetch. Resolve that URL before deciding
+            // whether to create or update, without keeping the category popover open.
+            if (!checked.has(url)) {
+                const found = await request('/status', 'POST', { urls: [url] });
+                checked.add(url);
+                if (found.length) {
+                    const entry = found[0];
+                    existing = { id: entry.id, tags: entry.tags || [], status: entry.status };
+                    saved.set(url, existing);
+                }
+            }
+            if (existing && JSON.stringify(existing.tags) === JSON.stringify(selected)) return;
             const result = existing ?
                 await request('/update-tags', 'POST', { url, tags: selected }) :
                 await request('', 'POST', { ...article, tags: selected });
