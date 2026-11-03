@@ -39,3 +39,11 @@ test('background save, safe category update and failure retry remain available',
   assert.match(source, /revisions\.set\(url/);
   assert.match(source, /let loadedSuccessfully = true/);
 });
+
+test('no permanent mobile footer toolbar; settings live inside menu or Tampermonkey', () => {
+  assert.doesNotMatch(source, /position:fixed;right:8px;bottom:8px/);
+  assert.match(source, /GM_registerMenuCommand\('Blog Bookmarks 設定'/);
+  assert.match(source, /configure\.addEventListener\('click',/);
+  assert.match(source, /textContent = 'Bookmarks 設定'/);
+  assert.match(source, /saved\.set\(url, existing\)/);
+});
