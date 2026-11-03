@@ -1,7 +1,7 @@
 import { esc } from './data.js';
 export function rss(items,siteUrl,tag=''){
  const base=siteUrl.replace(/\/$/,'');
- return '<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>書籤 Bookmarks'+(tag?' - '+esc(tag):'')+'</title><link>'+base+'/bookmarks/</link><description>ChrisTorng 分享的書籤</description><language>zh-TW</language>'+items.map(b=>'<item><title>'+esc(b.title)+'</title><link>'+esc(b.url)+'</link><guid isPermaLink="true">'+base+'/bookmarks/'+esc(b.id)+'/</guid><pubDate>'+new Date(b.published_at||b.created_at).toUTCString()+'</pubDate><description>'+esc(b.summary||'')+'</description></item>').join('')+'</channel></rss>';
+ return '<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>書籤 Bookmarks'+(tag?' - '+esc(tag):'')+'</title><link>'+base+'/bookmarks/</link><description>ChrisTorng 分享的書籤</description><language>zh-TW</language>'+items.map(b=>'<item><title>'+esc(b.title)+'</title><link>'+esc(b.url)+'</link><guid isPermaLink="true">'+base+'/bookmarks/'+esc(b.id)+'/</guid><pubDate>'+new Date(b.status_at||b.published_at||b.created_at).toUTCString()+'</pubDate><description>'+esc(b.summary||'')+'</description></item>').join('')+'</channel></rss>';
 }
 export async function shellPage(response,env){
  if(!env.BLOG_SHELL_URL)return response;
@@ -10,7 +10,7 @@ export async function shellPage(response,env){
  try{
   const r=await fetch(env.BLOG_SHELL_URL,{signal:AbortSignal.timeout(15000)});if(!r.ok)throw Error('shell');
   const markup=await r.text();if(!markup.includes('id="notes-content"'))throw Error('slot');
-  let w=new HTMLRewriter().on('#notes-content',{element(el){el.setInnerContent('<section class="notes-public">'+main+'</section>',{html:true});}});
+  let w=new HTMLRewriter().on('#notes-content',{element(el){el.setInnerContent('<section class="notes-public bookmarks-public">'+main+'</section>',{html:true});}});
   for(const selector of ['title','meta[name="description"]','meta[name="robots"]','link[rel="canonical"]'])w=w.on('head '+selector,{element(el){el.remove();}});
   w=w.on('head',{element(el){el.append(head,{html:true});}});
   return w.transform(new Response(markup,{status:response.status,headers:response.headers}));
