@@ -43,3 +43,7 @@ npm run check
 `npm run build:ui` embeds public/bookmarks/admin.js and admin.css in src/ui-assets.js; dev and deploy run it automatically. Commit the generated file when changing the UI.
 
 Production Worker and D1: blog-bookmarks; routes and Access settings: wrangler.jsonc. Admin pages/API require Cloudflare Access; ACCESS_ALLOWED_EMAIL is a Worker secret. Deploy with `npm run deploy`; apply new production migrations separately with `npx wrangler d1 migrations apply DB --remote`.
+
+## Metadata repair
+
+Use the admin-only `POST /bookmarks/api/admin/enrich` endpoint with JSON `{ "id": "<bookmark UUID>" }` to preview verified source metadata. Include `"apply": true` to fill missing English titles or replace an invalid summary using a validated source description. Searches require matching source URLs; never substitute merely similar search results. This is separate from the Tampermonkey star-click path.

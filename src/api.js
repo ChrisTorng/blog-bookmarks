@@ -1,5 +1,6 @@
 import {isAdmin,safeOrigin,sameToken} from './auth.js';
 import {bulkStatus,updateTags} from './ingest.js';
+import {review,invalidSummary} from './metadata.js';
 import {validIngestToken,rotateIngestToken} from './token.js';
 import {list,get,byUrl,create,patch,remove,tagsList,renameTag} from './data.js';
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
@@ -19,6 +20,20 @@ export async function api(req,env,url){
   if(p==='/bookmarks/api/admin'||p==='/bookmarks/api/admin/'){
    if(req.method==='GET')return json(await list(env.DB,opts(url,true)));
    if(req.method==='POST')return json(await create(env.DB,await input(req)),201);
+  }
+  if(p==='/bookmarks/api/admin/enrich' && req.method==='POST'){
+    const body=await input(req);
+    if(!/^[0-9a-f-]{36}$/.test(String(body.id||'')))return json({error:'書籤 ID 無效'},400);
+    const item=await get(env.DB,body.id,true);
+    if(!item)return json({error:'書籤不存在'},404);
+    const report=await review(item);
+    const title=!item.title_original&&report.verified?report.title_original:null;
+    const summary=invalidSummary(item.summary)&&report.verified?report.summary:null;
+    if(body.apply===true&&(title||summary)){
+      await env.DB.prepare('UPDATE bookmarks SET title_original=COALESCE(NULLIF(title_original,\'\'),?),summary=CASE WHEN ? IS NOT NULL THEN ? ELSE summary END,updated_at=? WHERE id=?')
+        .bind(title,summary,summary,new Date().toISOString(),item.id).run();
+    }
+    return json({...report,proposed:{title_original:title,summary},updated:body.apply===true&&!!(title||summary)});
   }
   if(p==='/bookmarks/api/admin/ingest-token'&&req.method==='POST')return json(await rotateIngestToken(env.DB));
   if(p==='/bookmarks/api/admin/tags'&&req.method==='GET')return json(await tagsList(env.DB,true));
