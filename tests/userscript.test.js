@@ -18,7 +18,7 @@ test('single click toggles empty/full star without category modal', () => {
   assert.match(source, /button\.addEventListener\('click', event => \{/);
   assert.match(source, /void toggleArticle\(link\)/);
   assert.match(source, /request\('\/remove', 'POST', \{ url: key \}\)/);
-  assert.match(source, /request\('', 'POST', articleData\(link\)\)/);
+  assert.match(source, /request\('', 'POST', article\)/);
   assert.match(source, /status: 0, tags: \[\]/);
   assert.doesNotMatch(source, /panel\.showPopover/);
   assert.doesNotMatch(source, /openMenu/);
