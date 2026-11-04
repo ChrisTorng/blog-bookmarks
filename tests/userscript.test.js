@@ -7,7 +7,7 @@ const source = readFileSync(new URL('../tampermonkey/BlogBookmarks.user.js', imp
 test('userscript installs from blog-bookmarks and parses', () => {
   assert.doesNotThrow(() => new Function(source));
   assert.match(source, /\/\/ @name\s+Blog Bookmarks\n/);
-  assert.match(source, /\/\/ @version\s+0\.5\.4\n/);
+  assert.match(source, /\/\/ @version\\s+0\\.5\\.5\n/);
   assert.match(source, /raw\.githubusercontent\.com\/ChrisTorng\/blog-bookmarks\/main\/tampermonkey\/BlogBookmarks\.user\.js/);
   assert.match(source, /\/\/ @match\s+https:\/\/hackernews\.betacat\.io\/\*/);
   assert.doesNotMatch(source, /cloudmark-christorng|cloudmark\.site/);
@@ -63,14 +63,12 @@ test('all automatic archive-host redirects are included without triggering manua
   assert.match(source,/sourceAndTarget/);
 });
 
-test('original-language publisher title never comes from redirect target',()=>{
- assert.match(source,/function originalSiteTitle\(sourceUrl\)/);
- assert.match(source,/const publisherTitle = await originalSiteTitle\(article\.url\)/);
- assert.doesNotMatch(source,/originalSiteTitle\(article\.redirect_url\)/);
- assert.match(source,/invalidHost\(destination\.hostname\.toLowerCase\(\)\)/);
- assert.match(source,/meta\[property="og:title"\]/);
- assert.match(source,/meta\[name="twitter:title"\]/);
- assert.match(source,/\/\/ @connect\s+\*/);
+test('publisher fetching is server-only and browser access is limited to own API',()=>{
+ assert.doesNotMatch(source,/originalSiteTitle|publisherTitle/);
+ assert.doesNotMatch(source,/\/\/ @connect\s+\*/);
+ assert.match(source,/\/\/ @connect\s+christorng\.idv\.tw/);
+ assert.match(source,/const article = articleData\(link\)/);
+ assert.match(source,/void loadOriginalTitles\(\)/);
 });
 
 test('Archive Today uses generic submit URLs and contains no hardcoded snapshots',()=>{
