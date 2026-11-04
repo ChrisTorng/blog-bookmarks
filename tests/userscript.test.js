@@ -7,7 +7,7 @@ const source = readFileSync(new URL('../tampermonkey/BlogBookmarks.user.js', imp
 test('Tampermonkey userscript parses and updates from the new repository', () => {
   assert.doesNotThrow(() => new Function(source));
   assert.match(source, /\/\/ @name\s+Blog Bookmarks\n/);
-  assert.match(source, /\/\/ @version\s+0\.3\.0\n/);
+  assert.match(source, /\/\/ @version\s+0\.4\.0\n/);
   assert.match(source, /\/\/ @updateURL\s+https:\/\/raw\.githubusercontent\.com\/ChrisTorng\/blog-bookmarks\/main\/tampermonkey\/BlogBookmarks\.user\.js/);
   assert.match(source, /\/\/ @downloadURL\s+https:\/\/raw\.githubusercontent\.com\/ChrisTorng\/blog-bookmarks\/main\/tampermonkey\/BlogBookmarks\.user\.js/);
   assert.match(source, /\/\/ @match\s+https:\/\/hackernews\.betacat\.io\/\*/);
@@ -16,15 +16,15 @@ test('Tampermonkey userscript parses and updates from the new repository', () =>
 
 test('mobile controls mirror the CloudMark title-corner badge and popover', () => {
   assert.match(source, /article\.post-item \.post-title a\.post-url/);
-  assert.match(source, /title\.appendChild\(button\)/);
-  assert.match(source, /grid-template-columns:minmax\(0,1fr\) auto/);
-  assert.match(source, /min-height:36px/);
-  assert.match(source, /max-width:6rem/);
+  assert.match(source, /toolbar\.appendChild\(button\)/);
+  assert.match(source, /tm-betacat-article-tools/);
+  assert.match(source, /min-height:32px/);
+  assert.match(source, /max-width:calc\(100% - 38px\)/);
   assert.match(source, /touch-action:manipulation/);
   assert.match(source, /attachShadow\(\{ mode: 'closed' \}\)/);
   assert.match(source, /panel\.showPopover\(\)/);
   assert.match(source, /window\.visualViewport/);
-  assert.match(source, /width:min\(240px,calc\(100vw - 16px\)\)/);
+  assert.match(source, /width:min\(360px,calc\(100vw - 16px\)\)/);
   assert.match(source, /\.new-category/);
   assert.match(source, /GM_registerMenuCommand\('Blog Bookmarks 設定'/);
 });
@@ -43,7 +43,17 @@ test('background save, safe category update and failure retry remain available',
 test('no permanent mobile footer toolbar; settings live inside menu or Tampermonkey', () => {
   assert.doesNotMatch(source, /position:fixed;right:8px;bottom:8px/);
   assert.match(source, /GM_registerMenuCommand\('Blog Bookmarks 設定'/);
-  assert.match(source, /configure\.addEventListener\('click',/);
-  assert.match(source, /textContent = 'Bookmarks 設定'/);
+  assert.match(source, /settings\.addEventListener\('click',/);
+  assert.match(source, /textContent = '管理書籤'/);
   assert.match(source, /saved\.set\(url, existing\)/);
+});
+
+test('controls share the BetaCat toolbar and labels show the complete category list', () => {
+ assert.match(source,/const TOOLBAR_CLASS = 'tm-betacat-article-tools'/);
+ assert.match(source,/tags\.join\(', '\)/);
+ assert.match(source,/toolbar\.appendChild\(button\)/);
+ assert.match(source,/white-space:normal!important/);
+ assert.match(source,/word-break:normal!important/);
+ assert.match(source,/grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+ assert.match(source,/\.menu-actions/);
 });
