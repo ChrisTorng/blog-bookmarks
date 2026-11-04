@@ -80,7 +80,7 @@ export async function betaCatExact(item,transport=fetch) {
       const page=await transport('https://hackernews.betacat.io/daily/'+date+'/',{redirect:'manual'});
       if(!page.ok)continue;
       const html=(await page.text()).slice(0,1500000);
-      const links=[...html.matchAll(/<a\\b([^>]*)>([\\s\\S]*?)<\\/a>/gi)];
+      const links=[...html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)];
       const matching=links.filter(m=>m[1].includes('post-url')).filter(m=>{
         const url=m[1].match(/href=["']([^"']+)["']/)?.[1];
         return url&&sameArticle(item.url,url.replace(/&amp;/g,'&'));
