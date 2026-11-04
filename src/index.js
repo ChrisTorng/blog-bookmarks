@@ -28,15 +28,17 @@ const worker={
    }
    if(p==='/bookmarks/feed.xml'){
     const tag=url.searchParams.get('tag')||'';
-    const first=await list(env.DB,{tag,filter:'published'});
+    const [first,tags]=await Promise.all([list(env.DB,{tag,filter:'published'}),tagsList(env.DB)]);
+    const selected=tags.find(t=>t.id===tag);
+    const tagLabel=selected?.name_zh||selected?.name||tag;
     const items=[...first.items];
     for(let n=2;n<=Math.min(first.pages,5);n++)items.push(...(await list(env.DB,{tag,filter:'published',page:n})).items);
-    return response(rss(items,env.SITE_URL||'https://christorng.idv.tw',tag),'application/rss+xml; charset=utf-8');
+    return response(rss(items,env.SITE_URL||'https://christorng.idv.tw',tag,tagLabel),'application/rss+xml; charset=utf-8');
    }
    const match=p.match(/^\/bookmarks\/([0-9a-f-]{36})\/?$/);
    if(match){
     const b=await get(env.DB,match[1]);
-    return b?shellPage(response(individual(b)),env):response('找不到書籤','text/plain',404);
+    return b?shellPage(response(individual(b,await tagsList(env.DB))),env):response('找不到書籤','text/plain',404);
    }
   }catch{return response('伺服器內部錯誤','text/plain',500);}
   return response('Not Found','text/plain',404);
