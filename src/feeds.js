@@ -1,6 +1,8 @@
 import { esc } from './data.js';
-export function rss(items,siteUrl,tag=''){
+export function rss(items,siteUrl,tag='',tagLabel=''){
  const base=siteUrl.replace(/\/$/,'');
+ const title=(tag ? (tagLabel||tag) : '全部')+'書籤 RSS 訂閱';
+ const feedLink=base+'/bookmarks/'+(tag?'?tag='+encodeURIComponent(tag):'');
  return '<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>書籤 Bookmarks'+(tag?' - '+esc(tag):'')+'</title><link>'+base+'/bookmarks/</link><description>ChrisTorng 分享的書籤</description><language>zh-TW</language>'+items.map(b=>'<item><title>'+esc(b.title)+'</title><link>'+esc(b.url)+'</link><guid isPermaLink="true">'+base+'/bookmarks/'+esc(b.id)+'/</guid><pubDate>'+new Date(b.status_at||b.published_at||b.created_at).toUTCString()+'</pubDate><description>'+esc(b.summary||'')+'</description></item>').join('')+'</channel></rss>';
 }
 export async function shellPage(response,env){
