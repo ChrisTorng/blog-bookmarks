@@ -35,7 +35,7 @@ export async function hnExact(url,fetcher=fetch) {
   const u=new URL(url);
   if(u.hostname==='news.ycombinator.com'&&u.pathname==='/item'){
     const id=u.searchParams.get('id');
-    if(!/^\\d+$/.test(id||''))return null;
+    if(!/^[0-9]+$/.test(id||''))return null;
     const r=await fetcher('https://hacker-news.firebaseio.com/v0/item/'+id+'.json');
     const x=r.ok?await r.json():null;
     return x?.id===Number(id)&&trustedTitle(x.title||'')?{title:x.title,source:'hn-item-id'}:null;
