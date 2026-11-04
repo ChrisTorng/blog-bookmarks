@@ -8,7 +8,7 @@ export async function bulkStatus(req,env){
  const normalized=[...new Set(urls.map(normalUrl))];
  if(!normalized.length)return json([]);
  const marks=normalized.map(()=>'?').join(',');
- const rows=await env.DB.prepare('SELECT id,normalized_url,status FROM bookmarks WHERE normalized_url IN ('+marks+')').bind(...normalized).all();
+ const rows=await env.DB.prepare('SELECT id,normalized_url,stage AS status FROM bookmarks WHERE normalized_url IN ('+marks+')').bind(...normalized).all();
  const result=[];
  for(const item of rows.results){
   const complete=await get(env.DB,item.id,true);
