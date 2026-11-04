@@ -1,0 +1,1 @@
+Five-stage validation: 0 unread, 1 read undecided, 2 decided private, 3 public, 4 recommended. Migration preserves legacy status and original timestamps; public list and RSS require stage >= 3. CI applies migrations and exercises all stages through the Worker API.
