@@ -19,7 +19,7 @@ export function sameArticle(a,b) {
   catch{return false;}
 }
 export function trustedTitle(title) {
-  return title.length>=5&&title.length<=500&&!/^(?:home|welcome|sign in|login|access denied|403|404|just a moment)/i.test(title);
+  return title.length>=5&&title.length<=500&&!/^(?:home|welcome|sign in|login|access denied|403|404|just a moment|hacker news|reddit|verification required|enable javascript)/i.test(title);
 }
 
 export async function inspect(url,fetcher=fetch) {
