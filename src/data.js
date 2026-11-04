@@ -1,5 +1,6 @@
-const fields = "b.id,b.url,b.normalized_url,b.title,b.summary,b.source,b.stage AS status,b.created_at,b.updated_at,b.read_at,b.published_at,b.starred_at, CASE WHEN b.stage=4 THEN COALESCE(b.starred_at,b.published_at,b.created_at) WHEN b.stage=3 THEN COALESCE(b.published_at,b.created_at) ELSE b.created_at END AS status_at,COALESCE((SELECT json_group_array(t.name) FROM bookmark_tags bt JOIN tags t ON t.id=bt.tag_id WHERE bt.bookmark_id=b.id),'[]') AS tags";
-const decode = row => row && ({...row, tags:JSON.parse(row.tags || '[]')});
+import { preferredRedirect, primaryUrl } from './redirect.js';
+const fields = "b.id,b.url,b.normalized_url,b.redirect_url,b.title,b.title_original,b.title_zh,b.summary,b.source,b.stage AS status,b.created_at,b.updated_at,b.read_at,b.published_at,b.starred_at, CASE WHEN b.stage=4 THEN COALESCE(b.starred_at,b.published_at,b.created_at) WHEN b.stage=3 THEN COALESCE(b.published_at,b.created_at) ELSE b.created_at END AS status_at,COALESCE((SELECT json_group_array(t.name) FROM bookmark_tags bt JOIN tags t ON t.id=bt.tag_id WHERE bt.bookmark_id=b.id),'[]') AS tags";
+const decode = row => row && ({...row, preferred_url:primaryUrl(row), tags:JSON.parse(row.tags || '[]')});
 export const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function normalUrl(input) {
   const u = new URL(input);
@@ -11,21 +12,29 @@ export function validate(raw) {
   if (!raw || typeof raw !== 'object') throw new Error('書籤格式無效');
   const url=String(raw.url || '').trim(), normalized_url=normalUrl(url);
   if (url.length > 4096) throw new Error('網址過長');
-  const title=String(raw.title || url).trim();
+  const title_zh=String(raw.title_zh ?? raw.title ?? '').trim();
+  const title_original=String(raw.title_original || '').trim();
+  const title=String(title_zh || title_original || url).trim();
+  const redirect_url=raw.redirect_url == null ? preferredRedirect(url) :
+    (String(raw.redirect_url).trim() || null);
+  const normalizedRedirect=redirect_url ? normalUrl(redirect_url) : null;
+  if (normalizedRedirect && (normalizedRedirect.length>4096 || normalizedRedirect===normalized_url))
+    throw new Error('重導向網址無效');
+  if (title_original.length>500 || title_zh.length>500) throw new Error('標題過長');
   const summary=raw.summary == null ? null : String(raw.summary).trim();
   if (title.length > 500 || (summary && summary.length > 5000)) throw new Error('標題或摘要過長');
   const tagNames=Array.isArray(raw.tags) ? raw.tags.map(x=>String(x).trim()).filter(Boolean) : [];
   const tagMap=new Map();for(const name of tagNames)if(!tagMap.has(name.toLowerCase()))tagMap.set(name.toLowerCase(),name);
   const tags=[...tagMap.values()];
   if(tags.length>30 || tags.some(x=>x.length>80)) throw new Error('標籤過多或過長');
-  return {url,normalized_url,title,summary,tags};
+  return {url,normalized_url,redirect_url:normalizedRedirect,title,title_original:title_original||null,title_zh:title_zh||null,summary,tags};
 }
 export async function get(db,id,includePrivate=false) {
   const row=await db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.id=?${includePrivate?'':' AND b.stage>=3'}`).bind(id).first();
   return decode(row);
 }
 export async function byUrl(db,url) {
-  const row=await db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.normalized_url=?`).bind(normalUrl(url)).first();
+  const row=await db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.normalized_url=? OR b.redirect_url=? LIMIT 1`).bind(normalUrl(url),normalUrl(url)).first();
   return decode(row);
 }
 export async function list(db, {privateList=false,filter='pending',page=1,tag='',sort='new',q=''}={}) {
@@ -40,11 +49,11 @@ export async function list(db, {privateList=false,filter='pending',page=1,tag=''
   else if(filter==='published') conditions.push('b.stage>=3');
   else if(filter==='starred') conditions.push('b.stage=4');
   if(tag){conditions.push("EXISTS(SELECT 1 FROM bookmark_tags t WHERE t.bookmark_id=b.id AND t.tag_id=?)");params.push(tag.toLowerCase());}
-  if(q){conditions.push('(b.title LIKE ? OR b.url LIKE ? OR b.summary LIKE ?)');params.push(...Array(3).fill('%'+q.slice(0,100)+'%'));}
+  if(q){conditions.push('(b.title LIKE ? OR b.title_original LIKE ? OR b.title_zh LIKE ? OR b.url LIKE ? OR b.redirect_url LIKE ? OR b.summary LIKE ?)');params.push(...Array(6).fill('%'+q.slice(0,100)+'%'));}
   const where=conditions.length?' WHERE '+conditions.join(' AND '):'';
   const total=(await db.prepare('SELECT COUNT(*) n FROM bookmarks b'+where).bind(...params).first()).n;
   const dateCol=privateList?'b.created_at':'status_at';
-  const order=sort==='old'?`${dateCol} ASC,b.id ASC`:sort==='title'?'b.title COLLATE NOCASE ASC,b.id DESC':sort==='recommended'?`b.status DESC,${dateCol} DESC,b.id DESC`:`${dateCol} DESC,b.id DESC`;
+  const order=sort==='old'?`${dateCol} ASC,b.id ASC`:sort==='title'?'b.title COLLATE NOCASE ASC,b.id DESC':sort==='recommended'?`b.stage DESC,${dateCol} DESC,b.id DESC`:`${dateCol} DESC,b.id DESC`;
   const rows=await db.prepare(`SELECT ${fields} FROM bookmarks b${where} ORDER BY ${order} LIMIT 20 OFFSET ?`).bind(...params,(n-1)*20).all();
   return {items:rows.results.map(decode),page:n,pages:Math.max(1,Math.ceil(total/20)),total};
 }
@@ -68,7 +77,7 @@ export async function create(db,raw) {
   if(exists) return {item:exists,alreadyExists:true};
   const now=new Date().toISOString(), id=crypto.randomUUID();
   const source=String(raw.source||'manual').slice(0,80);
-  await db.prepare('INSERT INTO bookmarks(id,url,normalized_url,title,summary,source,status,created_at,updated_at) VALUES(?,?,?,?,?,?,0,?,?)').bind(id,x.url,x.normalized_url,x.title,x.summary,source,now,now).run();
+  await db.prepare('INSERT INTO bookmarks(id,url,normalized_url,redirect_url,title,title_original,title_zh,summary,source,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,0,?,?)').bind(id,x.url,x.normalized_url,x.redirect_url,x.title,x.title_original,x.title_zh,x.summary,source,now,now).run();
   await replaceTags(db,id,x.tags);
   return {item:await get(db,id,true),alreadyExists:false};
 }
@@ -86,9 +95,11 @@ export async function patch(db,id,raw) {
       await db.prepare('UPDATE bookmarks SET stage=?,status=?,read_at=?,published_at=?,starred_at=?,updated_at=? WHERE id=?').bind(status,legacyStatus,readAt,publishAt,starredAt,now,id).run();
     }
   }
-  if(['url','title','summary','tags'].some(x=>x in raw)){
+  if(['url','redirect_url','title','title_original','title_zh','summary','tags'].some(x=>x in raw)){
     const x=validate({...current,...raw});
-    await db.prepare('UPDATE bookmarks SET url=?,normalized_url=?,title=?,summary=?,updated_at=? WHERE id=?').bind(x.url,x.normalized_url,x.title,x.summary,new Date().toISOString(),id).run();
+    const conflict=await db.prepare('SELECT id FROM bookmarks WHERE (normalized_url=? OR redirect_url=?) AND id<>? LIMIT 1').bind(x.normalized_url,x.normalized_url,id).first();
+    if(conflict)throw new Error('網址已被其他書籤收藏');
+    await db.prepare('UPDATE bookmarks SET url=?,normalized_url=?,redirect_url=?,title=?,title_original=?,title_zh=?,summary=?,updated_at=? WHERE id=?').bind(x.url,x.normalized_url,x.redirect_url,x.title,x.title_original,x.title_zh,x.summary,new Date().toISOString(),id).run();
     if('tags' in raw)await replaceTags(db,id,x.tags);
   }
   return get(db,id,true);
