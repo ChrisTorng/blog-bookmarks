@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.3.0
+// @version      0.4.0
 // @description  Collect links into private bookmarks
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -23,7 +23,7 @@
     const TOKEN_KEY = 'blog-bookmarks-ingest-token';
     const TAGS_KEY = 'blog-bookmarks-tags-cache';
     const BUTTON_CLASS = 'tm-blog-bookmarks-save';
-    const TITLE_CLASS = 'tm-blog-bookmarks-title';
+    const TOOLBAR_CLASS = 'tm-betacat-article-tools';
 
     let token = GM_getValue(TOKEN_KEY, '');
     const categories = new Set(GM_getValue(TAGS_KEY, ['default']));
@@ -120,7 +120,7 @@
             const { button, url } = control;
             const entry = saved.get(url);
             const tags = entry?.tags || [];
-            const label = entry ? (tags.length ? tags.slice(0, 2).join(', ') : '✓') : '☆';
+            const label = entry ? (tags.length ? tags.join(', ') : '✓') : '☆';
             if (button.textContent !== label) button.textContent = label;
             button.disabled = pending.has(url);
             button.setAttribute('aria-pressed', String(Boolean(entry)));
@@ -371,9 +371,18 @@
         close.textContent = '×';
         close.setAttribute('aria-label', '關閉分類選單');
         close.addEventListener('click', closeMenu);
-        header.append(heading, close);
+        const settings = document.createElement('button');
+        settings.type = 'button';
+        settings.className = 'menu-settings';
+        settings.textContent = '⚙';
+        settings.title = '設定';
+        settings.setAttribute('aria-label', 'Bookmarks 設定');
+        settings.addEventListener('click', () => { closeMenu(); openSettings(); });
+        header.append(heading, settings, close);
         const list = document.createElement('div');
         list.className = 'category-list';
+        const actions = document.createElement('div');
+        actions.className = 'menu-actions';
         const addButton = document.createElement('button');
         addButton.type = 'button';
         addButton.textContent = '+ 新增分類';
@@ -389,7 +398,7 @@
             confirm.type = 'submit';
             confirm.textContent = '加入';
             form.append(input, confirm);
-            addButton.replaceWith(form);
+            actions.replaceChildren(form);
             form.addEventListener('submit', event => {
                 event.preventDefault();
                 const category = input.value.trim();
@@ -403,11 +412,12 @@
             input.focus();
             positionMenu();
         });
-        const configure = document.createElement('button');
-        configure.type = 'button';
-        configure.textContent = 'Bookmarks 設定';
-        configure.addEventListener('click', () => { closeMenu(); openSettings(); });
-        panel.append(header, list, addButton, configure);
+        const manage = document.createElement('button');
+        manage.type = 'button';
+        manage.textContent = '管理書籤';
+        manage.addEventListener('click', () => window.open('https://christorng.idv.tw/bookmarks/admin/', '_blank', 'noopener,noreferrer'));
+        actions.append(addButton, manage);
+        panel.append(header, list, actions);
         updateMenuCategories();
     }
 
@@ -420,8 +430,8 @@
         const style = document.createElement('style');
         style.textContent = `
             :host{all:initial}
-            .panel{box-sizing:border-box;position:fixed;z-index:2147483647;margin:0;padding:8px;width:min(240px,calc(100vw - 16px));
-                max-height:min(400px,calc(var(--menu-height,100dvh) - 16px));overflow:auto;border:1px solid #91a4b8;border-radius:10px;
+            .panel{box-sizing:border-box;position:fixed;z-index:2147483647;margin:0;padding:8px;width:min(360px,calc(100vw - 16px));
+                max-height:calc(var(--menu-height,100dvh) - 16px);overflow:auto;border:1px solid #91a4b8;border-radius:10px;
                 background:#fff;color:#18212b;box-shadow:0 6px 24px #0003;font:14px/1.35 system-ui,sans-serif}
             .panel::backdrop{background:transparent}
             button,input{box-sizing:border-box;display:block;width:100%;min-height:40px;margin:2px 0;padding:6px 9px;
@@ -433,6 +443,12 @@
             .menu-header{position:sticky;top:-8px;display:flex;align-items:center;justify-content:space-between;gap:5px;background:#fff}
             .caption{font-size:12px;font-weight:650;color:#53667b;padding:5px}
             .menu-close{flex:none;width:40px;font-size:22px;text-align:center;line-height:1}
+            .menu-settings{flex:none;width:40px;font-size:20px;text-align:center;line-height:1;margin-left:auto}
+            .category-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;min-width:0}
+            .category-list button{min-width:0;margin:0;white-space:normal;overflow-wrap:anywhere;line-height:1.4}
+            .menu-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:8px}
+            .menu-actions button{min-width:0;margin:0;white-space:normal}
+            .menu-actions .new-category{grid-column:1/-1}
             .new-category{display:flex;align-items:center;gap:4px;margin:3px 0}
             .new-category input{min-width:0;flex:1;font-size:16px}
             .new-category button{flex:none;width:auto}
@@ -549,8 +565,17 @@
         for (const link of document.querySelectorAll('article.post-item .post-title a.post-url')) {
             if (controls.get(link)?.button.isConnected) continue;
             try { articleData(link); } catch { continue; }
+            const article = link.closest('article.post-item');
             const title = link.closest('.post-title');
-            if (!title) continue;
+            if (!article || !title) continue;
+            let toolbar = article.querySelector(':scope > .' + TOOLBAR_CLASS);
+            if (!toolbar) {
+                toolbar = document.createElement('div');
+                toolbar.className = TOOLBAR_CLASS;
+                article.insertBefore(toolbar, title);
+            }
+            const oldCollapseButton = article.querySelector(':scope > .auto-open-new-articles-item-toggle');
+            if (oldCollapseButton) toolbar.prepend(oldCollapseButton);
             const button = document.createElement('button');
             button.type = 'button';
             button.className = BUTTON_CLASS;
@@ -561,8 +586,7 @@
                 event.stopImmediatePropagation();
                 openMenu(link);
             });
-            title.classList.add(TITLE_CLASS);
-            title.appendChild(button);
+            toolbar.appendChild(button);
             controls.set(link, { button, url: normalize(link.href) });
             added++;
         }
@@ -572,19 +596,26 @@
     function start() {
         const style = document.createElement('style');
         style.textContent = `
-            .${TITLE_CLASS}{display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;
-                align-items:start!important;column-gap:.5rem!important}
-            .${TITLE_CLASS} > h3{min-width:0!important;margin-block:0!important;grid-column:1!important}
-            .${BUTTON_CLASS}{all:unset!important;display:inline-block!important;box-sizing:border-box!important;min-height:36px!important;
-                margin:0!important;grid-column:2!important;grid-row:1!important;align-self:start!important;max-width:6rem!important;
-                overflow:hidden!important;text-overflow:ellipsis!important;padding:4px 8px!important;border:1px solid #87a6c2!important;
-                border-radius:6px!important;font:500 20px/1.2 system-ui,sans-serif!important;color:#145486!important;
-                background:#f1f7ff!important;white-space:nowrap!important;cursor:pointer!important;touch-action:manipulation!important}
-            .${BUTTON_CLASS}:hover,.${BUTTON_CLASS}:focus-visible{background:#dbeaff!important;outline:2px solid #3777b7!important}
+            article.post-item.auto-open-new-articles-managed{padding-left:0!important}
+            article.post-item > .${TOOLBAR_CLASS}{display:flex!important;align-items:flex-start!important;
+                justify-content:space-between!important;gap:8px!important;min-height:32px!important;
+                min-width:0!important;width:100%!important;box-sizing:border-box!important;
+                padding:0!important;margin:0 0 6px!important;clear:both!important}
+            article.post-item > .${TOOLBAR_CLASS} > .auto-open-new-articles-item-toggle{
+                position:static!important;left:auto!important;top:auto!important;flex:0 0 28px!important;
+                width:28px!important;height:28px!important;min-height:28px!important;line-height:26px!important}
+            .${BUTTON_CLASS}{all:unset!important;display:block!important;box-sizing:border-box!important;
+                flex:0 1 auto!important;max-width:calc(100% - 38px)!important;min-width:35px!important;min-height:32px!important;
+                margin:0 0 0 auto!important;padding:4px 8px!important;border:1px solid #87a6c2!important;
+                border-radius:6px!important;font:500 17px/1.3 system-ui,sans-serif!important;
+                color:#145486!important;background:#f1f7ff!important;
+                white-space:normal!important;overflow-wrap:anywhere!important;word-break:normal!important;
+                text-align:right!important;cursor:pointer!important;touch-action:manipulation!important}
+            .${BUTTON_CLASS}:hover,.${BUTTON_CLASS}:focus-visible{
+                background:#dbeaff!important;outline:2px solid #3777b7!important}
             .${BUTTON_CLASS}:disabled{opacity:.7!important;cursor:default!important}
             .${BUTTON_CLASS}[aria-pressed="true"]{font-size:13px!important;color:#166c34!important;border-color:#519467!important}
-        `;
-        document.head.appendChild(style);
+        `;        document.head.appendChild(style);
         scan();
         new MutationObserver(() => {
             if (scanScheduled) return;
