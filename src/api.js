@@ -3,7 +3,7 @@ import {bulkStatus,updateTags} from './ingest.js';
 import {validIngestToken,rotateIngestToken} from './token.js';
 import {list,get,byUrl,create,patch,remove,tagsList,renameTag} from './data.js';
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
-export function opts(url,privateList=false){return {privateList,filter:url.searchParams.get('filter')||(privateList?'unread':'published'),tag:url.searchParams.get('tag')||'',page:url.searchParams.get('page')||1,sort:url.searchParams.get('sort')||'new',q:url.searchParams.get('q')||''};}
+export function opts(url,privateList=false){return {privateList,filter:url.searchParams.get('filter')||(privateList?'pending':'published'),tag:url.searchParams.get('tag')||'',page:url.searchParams.get('page')||1,sort:url.searchParams.get('sort')||'new',q:url.searchParams.get('q')||''};}
 async function input(req){
  if(!req.headers.get('Content-Type')?.startsWith('application/json'))throw Error('需要 JSON 格式');
  const length=Number(req.headers.get('Content-Length')||0);if(length>100000)throw Error('資料過大');
