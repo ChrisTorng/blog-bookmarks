@@ -1,7 +1,46 @@
 const $ = id => document.getElementById(id);
 const local = ['localhost','127.0.0.1'].includes(location.hostname);
 const tokenKey = 'blog-bookmarks-admin-token';
-const state = {filter:'unread', sort:'new', page:1, tag:'', q:'', items:[], tags:[], pending:new Map(), writes:new Map()};
+const allowedFilters = ['unread','read','all','published','starred'];
+const allowedSorts = ['new','old','recommended','title'];
+const stateKeys = ['filter','sort','tag','q','page'];
+function readLocationState(){
+ const query = new URLSearchParams(location.search);
+ const rawPage = query.get('page') || '1';
+ return {
+  filter: allowedFilters.includes(query.get('filter')) ? query.get('filter') : 'unread',
+  sort: allowedSorts.includes(query.get('sort')) ? query.get('sort') : 'new',
+  tag: (query.get('tag') || '').slice(0,80),
+  q: (query.get('q') || '').slice(0,100),
+  page: /^\\d+$/.test(rawPage) ? Math.min(100000, Math.max(1,Number(rawPage))) : 1
+ };
+}
+const state = {...readLocationState(), items:[], tags:[], pending:new Map(), writes:new Map()};
+let refreshGeneration = 0;
+function syncControls(){
+ $('filter').value=state.filter;
+ $('sort').value=state.sort;
+ $('q').value=state.q;
+ $('tag').value=state.tag;
+}
+function updateLocation(replace=false){
+ const url=new URL(location.href);
+ for(const key of stateKeys)url.searchParams.delete(key);
+ if(state.filter!=='unread')url.searchParams.set('filter',state.filter);
+ if(state.sort!=='new')url.searchParams.set('sort',state.sort);
+ if(state.tag)url.searchParams.set('tag',state.tag);
+ if(state.q)url.searchParams.set('q',state.q);
+ if(state.page!==1)url.searchParams.set('page',String(state.page));
+ history[replace?'replaceState':'pushState'](history.state,'',url.href);
+}
+function navigate(next,{scrollTop=false,replace=false}={}){
+ Object.assign(state,next);
+ state.pending.clear();
+ syncControls();
+ updateLocation(replace);
+ void refresh();
+ if(scrollTop)window.scrollTo({top:0,behavior:'auto'});
+}
 const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const dateText = value => value ? new Intl.DateTimeFormat('zh-TW',{timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(value)) : '';
 function headers(){const h={};if(local&&sessionStorage.getItem(tokenKey))h.Authorization='Bearer '+sessionStorage.getItem(tokenKey);return h;}
