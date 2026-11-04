@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.0
+// @version      0.5.1
 // @description  One-tap unread bookmark star; organize and publish from the bookmarks manager
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -45,6 +45,49 @@
 
     // Mirrors the deterministic mappings in TampermonkeyScripts/src/RedirectUrls.user.js.
     // X's first mirror is a preferred URL, not a verified reachable final destination.
+
+    // Mirrors the @match domains in InternetArchive.user.js and ArchiveToday.user.js.
+    // Their overlapping matches are not an observable final-redirect guarantee.
+    const ARCHIVE_TODAY_HOSTS = new Set([
+        "www.404media.co",
+        "www.bloomberg.com",
+        "www.economist.com",
+        "www.ft.com",
+        "www.nature.com",
+        "www.newscientist.com",
+        "www.newyorker.com",
+        "www.nytimes.com",
+        "www.theatlantic.com",
+        "www.wired.com",
+        "www.wsj.com"
+    ]);
+    const INTERNET_ARCHIVE_HOSTS = new Set([
+        "fortune.com",
+        "nautil.us",
+        "www.australiangeographic.com.au",
+        "www.bbc.com",
+        "www.cnbc.com",
+        "www.lrb.co.uk",
+        "www.scientificamerican.com",
+        "www.rawstory.com",
+        "www.scmp.com",
+        "www.smh.com.au",
+        "www.thetimes.com",
+        "www.theverge.com",
+        "www.washingtonpost.com",
+        "www.404media.co",
+        "www.bloomberg.com",
+        "www.economist.com",
+        "www.ft.com",
+        "www.nature.com",
+        "www.newscientist.com",
+        "www.newyorker.com",
+        "www.nytimes.com",
+        "www.theatlantic.com",
+        "www.wired.com",
+        "www.wsj.com"
+    ]);
+
     function redirectedUrl(input) {
         const url = new URL(input);
         const host = url.hostname.toLowerCase();
@@ -74,12 +117,30 @@
             const id = url.pathname.replace(/^\/(abs|pdf)\//, '').replace(/\.pdf$/, '');
             if (id) return 'https://arxiv.org/html/' + id;
         }
+        if (url.protocol === 'https:' && INTERNET_ARCHIVE_HOSTS.has(host))
+            return 'https://web.archive.org/' + url.href;
+        if (url.protocol === 'https:' && ARCHIVE_TODAY_HOSTS.has(host))
+            return 'https://archive.is/submit/?url=' + url.href;
         return null;
     }
 
     function sourceAndTarget(input) {
         const url = normalize(input);
         const parsed = new URL(url);
+        // Article lists may already point to an archive entry point. Retain both.
+        if (parsed.hostname === 'web.archive.org') {
+            const match = parsed.pathname.match(/^\/(?:web\/[^/]+\/)?(https?:\/\/.*)$/i);
+            if (match) {
+                try { return { url: normalize(match[1] + parsed.search), redirect_url: url }; }
+                catch {}
+            }
+        }
+        if (['archive.is','archive.ph'].includes(parsed.hostname) &&
+            parsed.pathname === '/submit/' && parsed.searchParams.get('url')) {
+            try {
+                return { url: normalize(parsed.searchParams.get('url')), redirect_url: url };
+            } catch {}
+        }
         if (['nitter.tiekoetter.com', 'nitter.meowing.monster', 'xnologin.com',
             'shitter.thepixora.com'].includes(parsed.hostname) &&
             /^\/[^/]+\/status\/\d+/.test(parsed.pathname)) {

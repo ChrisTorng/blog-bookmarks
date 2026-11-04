@@ -12,9 +12,10 @@ export function validate(raw) {
   if (!raw || typeof raw !== 'object') throw new Error('書籤格式無效');
   const url=String(raw.url || '').trim(), normalized_url=normalUrl(url);
   if (url.length > 4096) throw new Error('網址過長');
-  const title_zh=String(raw.title_zh ?? raw.title ?? '').trim();
-  const title_original=String(raw.title_original || '').trim();
-  const title=String(title_zh || title_original || url).trim();
+  const visible=String(raw.title||'').trim();
+  const title_zh=String(raw.title_zh ?? (/[\u3400-\u9fff]/.test(visible)?visible:'')).trim();
+  const title_original=String(raw.title_original||'').trim();
+  const title=String(title_zh || visible || title_original || url).trim();
   const redirect_url=raw.redirect_url == null ? preferredRedirect(url) :
     (String(raw.redirect_url).trim() || null);
   const normalizedRedirect=redirect_url ? normalUrl(redirect_url) : null;
