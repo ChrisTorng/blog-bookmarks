@@ -69,3 +69,26 @@ export async function review(item,transport=fetch) {
     summary:description&&!invalidSummary(description)?description:null,
     invalid_existing_summary:invalidSummary(item.summary)};
 }
+
+export async function betaCatExact(item,transport=fetch) {
+  if(!item.created_at)return null;
+  const t=Date.parse(item.created_at);
+  if(!Number.isFinite(t))return null;
+  const dates=[0,-1,-2,-3].map(n=>new Date(t+n*86400000).toISOString().slice(0,10));
+  for(const date of dates){
+    try{
+      const page=await transport('https://hackernews.betacat.io/daily/'+date+'/',{redirect:'manual'});
+      if(!page.ok)continue;
+      const html=(await page.text()).slice(0,1500000);
+      const links=[...html.matchAll(/<a\\b([^>]*)>([\\s\\S]*?)<\\/a>/gi)];
+      const matching=links.filter(m=>m[1].includes('post-url')).filter(m=>{
+        const url=m[1].match(/href=["']([^"']+)["']/)?.[1];
+        return url&&sameArticle(item.url,url.replace(/&amp;/g,'&'));
+      });
+      if(matching.length!==1)continue;
+      const title=clean(matching[0][2]);
+      if(trustedTitle(title))return {title,source:'betacat-exact-url',date};
+    }catch{}
+  }
+  return null;
+}
