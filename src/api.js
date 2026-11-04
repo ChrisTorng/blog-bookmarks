@@ -1,7 +1,7 @@
 import {isAdmin,safeOrigin,sameToken} from './auth.js';
 import {bulkStatus,updateTags} from './ingest.js';
 import {validIngestToken,rotateIngestToken} from './token.js';
-import {list,get,byUrl,create,patch,remove,tagsList} from './data.js';
+import {list,get,byUrl,create,patch,remove,tagsList,renameTag} from './data.js';
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
 export function opts(url,privateList=false){return {privateList,filter:url.searchParams.get('filter')||(privateList?'unread':'published'),tag:url.searchParams.get('tag')||'',page:url.searchParams.get('page')||1,sort:url.searchParams.get('sort')||'new',q:url.searchParams.get('q')||''};}
 async function input(req){
@@ -22,6 +22,11 @@ export async function api(req,env,url){
   }
   if(p==='/bookmarks/api/admin/ingest-token'&&req.method==='POST')return json(await rotateIngestToken(env.DB));
   if(p==='/bookmarks/api/admin/tags'&&req.method==='GET')return json(await tagsList(env.DB,true));
+  const tagMatch=p.match(/^\/bookmarks\/api\/admin\/tags\/([^/]+)\/?$/);
+  if(tagMatch&&req.method==='PATCH'){
+   const changed=await renameTag(env.DB,decodeURIComponent(tagMatch[1]),await input(req));
+   return changed?json(changed):json({error:'找不到標籤'},404);
+  }
   if(p==='/bookmarks/api/admin/check'&&req.method==='GET'){
    const target=url.searchParams.get('url');return json(target?await byUrl(env.DB,target):null);
   }
