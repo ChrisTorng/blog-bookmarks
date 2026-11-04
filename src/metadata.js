@@ -8,7 +8,7 @@ const clean=s=>String(s||'').replace(/&amp;/g,'&').replace(/&quot;/g,'"').replac
 export function metadata(html) {
   const tags=[...html.matchAll(/<meta\b[^>]*>/gi)].map(m=>m[0]);
   function find(name) {
-    const tag=tags.find(t=>new RegExp('(?:name|property)=["\\']'+name+'["\\']','i').test(t));
+    const tag=tags.find(t=>t.includes('property="'+name+'"')||t.includes('name="'+name+'"'));
     return tag?.match(/content=["']([^"']*)["']/i)?.[1]||'';
   }
   return {title:clean(find('og:title')||html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]),
