@@ -21,8 +21,10 @@ header h1{font-size:1.6rem;letter-spacing:-.02em;margin:0;font-weight:750}
 header a{font-size:.85rem}
 .filters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:9px;margin:12px 0 14px;align-items:center}
 .filters select,.filters input{min-width:0;width:100%}
-.filters input#q{grid-column:1/-2}
-#new{grid-column:-2/-1;background:var(--accent);border-color:var(--accent);color:#fff}
+.filters input#q{grid-column:1/3}
+#searchBtn{grid-column:3/4}
+#manageTags{grid-column:4/5}
+#new{grid-column:4/5;background:var(--accent);border-color:var(--accent);color:#fff}
 #new:hover{filter:brightness(.95);color:#fff}
 #message{color:var(--muted);min-height:1.5em;font-size:.84rem;margin:8px 0}
 #message.error{color:#dc2626}
@@ -71,7 +73,9 @@ dialog #deleteItem:disabled{display:none}
  .filters{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
  .filters #filter,.filters #tag{grid-column:auto}
  .filters #sort{grid-column:1/2}
+ .filters #manageTags{grid-column:2/3}
  .filters #q{grid-column:1/-1}
+ #searchBtn{grid-column:1/2}
  #new{grid-column:2/3}
  .item{padding:13px 12px;margin:9px 0;border-radius:10px}
  .title{font-size:1rem}
@@ -84,3 +88,12 @@ dialog #deleteItem:disabled{display:none}
  dialog textarea{min-height:140px}
 }
 @media(prefers-color-scheme:dark){:root{--bg:#111827;--surface:#172033;--ink:#e2e8f0;--muted:#a6b2c4;--line:#384355;--accent:#60a5fa;--soft:#1a2d49}}
+
+
+.tag-hint{font-size:.85rem;line-height:1.6;color:var(--muted);margin:0}
+.tag-columns,.tag-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) 42px;gap:7px;align-items:center}
+.tag-columns{font-size:.8rem;color:var(--muted);margin:6px 0;font-weight:600}
+#tagRows{max-height:min(55dvh,530px);overflow:auto;display:grid;gap:7px}
+.tag-row input{min-width:0;width:100%;font-size:.88rem}
+.tag-count{text-align:center;color:var(--muted);font-size:.8rem;font-variant-numeric:tabular-nums}
+@media(max-width:650px){.tag-columns,.tag-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 28px;gap:5px}.tag-row input{padding:8px 5px;font-size:.83rem}}
