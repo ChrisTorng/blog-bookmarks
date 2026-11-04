@@ -96,7 +96,7 @@ export async function renameTag(db,id,value){
   const current=await db.prepare('SELECT id,name,name_zh FROM tags WHERE id=?').bind(id).first();
   if(!current)return null;
   const name=String(value.name??current.name).trim();
-  const nameZh=String(value.name_zh??'').trim();
+  const nameZh=String(value.name_zh??current.name_zh??'').trim();
   if(!name||name.length>80||nameZh.length>80)throw new Error('標籤名稱不可為空或超過 80 字');
   const conflict=await db.prepare('SELECT id FROM tags WHERE name=? COLLATE NOCASE AND id<>?').bind(name,id).first();
   if(conflict)throw new Error('英文標籤名稱已存在');
