@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { preferredRedirect,primaryUrl,ARCHIVE_TODAY_HOSTS,INTERNET_ARCHIVE_HOSTS } from '../src/redirect.js';
+import { preferredRedirect,primaryUrl,ARCHIVE_TODAY_HOSTS,INTERNET_ARCHIVE_HOSTS,KNOWN_ARCHIVE_SNAPSHOTS,correctLegacyRedirect } from '../src/redirect.js';
 import { validate } from '../src/data.js';
 
 test('redirects agree with deterministic RedirectUrls rules',()=>{
@@ -25,10 +25,10 @@ test('validate saves both title languages and both URLs',()=>{
 
 test('archival redirects cover all @match domains from both userscripts',()=>{
  assert.equal(ARCHIVE_TODAY_HOSTS.size,11);
- assert.equal(INTERNET_ARCHIVE_HOSTS.size,24);
+ assert.equal(INTERNET_ARCHIVE_HOSTS.size,13);
  for(const host of ARCHIVE_TODAY_HOSTS) {
-   assert.ok(INTERNET_ARCHIVE_HOSTS.has(host),'Overlap expected for '+host);
-   assert.equal(preferredRedirect('https://'+host+'/story?x=1'),'https://web.archive.org/https://'+host+'/story?x=1');
+   assert.ok(!INTERNET_ARCHIVE_HOSTS.has(host),'Collision should be resolved for '+host);
+   assert.equal(preferredRedirect('https://'+host+'/story?x=1'),'https://archive.is/submit/?url='+encodeURIComponent('https://'+host+'/story?x=1'));
  }
  const onlyIA=[
    'fortune.com','nautil.us','www.australiangeographic.com.au','www.bbc.com',
@@ -51,4 +51,15 @@ test('English-only title stays original; Chinese title is stored only when avail
  const translated=validate({url:'https://example.org/b',title:'繁體中文標題',title_original:'English headline'});
  assert.equal(translated.title_zh,'繁體中文標題');
  assert.equal(translated.title_original,'English headline');
+});
+
+test('exact verified snapshot links and already saved old Wayback redirects are corrected',()=>{
+ const originals=["https://www.404media.co/anyone-can-push-updates-to-the-doge-gov-website-2/","https://www.theatlantic.com/magazine/archive/2025/02/american-loneliness-personality-politics/681091/","https://www.wsj.com/world/dozens-feared-dead-in-crash-after-passenger-flight-diverts-from-russia-fb2cdf2c"];
+ const snapshots=["https://archive.ph/wy1Wt","https://archive.is/20250108154250/https://www.theatlantic.com/magazine/archive/2025/02/american-loneliness-personality-politics/681091","https://archive.is/T0atg"];
+ originals.forEach((original,i)=>{
+   assert.equal(KNOWN_ARCHIVE_SNAPSHOTS.get(original),snapshots[i]);
+   assert.equal(preferredRedirect(original),snapshots[i]);
+   assert.equal(primaryUrl({url:original,redirect_url:'https://web.archive.org/'+original}),snapshots[i]);
+ });
+ assert.equal(correctLegacyRedirect(originals[0],'https://custom.example/a'),'https://custom.example/a');
 });

@@ -24,18 +24,22 @@
 - `www.scientificamerican.com`、`www.rawstory.com`、`www.scmp.com`、`www.smh.com.au`
 - `www.thetimes.com`、`www.theverge.com`、`www.washingtonpost.com`
 
-另外 11 個重疊網域（下段列出）也在此腳本的有效 `@match` 中。帶三條斜線 `/// @match` 的註解**不算有效匹配**，但部分網域後來已重新以 `// @match` 納入。
+另外原先重疊的 11 個網域已於 2026-11-05 **完全移除有效 @match**，由 ArchiveToday.user.js 獨家處理；本腳本仍支援 Wayback 頁內手動切換 Archive Today。
 
 ### 3. ArchiveToday.user.js
 
-11 個 HTTPS 網域，預設自動轉 `https://archive.is/submit/?url=<原始網址>`：
+11 個 HTTPS 網域，無固定快照時轉 `https://archive.is/submit/?url=<URL 編碼後原始網址>`：
 
 - `www.404media.co`、`www.bloomberg.com`、`www.economist.com`
 - `www.ft.com`、`www.nature.com`、`www.newscientist.com`
 - `www.newyorker.com`、`www.nytimes.com`
 - `www.theatlantic.com`、`www.wired.com`、`www.wsj.com`
 
-這 11 個網域同時包含在目前 `InternetArchive.user.js` 的有效匹配中。兩支腳本若都啟用，可能因執行順序出現不同結果。目前 Bookmarks 對此重疊集合**優先建議 Wayback Machine**（InternetArchive 原始碼亦有「從 ArchiveToday 移來」註解）；這只是優先候選，不代表確認使用者的腳本啟用狀態或封存服務已成功產生快照。
+使用者 2026-11-05 逐項測試 11 筆文章，**11 筆全部到 Archive Today（a）**；已移除 InternetArchive.user.js 的重疊匹配，更新 Bookmarks 優先規則。
+
+三筆有具體固定快照連結的文章直接開啟快照（404 Media：https://archive.ph/wy1Wt；The Atlantic：https://archive.is/20250108154250/https://www.theatlantic.com/magazine/archive/2025/02/american-loneliness-personality-politics/681091；WSJ：https://archive.is/T0atg，最後一筆由使用者實測提供）。其他文章繼續 /submit/ 流程，不推測快照 ID。
+
+兩支 archive 腳本加入 `@run-at document-start`，減少先顯示原站再跳轉；但瀏覽器的初始 HTTP 請求可能已送出，不能保證完全不發生原站網路連線。RedirectUrls.user.js 已使用 document-start；X/Twitter 特定分支為保留正常 Back/Forward 歷史順序，仍有意等待原始頁面 load 完成。
 
 ## 非自動重導向
 
@@ -54,7 +58,7 @@
 
 - `url` / `normalized_url` 是**原始網址**，不可因推導出的優先重導向而覆寫。
 - `redirect_url` 代表使用者設定、當時已知的目的地，或上述**推導候選**，且在後台可編輯。
-- `preferred_url` 優先採用 `redirect_url`，否則套用已知規則，再回退原始網址。
+- `preferred_url` 優先採用 `redirect_url`，否則套用已知規則，再回退原始網址；唯一例外是**舊版自動產生的精確 Wayback 重疊網址**，會自動改用現行 Archive Today 規則，人工指定的其他網址不變。
 - 不宣稱已驗證候選網址可用或是 archive 的永久快照；使用者可在後台改為確定可用的快照連結。
 - 即使原文標題未能取得，也不把英文標題填入 `title_zh` 假裝成中文翻譯。
 - 後續若要區分多個啟用狀態，可加入使用者個別規則優先權設定，而不應依任意檔名順序假設瀏覽器實際導向。

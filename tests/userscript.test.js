@@ -72,3 +72,11 @@ test('original-language publisher title never comes from redirect target',()=>{
  assert.match(source,/meta\[name="twitter:title"\]/);
  assert.match(source,/\/\/ @connect\s+\*/);
 });
+
+test('publisher-specific snapshots and corrected archive owners match source rules',()=>{
+ assert.match(source,/KNOWN_ARCHIVE_SNAPSHOTS/);
+ assert.match(source,/ORIGINAL_BY_SNAPSHOT/);
+ assert.match(source,/KNOWN_ARCHIVE_SNAPSHOTS\\.get\\(url\\.href\\)/);
+ assert.match(source,/encodeURIComponent\\(url\\.href\\)/);
+ assert.match(source,/https:\\/\\/archive\\.is\\/T0atg/);
+});
