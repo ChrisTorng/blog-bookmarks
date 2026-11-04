@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.5
+// @version      0.5.6
 // @description  One-tap unread bookmark star; organize and publish from the bookmarks manager
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -12,7 +12,7 @@
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
 // @grant        GM_xmlhttpRequest
-// @run-at       document-end
+// @run-at       document-start
 // @noframes
 // ==/UserScript==
 
@@ -181,8 +181,22 @@
         });
     }
 
-    // Fetch the unmodified HTML of the source list, because browser translation
-    // has already replaced the live DOM text by the time this script sees it.
+    // Capture every original title as early as the browser inserts it into the DOM.
+    // Do not overwrite the first English title with Edge's later translated text.
+    function captureOriginalTitles() {
+        for (const link of document.querySelectorAll('article.post-item .post-title a.post-url')) {
+            try {
+                const key = normalize(link.getAttribute('href') || link.href);
+                if (originalTitles.has(key)) continue;
+                const title = (link.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+                if (title && !/[\u3400-\u9fff]/.test(title)) originalTitles.set(key, title);
+            } catch {}
+        }
+    }
+
+    // One immediate, page-load-only fallback request for untranslated BetaCat HTML.
+    // A changing news feed cannot mix titles because keys are the article URLs.
+    // This function is never called from the star-click handler.
     function loadOriginalTitles() {
         if (originalTitleTask) return originalTitleTask;
         originalTitleTask = fetch(location.href, { credentials: 'same-origin', cache: 'no-store' })
@@ -196,7 +210,7 @@
                     try {
                         const key = normalize(link.getAttribute('href'));
                         const title = (link.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 500);
-                        if (title) originalTitles.set(key, title);
+                        if (title && !originalTitles.has(key)) originalTitles.set(key, title);
                     } catch {}
                 }
             })
@@ -282,9 +296,7 @@
                 await request('/remove', 'POST', { url: key });
                 saved.delete(key);
             } else {
-                // Allow the original English page title to arrive before submission.
-                await Promise.race([loadOriginalTitles(),
-                    new Promise(resolve => setTimeout(resolve, 2500))]);
+                // Use the title snapshot, never refetch or wait on a click.
                 const article = articleData(link);
                 // The same-origin BetaCat HTML preserves its English title.
                 // The Worker can enrich missing titles without browser cross-origin access.
@@ -444,7 +456,7 @@
             '.' + BUTTON_CLASS + ':disabled{opacity:.75!important;cursor:default!important}' +
             '.' + BUTTON_CLASS + '[aria-pressed="true"]{color:#d19a06!important;border-color:#d19a06!important;background:#fff9e8!important}';
         document.head.appendChild(style);
-        void loadOriginalTitles();
+        captureOriginalTitles();
         scan();
         const observer = new MutationObserver(() => {
             if (scanScheduled) return;
@@ -453,6 +465,13 @@
         });
         observer.observe(document.body, { childList: true, subtree: true });
     }
+
+    // Start before document-end/Edge Translate. Keep collecting new article
+    // nodes if the listing updates, without making any further page requests.
+    const originalTitleObserver = new MutationObserver(captureOriginalTitles);
+    originalTitleObserver.observe(document, { childList: true, subtree: true, characterData: true });
+    captureOriginalTitles();
+    void loadOriginalTitles();
 
     GM_registerMenuCommand('Blog Bookmarks 設定', () => openSettings());
     GM_registerMenuCommand('開啟書籤管理', () =>
