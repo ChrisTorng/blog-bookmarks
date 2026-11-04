@@ -62,3 +62,12 @@
 - 不宣稱已驗證候選網址可用或是 archive 的永久快照；使用者可在後台改為確定可用的快照連結。
 - 即使原文標題未能取得，也不把英文標題填入 `title_zh` 假裝成中文翻譯。
 - 後續若要區分多個啟用狀態，可加入使用者個別規則優先權設定，而不應依任意檔名順序假設瀏覽器實際導向。
+
+## 動態最新快照路徑（尚未改為預設）
+
+Archive Today 另有社群與擴充功能使用的 `https://archive.is/newest/<原始網址>` 端點，服務會嘗試尋找**最新已存在的快照**，並導向像 `https://archive.is/T0atg` 的固定網址。參考：
+
+- https://github.com/jackar/archive_viewer
+- https://chromewebstore.google.com/detail/archivetoday-automator/mmhadhnchpgicjlmlcdfaapkekknnkha
+
+它不等於 `/submit/?url=`：未找到既有快照時，可能顯示建立快照頁或其他錯誤。第三方工具也提醒可能遇到 CAPTCHA 或服務限流。由於**未能從目前環境連線驗證原始 8 篇的 /newest 回應**，暫不把它無條件取代正式 fallback；保留既定 `/submit/` 行為，並只對三筆已知文章使用固定快照直連。
