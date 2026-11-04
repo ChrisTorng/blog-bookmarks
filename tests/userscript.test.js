@@ -7,7 +7,7 @@ const source = readFileSync(new URL('../tampermonkey/BlogBookmarks.user.js', imp
 test('userscript installs from blog-bookmarks and parses', () => {
   assert.doesNotThrow(() => new Function(source));
   assert.match(source, /\/\/ @name\s+Blog Bookmarks\n/);
-  assert.match(source, /\/\/ @version\\s+0\\.5\\.5\n/);
+  assert.match(source, /\/\/ @version\s+0\.5\.5\n/);
   assert.match(source, /raw\.githubusercontent\.com\/ChrisTorng\/blog-bookmarks\/main\/tampermonkey\/BlogBookmarks\.user\.js/);
   assert.match(source, /\/\/ @match\s+https:\/\/hackernews\.betacat\.io\/\*/);
   assert.doesNotMatch(source, /cloudmark-christorng|cloudmark\.site/);
