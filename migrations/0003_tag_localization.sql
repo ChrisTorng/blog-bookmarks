@@ -1,0 +1,14 @@
+ALTER TABLE tags ADD COLUMN name_zh TEXT;
+UPDATE tags SET name_zh='人工智慧' WHERE id='ai';
+UPDATE tags SET name_zh='資訊安全' WHERE id='security';
+UPDATE tags SET name_zh='科技' WHERE id='tech';
+UPDATE tags SET name_zh='未分類' WHERE id='default';
+UPDATE tags SET name_zh='科學' WHERE id='science';
+UPDATE tags SET name_zh='過去與歷史' WHERE id='past';
+UPDATE tags SET name_zh='法律' WHERE id='law';
+UPDATE tags SET name_zh='程式開發' WHERE id='programming';
+UPDATE tags SET name_zh='未來' WHERE id='future';
+UPDATE tags SET name_zh='硬體' WHERE id='hardware';
+UPDATE tags SET name_zh='國際' WHERE id='world';
+UPDATE tags SET name_zh='藝術' WHERE id='art';
+UPDATE tags SET name_zh='信念' WHERE id='believing';
