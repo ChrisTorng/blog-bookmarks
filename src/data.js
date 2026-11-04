@@ -1,4 +1,4 @@
-const fields = "b.id,b.url,b.normalized_url,b.title,b.summary,b.source,b.status,b.created_at,b.updated_at,b.read_at,b.published_at,b.starred_at, CASE WHEN b.status=3 THEN COALESCE(b.starred_at,b.published_at,b.created_at) WHEN b.status=2 THEN COALESCE(b.published_at,b.created_at) ELSE b.created_at END AS status_at,COALESCE((SELECT json_group_array(t.name) FROM bookmark_tags bt JOIN tags t ON t.id=bt.tag_id WHERE bt.bookmark_id=b.id),'[]') AS tags";
+const fields = "b.id,b.url,b.normalized_url,b.title,b.summary,b.source,b.stage AS status,b.created_at,b.updated_at,b.read_at,b.published_at,b.starred_at, CASE WHEN b.stage=4 THEN COALESCE(b.starred_at,b.published_at,b.created_at) WHEN b.stage=3 THEN COALESCE(b.published_at,b.created_at) ELSE b.created_at END AS status_at,COALESCE((SELECT json_group_array(t.name) FROM bookmark_tags bt JOIN tags t ON t.id=bt.tag_id WHERE bt.bookmark_id=b.id),'[]') AS tags";
 const decode = row => row && ({...row, tags:JSON.parse(row.tags || '[]')});
 export const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function normalUrl(input) {
@@ -21,20 +21,24 @@ export function validate(raw) {
   return {url,normalized_url,title,summary,tags};
 }
 export async function get(db,id,includePrivate=false) {
-  const row=await db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.id=?${includePrivate?'':' AND b.status>=2'}`).bind(id).first();
+  const row=await db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.id=?${includePrivate?'':' AND b.stage>=3'}`).bind(id).first();
   return decode(row);
 }
 export async function byUrl(db,url) {
   const row=await db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.normalized_url=?`).bind(normalUrl(url)).first();
   return decode(row);
 }
-export async function list(db, {privateList=false,filter='unread',page=1,tag='',sort='new',q=''}={}) {
+export async function list(db, {privateList=false,filter='pending',page=1,tag='',sort='new',q=''}={}) {
   const n=Math.max(1,Math.min(100000,Number(page)||1)), params=[], conditions=[];
-  if(!privateList) conditions.push('b.status>=2');
-  else if(filter==='unread') conditions.push('b.status=0');
-  else if(filter==='read') conditions.push('b.status>=1');
-  else if(filter==='published') conditions.push('b.status>=2');
-  else if(filter==='starred') conditions.push('b.status=3');
+  if(!privateList) conditions.push('b.stage>=3');
+  else if(filter==='pending') conditions.push('b.stage IN (0,1)');
+  else if(filter==='unread') conditions.push('b.stage=0');
+  else if(filter==='readPending') conditions.push('b.stage=1');
+  else if(filter==='private') conditions.push('b.stage=2');
+  else if(filter==='decided') conditions.push('b.stage>=2');
+  else if(filter==='read') conditions.push('b.stage>=1');
+  else if(filter==='published') conditions.push('b.stage>=3');
+  else if(filter==='starred') conditions.push('b.stage=4');
   if(tag){conditions.push("EXISTS(SELECT 1 FROM bookmark_tags t WHERE t.bookmark_id=b.id AND t.tag_id=?)");params.push(tag.toLowerCase());}
   if(q){conditions.push('(b.title LIKE ? OR b.url LIKE ? OR b.summary LIKE ?)');params.push(...Array(3).fill('%'+q.slice(0,100)+'%'));}
   const where=conditions.length?' WHERE '+conditions.join(' AND '):'';
@@ -45,7 +49,7 @@ export async function list(db, {privateList=false,filter='unread',page=1,tag='',
   return {items:rows.results.map(decode),page:n,pages:Math.max(1,Math.ceil(total/20)),total};
 }
 export async function tagsList(db,includePrivate=false) {
-  const rows=await db.prepare(`SELECT t.id,t.name,t.name_zh,COUNT(*) count FROM tags t JOIN bookmark_tags bt ON bt.tag_id=t.id JOIN bookmarks b ON b.id=bt.bookmark_id ${includePrivate?'':"WHERE b.status>=2"} GROUP BY t.id,t.name,t.name_zh ORDER BY count DESC,t.name`).all();
+  const rows=await db.prepare(`SELECT t.id,t.name,t.name_zh,COUNT(*) count FROM tags t JOIN bookmark_tags bt ON bt.tag_id=t.id JOIN bookmarks b ON b.id=bt.bookmark_id ${includePrivate?'':"WHERE b.stage>=3"} GROUP BY t.id,t.name,t.name_zh ORDER BY count DESC,t.name`).all();
   return rows.results;
 }
 async function replaceTags(db,id,tags) {
@@ -72,13 +76,14 @@ export async function patch(db,id,raw) {
   const current=await get(db,id,true);if(!current)return null;
   if('status' in raw){
     const status=Number(raw.status);
-    if(!Number.isInteger(status)||status<0||status>3)throw new Error('狀態無效');
+    if(!Number.isInteger(status)||status<0||status>4)throw new Error('狀態無效');
     const now=new Date().toISOString();
     if(current.status!==status){
+      const legacyStatus=status===2?1:status>=3?status-1:status;
       const readAt=status>=1?(current.read_at||now):null;
-      const publishAt=status>=2?(current.status>=2&&current.published_at?current.published_at:now):null;
-      const starredAt=status===3?(current.status===3&&current.starred_at?current.starred_at:now):null;
-      await db.prepare('UPDATE bookmarks SET status=?,read_at=?,published_at=?,starred_at=?,updated_at=? WHERE id=?').bind(status,readAt,publishAt,starredAt,now,id).run();
+      const publishAt=status>=3?(current.status>=3&&current.published_at?current.published_at:now):null;
+      const starredAt=status===4?(current.status===4&&current.starred_at?current.starred_at:now):null;
+      await db.prepare('UPDATE bookmarks SET stage=?,status=?,read_at=?,published_at=?,starred_at=?,updated_at=? WHERE id=?').bind(status,legacyStatus,readAt,publishAt,starredAt,now,id).run();
     }
   }
   if(['url','title','summary','tags'].some(x=>x in raw)){
