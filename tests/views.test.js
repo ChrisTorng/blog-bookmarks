@@ -6,7 +6,7 @@ import { rss } from '../src/feeds.js';
 const item={
  id:'cfa92f03-a68a-4a3c-aee9-a8416ff75022',
  url:'https://example.org/article?x=1&y=2',
- title:'Example article',summary:'A short summary',tags:['AI'],status:3,
+ title:'Example article',summary:'A short summary',tags:['AI'],status:4,
  created_at:'2026-09-01T12:00:00Z',
  published_at:'2026-10-01T12:00:00Z',
  starred_at:'2026-11-03T12:00:00Z',
