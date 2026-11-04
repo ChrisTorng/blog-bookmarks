@@ -31,3 +31,18 @@ test('RSS timestamps use recommendation event not first collection',()=>{
  assert.match(xml,/Tue, 03 Nov 2026 12:00:00 GMT/);
  assert.doesNotMatch(xml,/Tue, 01 Sep 2026/);
 });
+
+test('public bookmarks show Chinese labels while preserving English tag IDs',()=>{
+ const html=listing({items:[item],total:1,page:1,pages:1},[{id:'ai',name:'AI',name_zh:'人工智慧',count:1}],{sort:'new',tag:'ai'});
+ assert.match(html,/#人工智慧/);
+ assert.match(html,/人工智慧書籤 RSS 訂閱/);
+ assert.match(html,/\/bookmarks\/\?tag=ai/);
+ assert.doesNotMatch(html,/#AI</);
+ const detail=individual(item,[{id:'ai',name:'AI',name_zh:'人工智慧',count:1}]);
+ assert.match(detail,/#人工智慧/);
+});
+test('RSS title is all bookmarks or selected Chinese tag',()=>{
+ assert.match(rss([item],'https://christorng.idv.tw'),/<title>全部書籤 RSS 訂閱<\/title>/);
+ assert.match(rss([item],'https://christorng.idv.tw','ai','人工智慧'),/<title>人工智慧書籤 RSS 訂閱<\/title>/);
+ assert.match(rss([item],'https://christorng.idv.tw','ai','人工智慧'),/bookmarks\/\?tag=ai/);
+});
