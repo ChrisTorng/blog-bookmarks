@@ -28,6 +28,7 @@ export async function inspect(url,fetcher=fetch) {
   const res=await fetcher(url,{redirect:'manual'});
   if(!res.ok||!(res.headers.get('Content-Type')||'').includes('text/html'))return null;
   const data=metadata((await res.text()).slice(0,1000000));
+  if(data.originalUrl && !sameArticle(url,new URL(data.originalUrl,url).href))return null;
   return trustedTitle(data.title)?data:null;
 }
 
