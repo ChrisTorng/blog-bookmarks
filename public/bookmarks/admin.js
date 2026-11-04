@@ -1,14 +1,14 @@
 const $ = id => document.getElementById(id);
 const local = ['localhost','127.0.0.1'].includes(location.hostname);
 const tokenKey = 'blog-bookmarks-admin-token';
-const allowedFilters = ['unread','read','all','published','starred'];
+const allowedFilters = ['pending','unread','readPending','private','decided','read','all','published','starred'];
 const allowedSorts = ['new','old','recommended','title'];
 const stateKeys = ['filter','sort','tag','q','page'];
 function readLocationState(){
  const query = new URLSearchParams(location.search);
  const rawPage = query.get('page') || '1';
  return {
-  filter: allowedFilters.includes(query.get('filter')) ? query.get('filter') : 'unread',
+  filter: allowedFilters.includes(query.get('filter')) ? query.get('filter') : 'pending',
   sort: allowedSorts.includes(query.get('sort')) ? query.get('sort') : 'new',
   tag: (query.get('tag') || '').slice(0,80),
   q: (query.get('q') || '').slice(0,100),
@@ -26,7 +26,7 @@ function syncControls(){
 function updateLocation(replace=false){
  const url=new URL(location.href);
  for(const key of stateKeys)url.searchParams.delete(key);
- if(state.filter!=='unread')url.searchParams.set('filter',state.filter);
+ if(state.filter!=='pending')url.searchParams.set('filter',state.filter);
  if(state.sort!=='new')url.searchParams.set('sort',state.sort);
  if(state.tag)url.searchParams.set('tag',state.tag);
  if(state.q)url.searchParams.set('q',state.q);
@@ -52,14 +52,14 @@ async function request(path, method='GET', body) {
 }
 function status(msg,error=false){$('message').textContent=msg;$('message').classList.toggle('error',error);}
 function options(){const q=new URLSearchParams();for(const k of ['filter','sort','tag','q','page'])q.set(k,state[k]);return q.toString();}
-const levelName=['未讀','已讀 · 待決策','已公開','★ 已推薦'];
+const levelName=['未讀','已讀 · 待決定','已讀 · 確定不公開','已公開','★ 已推薦'];
 function itemHtml(b) {
  const pending=state.pending.has(b.id), label=levelName[b.status]||'';
- const statusDate=b.status>=2?' · '+(b.status===3?'推薦':'公開')+' '+dateText(b.status_at||b.starred_at||b.published_at):'';
+ const statusDate=b.status>=3?' · '+(b.status===4?'推薦':'公開')+' '+dateText(b.status_at||b.starred_at||b.published_at):'';
  const info='<div class="meta">加入 '+esc(dateText(b.created_at))+' · '+esc(new URL(b.url).hostname)+esc(statusDate)+'</div>';
- const checks=[1,2,3].map((level,i)=>'<label><input type="checkbox" data-level="'+level+'" '+(b.status>=level?'checked ':'')+'> '+['已讀','公開','推薦'][i]+'</label>').join('');
- const actions='<div class="actions">'+checks+'<button type="button" data-edit>編輯</button>'+(b.status>=2?'<a class="write-note" href="/notes/editor/?bookmark='+encodeURIComponent(b.id)+'" target="_blank" rel="noopener">寫隨筆 ↗</a>':'')+'</div>';
- const decision=pending?'<div class="decision-row"><button type="button" data-keep class="private">保留私人・完成</button><button type="button" data-finish class="finish">完成，下一筆</button><p>狀態變更即時儲存；按完成才移出目前工作清單。</p></div>':'';
+ const checks=[1,3,4].map((level,i)=>'<label><input type="checkbox" data-level="'+level+'" '+(b.status>=level?'checked ':'')+((level===3&&b.status<1)||(level===4&&b.status<3)?'disabled ':'')+'> '+['已讀','公開','推薦'][i]+'</label>').join('');
+ const actions='<div class="actions">'+checks+'<button type="button" data-edit>編輯</button>'+(b.status>=3?'<a class="write-note" href="/notes/editor/?bookmark='+encodeURIComponent(b.id)+'" target="_blank" rel="noopener">寫隨筆 ↗</a>':'')+'</div>';
+ const decision=pending?'<div class="decision-row"><button type="button" data-keep class="private" '+(b.status===0?'disabled ':'')+'>確定不公開</button>'+(b.status>=2?'<button type="button" data-finish class="finish">完成，下一筆</button>':'')+'<p>已讀但未決定的書籤會留在待決定清單。</p></div>':'';
  return '<article class="item'+(pending?' pending':'')+'" data-id="'+esc(b.id)+'"><div class="item-header"><div class="item-heading"><a class="title" href="'+esc(b.url)+'" target="_blank" rel="noopener noreferrer" data-read="'+esc(b.id)+'">'+esc(b.title)+' ↗</a>'+info+'</div><span class="status-name">'+label+'</span></div>'+(b.summary?'<p class="summary">'+esc(b.summary)+'</p>':'')+(b.tags.length?'<div class="tagline">'+b.tags.map(t=>'#'+esc(t)).join(' · ')+'</div>':'')+actions+decision+'</article>';
 }
 function renderItem(b){
@@ -69,7 +69,7 @@ function renderItem(b){
 async function persistStatus(b,target){
  const previous=b.status;
  b.status=target;
- if(state.filter==='unread')state.pending.set(b.id,b);
+ if(['pending','unread','readPending'].includes(state.filter))state.pending.set(b.id,b);
  renderItem(b);
  const prior=state.writes.get(b.id)||Promise.resolve();
  const chain=prior.catch(()=>{}).then(()=>request('/'+b.id,'PATCH',{status:target}));
@@ -99,7 +99,7 @@ async function refresh() {
    return;
   }
   const ids=new Set(data.items.map(b=>b.id));
-  const pinned=state.filter==='unread'?[...state.pending.values()].filter(b=>!ids.has(b.id)):[];
+  const pinned=['pending','unread','readPending'].includes(state.filter)?[...state.pending.values()].filter(b=>!ids.has(b.id)):[];
   state.items=[...pinned,...data.items];
   state.tags=tags;
   $('items').innerHTML=state.items.map(itemHtml).join('')||'<p class="empty">此篩選目前沒有書籤。</p>';
@@ -125,7 +125,7 @@ $('app').innerHTML=`
 <header><h1>書籤管理 <small>Bookmarks</small></h1><a href="/bookmarks/" target="_blank" rel="noopener">公開列表 ↗</a></header>
 <div class="auth" id="auth"></div>
 <form class="filters" id="filters">
- <select id="filter" aria-label="狀態"><option value="unread">未讀</option><option value="read">已讀</option><option value="all">全部</option><option value="published">公開</option><option value="starred">推薦</option></select>
+ <select id="filter" aria-label="狀態"><option value="pending">待決定（未讀＋已讀待決定）</option><option value="unread">未讀</option><option value="readPending">已讀待決定</option><option value="private">確定不公開</option><option value="decided">已決定（不公開＋公開＋推薦）</option><option value="published">公開及推薦</option><option value="starred">推薦</option><option value="read">全部已讀</option><option value="all">全部</option></select>
  <select id="tag" aria-label="標籤"><option value="">全部標籤</option></select>
  <select id="sort" aria-label="排序"><option value="new">加入時間：最新</option><option value="old">加入時間：最舊</option><option value="recommended">推薦優先</option><option value="title">標題</option></select>
  <button type="button" id="manageTags">標籤中英對照</button>
@@ -221,12 +221,12 @@ $('items').addEventListener('click',async e=>{
  }
  if(e.target.closest('[data-edit]')){edit(b);return;}
  if(e.target.closest('[data-keep]')){
-   try{if(b.status!==1)await persistStatus(b,1);await state.writes.get(b.id);state.pending.delete(b.id);await refresh();}
+   try{if(b.status===0){status('請先開啟文章或勾選已讀。',true);return;}if(b.status!==2)await persistStatus(b,2);await state.writes.get(b.id);state.pending.delete(b.id);await refresh();}
    catch(e){status(e.message,true);}
    return;
  }
  if(e.target.closest('[data-finish]')){
-   if(b.status===0){status('請先閱讀或勾選已讀。',true);return;}
+   if(b.status<2){status('仍未決定，請選擇確定不公開、公開或推薦。',true);return;}
    try{await state.writes.get(b.id);state.pending.delete(b.id);await refresh();}
    catch(e){status(e.message,true);}
  }
@@ -235,7 +235,7 @@ $('items').addEventListener('change',e=>{
  const input=e.target.closest('[data-level]');if(!input)return;
  const b=state.items.find(x=>x.id===input.closest('[data-id]').dataset.id);if(!b)return;
  const level=Number(input.dataset.level);
- const target=input.checked?Math.max(b.status,level):Math.min(b.status,level-1);
+ const target=input.checked?Math.max(b.status,level):(level===4?3:level===3?1:0);
  persistStatus(b,target).catch(()=>{});
 });
 $('editForm').onsubmit=async e=>{
