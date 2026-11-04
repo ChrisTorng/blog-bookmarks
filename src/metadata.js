@@ -49,3 +49,15 @@ export async function hnExact(url,fetcher=fetch) {
   const matches=((await r.json()).hits||[]).filter(x=>x.url&&sameArticle(url,x.url)&&trustedTitle(x.title||''));
   return matches.length===1?{title:matches[0].title,source:'hn-exact-url'}:null;
 }
+
+export async function review(item,transport=fetch) {
+  let publisher=null,hn=null;
+  try {publisher=await inspect(item.url,transport);}catch{}
+  try {hn=await hnExact(item.url,transport);}catch{}
+  const title=hn?.title||publisher?.title||null;
+  const description=publisher?.description||null;
+  return {verified:!!title,title_original:title,
+    source:hn?.source||(publisher?'publisher-exact-url':null),
+    summary:description&&!invalidSummary(description)?description:null,
+    invalid_existing_summary:invalidSummary(item.summary)};
+}
