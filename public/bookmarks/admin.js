@@ -64,7 +64,9 @@ function itemHtml(b) {
  const choices=state.tags.map(t=>'<button type="button" data-tag-name="'+esc(t.name)+'" aria-pressed="'+String(tagNames.has(t.name.toLowerCase()))+'">'+esc(t.name_zh||t.name)+'</button>').join('');
  const picker='<details class="category-picker"><summary>分類：'+(b.tags.length?b.tags.map(t=>esc(state.tags.find(x=>x.name.toLowerCase()===t.toLowerCase())?.name_zh||t)).join('、'):'未分類')+' · 點擊選擇</summary><div class="category-choices">'+choices+'</div><form class="add-category" data-add-tag><input name="newtag" maxlength="80" placeholder="新增分類名稱" aria-label="新增分類"><button type="submit">新增並選取</button></form></details>';
  const note=b.status>=3?'<a class="write-note" href="/notes/editor/?bookmark='+encodeURIComponent(b.id)+'" target="_blank" rel="noopener">寫隨筆 ↗</a>':'';
- const actions='<div class="actions"><button type="button" data-decision="2">不公開</button><button type="button" data-decision="3">公開</button><button type="button" data-decision="4">推薦</button><button type="button" data-edit>編輯</button>'+note+'</div>';
+ const blocked=!b.tags.length||b.savingTags;
+ const disabled=blocked?' disabled title="請先選擇至少一個分類並完成儲存"':'';
+ const actions='<div class="actions"><button type="button" data-decision="2">不公開</button><button type="button" data-decision="3"'+disabled+'>公開</button><button type="button" data-decision="4"'+disabled+'>推薦</button><button type="button" data-edit>編輯</button>'+note+'</div>';
  return '<article class="item" data-id="'+esc(b.id)+'"><div class="item-header"><div class="item-heading"><a class="title" href="'+esc(target)+'" target="_blank" rel="noopener noreferrer" data-read="'+esc(b.id)+'">'+esc(b.title)+' ↗</a>'+originalTitle+info+source+'</div><span class="status-name">'+label+'</span></div>'+(b.summary?'<p class="summary">'+esc(b.summary)+'</p>':'')+picker+actions+'</article>';
 }
 function renderItem(b){
@@ -126,7 +128,7 @@ function edit(b) {
  $('editDialog').showModal();
 }
 $('app').innerHTML=`
-<header><h1>書籤管理 <small>Bookmarks</small></h1><a href="/bookmarks/" target="_blank" rel="noopener">公開列表 ↗</a></header>
+<header><h1>書籤管理 <small>Bookmarks</small></h1><nav><a href="/bookmarks/admin/quick/">快速處理</a> · <a href="/bookmarks/" target="_blank" rel="noopener">公開列表 ↗</a></nav></header>
 <div class="auth" id="auth"></div>
 <form class="filters" id="filters">
  <select id="filter" aria-label="狀態"><option value="pending">待決定（未讀＋已讀待決定）</option><option value="unread">未讀</option><option value="readPending">已讀待決定</option><option value="private">確定不公開</option><option value="decided">已決定（不公開＋公開＋推薦）</option><option value="published">公開及推薦</option><option value="starred">推薦</option><option value="read">全部已讀</option><option value="all">全部</option></select>
@@ -230,18 +232,22 @@ $('items').addEventListener('click',async e=>{
   const name=tag.dataset.tagName,old=[...b.tags];
   b.tags=old.some(t=>t.toLowerCase()===name.toLowerCase())?
    old.filter(t=>t.toLowerCase()!==name.toLowerCase()):[...old,name];
+  b.savingTags=true;
   renderItem(b);
   try{
    const updated=await request('/'+b.id,'PATCH',{tags:b.tags});
    Object.assign(b,updated);
    state.tags=await request('/tags');
-   renderItem(b);
-  }catch(error){b.tags=old;renderItem(b);status(error.message,true);}
+  }catch(error){b.tags=old;status(error.message,true);}
+  finally{b.savingTags=false;renderItem(b);}
   return;
  }
  const decision=e.target.closest('[data-decision]');
  if(decision){
   const level=Number(decision.dataset.decision);
+  if(level>=3&&(!b.tags.length||b.savingTags)){
+   status('公開或推薦前，請先選擇並儲存至少一個分類',true);return;
+  }
   const queue=['pending','unread','readPending'].includes(state.filter);
   const previous=b.status;
   if(queue){
@@ -269,6 +275,7 @@ $('items').addEventListener('submit',async e=>{
  if(!b||!name||name.length>80)return;
  const old=[...b.tags];
  if(!b.tags.some(x=>x.toLowerCase()===name.toLowerCase()))b.tags.push(name);
+ b.savingTags=true;renderItem(b);
  try{
   const updated=await request('/'+b.id,'PATCH',{tags:b.tags});
   Object.assign(b,updated);
@@ -276,6 +283,7 @@ $('items').addEventListener('submit',async e=>{
   renderItem(b);
   status('已加入分類：'+name);
  }catch(error){b.tags=old;status(error.message,true);}
+ finally{b.savingTags=false;renderItem(b);}
 });
 
 $('editForm').onsubmit=async e=>{

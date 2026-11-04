@@ -46,6 +46,7 @@ const css = `
 export function layout(title,body,feed='/bookmarks/feed.xml',feedTitle='全部書籤 RSS 訂閱') {
  return `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,follow"><title>${esc(title)} | ChrisTorng 學習天地</title>${feed?`<link rel="alternate" type="application/rss+xml" title="${esc(feedTitle)}" href="${esc(feed)}">`:''}<style>${css}</style></head><body><main>${body}</main></body></html>`;
 }
+export const quickAdminPage = '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>書籤快速處理</title><link rel="stylesheet" href="/bookmarks/admin.css"><link rel="stylesheet" href="/bookmarks/admin-quick.css"></head><body><div id="app"></div><script type="module" src="/bookmarks/admin-quick.js"></script></body></html>';
 export const adminPage = '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>書籤管理</title><link rel="stylesheet" href="/bookmarks/admin.css"></head><body><div id="app"></div><script type="module" src="/bookmarks/admin.js"></script></body></html>';
 
 export const zhTime = date => new Intl.DateTimeFormat('zh-TW',{

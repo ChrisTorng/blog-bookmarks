@@ -2,7 +2,7 @@ import {isAdmin,safeOrigin,sameToken} from './auth.js';
 import {bulkStatus,updateTags} from './ingest.js';
 import {review,invalidSummary} from './metadata.js';
 import {validIngestToken,rotateIngestToken} from './token.js';
-import {list,get,byUrl,create,patch,remove,tagsList,renameTag} from './data.js';
+import {list,get,byUrl,create,patch,remove,tagsList,renameTag,reviewWindow} from './data.js';
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
 export function opts(url,privateList=false){return {privateList,filter:url.searchParams.get('filter')||(privateList?'pending':'published'),tag:url.searchParams.get('tag')||'',page:url.searchParams.get('page')||1,sort:url.searchParams.get('sort')||'new',q:url.searchParams.get('q')||''};}
 async function input(req){
@@ -21,6 +21,8 @@ export async function api(req,env,url){
    if(req.method==='GET')return json(await list(env.DB,opts(url,true)));
    if(req.method==='POST')return json(await create(env.DB,await input(req)),201);
   }
+  if(p==='/bookmarks/api/admin/quick'&&req.method==='GET')
+    return json(await reviewWindow(env.DB,url.searchParams.get('size')));
   if(p==='/bookmarks/api/admin/enrich' && req.method==='POST'){
     const body=await input(req);
     if(!/^[0-9a-f-]{36}$/.test(String(body.id||'')))return json({error:'書籤 ID 無效'},400);
@@ -71,5 +73,5 @@ export async function api(req,env,url){
   if((p==='/bookmarks/api'||p==='/bookmarks/api/')&&req.method==='GET')return json(await list(env.DB,opts(url)));
   if(p==='/bookmarks/api/tags'&&req.method==='GET')return json(await tagsList(env.DB));
   return json({error:'不存在的 API'},404);
- }catch(e){const bad=e instanceof TypeError||e instanceof SyntaxError||/網址|標題|摘要|標籤|JSON|狀態|資料過大|格式|HTTP/.test(String(e.message));return json({error:bad?e.message:'伺服器錯誤'},bad?400:500);}
+ }catch(e){const bad=e instanceof TypeError||e instanceof SyntaxError||/網址|標題|摘要|標籤|分類|JSON|狀態|資料過大|格式|HTTP/.test(String(e.message));return json({error:bad?e.message:'伺服器錯誤'},bad?400:500);}
 }
