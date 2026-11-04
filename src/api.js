@@ -2,6 +2,7 @@ import {isAdmin,safeOrigin,sameToken} from './auth.js';
 import {bulkStatus,updateTags} from './ingest.js';
 import {validIngestToken,rotateIngestToken} from './token.js';
 import {list,get,byUrl,create,patch,remove,tagsList,renameTag} from './data.js';
+import {fetchPublisherTitle} from './metadata.js';
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
 export function opts(url,privateList=false){return {privateList,filter:url.searchParams.get('filter')||(privateList?'pending':'published'),tag:url.searchParams.get('tag')||'',page:url.searchParams.get('page')||1,sort:url.searchParams.get('sort')||'new',q:url.searchParams.get('q')||''};}
 async function input(req){
@@ -10,7 +11,7 @@ async function input(req){
  const str=await req.text();if(str.length>100000)throw Error('資料過大');
  return JSON.parse(str);
 }
-export async function api(req,env,url){
+export async function api(req,env,url,ctx){
  const p=url.pathname;
  const privateApi=p==='/bookmarks/api/admin'||p.startsWith('/bookmarks/api/admin/');
  if(privateApi && !await isAdmin(req,env))return json({error:'未經管理員驗證'},401);
@@ -49,9 +50,23 @@ export async function api(req,env,url){
    return json(await tagsList(env.DB,true));
   }
   if(p==='/bookmarks/api/ingest'&&req.method==='POST'){
-   const token=req.headers.get('Authorization')?.replace(/^Bearer\s+/i,'');
    if(!await validIngestToken(req,env))return json({error:'無效的新增 Token'},401);
-   return json(await create(env.DB,{...await input(req),source:'tampermonkey'}),201);
+   const body=await input(req);
+   const result=await create(env.DB,{...body,source:'tampermonkey'});
+   // Prefer the English article title from BetaCat's untranslated HTML.
+   // If it is missing, try the publisher from the Worker, never the userscript.
+   // The best-effort enrichment runs after the save response, so clicking the
+   // bookmark star does not wait for a remote publisher.
+   if(!result.alreadyExists && !result.item.title_original && ctx?.waitUntil) {
+    ctx.waitUntil((async () => {
+     const title=await fetchPublisherTitle(result.item.url);
+     if(!title)return;
+     const current=await get(env.DB,result.item.id,true);
+     if(current && !current.title_original)
+      await patch(env.DB,current.id,{title_original:title});
+    })().catch(() => {}));
+   }
+   return json(result,201);
   }
   if((p==='/bookmarks/api'||p==='/bookmarks/api/')&&req.method==='GET')return json(await list(env.DB,opts(url)));
   if(p==='/bookmarks/api/tags'&&req.method==='GET')return json(await tagsList(env.DB));
