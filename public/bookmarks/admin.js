@@ -89,20 +89,27 @@ async function persistStatus(b,target){
  }
 }
 async function refresh() {
+ const generation=++refreshGeneration;
  try {
   status('載入中…');
   const [data,tags]=await Promise.all([request('/?'+options()),request('/tags')]);
+  if(generation!==refreshGeneration)return;
+  if(state.page>data.pages){
+   navigate({page:data.pages},{replace:true});
+   return;
+  }
   const ids=new Set(data.items.map(b=>b.id));
   const pinned=state.filter==='unread'?[...state.pending.values()].filter(b=>!ids.has(b.id)):[];
   state.items=[...pinned,...data.items];
   state.tags=tags;
   $('items').innerHTML=state.items.map(itemHtml).join('')||'<p class="empty">此篩選目前沒有書籤。</p>';
   $('pager').innerHTML='<button id="prev" '+(data.page<=1?'disabled':'')+'>上一頁</button><span>第 '+data.page+' / '+data.pages+' 頁 · '+data.total+' 筆'+(pinned.length?' · '+pinned.length+' 筆待完成':'')+'</span><button id="next" '+(data.page>=data.pages?'disabled':'')+'>下一頁</button>';
-  $('prev').onclick=()=>{state.pending.clear();state.page--;refresh();};
-  $('next').onclick=()=>{state.pending.clear();state.page++;refresh();};
+  $('prev').onclick=()=>navigate({page:state.page-1},{scrollTop:true});
+  $('next').onclick=()=>navigate({page:state.page+1},{scrollTop:true});
   $('tag').innerHTML='<option value="">全部標籤</option>'+tags.map(t=>'<option value="'+esc(t.id)+'"'+(state.tag===t.id?' selected':'')+'>'+esc(t.name)+' ('+t.count+')</option>').join('');
+  syncControls();
   status('');
- }catch(e){status(e.message,true);}
+ }catch(e){if(generation===refreshGeneration)status(e.message,true);}
 }
 function edit(b) {
  $('editId').value=b?.id||'';
@@ -163,19 +170,11 @@ $('copyToken').onclick=async()=>{
 };
 $('filters').onsubmit=e=>{
  e.preventDefault();
- state.pending.clear();
- state.q=$('q').value.trim();
- state.page=1;
- refresh();
+ navigate({q:$('q').value.trim(),page:1},{scrollTop:true});
 };
 for(const id of ['filter','tag','sort']){
  $(id).addEventListener('change',()=>{
-  state.pending.clear();
-  state.filter=$('filter').value;
-  state.tag=$('tag').value;
-  state.sort=$('sort').value;
-  state.page=1;
-  refresh();
+  navigate({filter:$('filter').value,tag:$('tag').value,sort:$('sort').value,page:1},{scrollTop:true});
  });
 }
 function openTags(){
@@ -251,4 +250,12 @@ $('deleteItem').onclick=async()=>{
  try{await request('/'+id,'DELETE');state.pending.delete(id);$('editDialog').close();await refresh();status('已刪除');}
  catch(err){status(err.message,true);}
 };
-refresh();
+syncControls();
+window.addEventListener('popstate',()=>{
+ Object.assign(state,readLocationState());
+ state.pending.clear();
+ syncControls();
+ void refresh();
+ window.scrollTo({top:0,behavior:'auto'});
+});
+void refresh();
