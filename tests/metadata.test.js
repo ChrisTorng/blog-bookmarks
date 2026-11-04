@@ -30,3 +30,20 @@ test('unverifiable sources never invent original titles or replacement summaries
   assert.equal(report.title_original,null);
   assert.equal(report.summary,null);
 });
+
+test('do not accept a different canonical article represented by og:url',async()=>{
+  const {inspect}=await import('../src/metadata.js');
+  const body='<meta property="og:title" content="Unrelated Article"><meta property="og:url" content="https://example.com/other">';
+  const transport=async()=>new Response(body,{headers:{'Content-Type':'text/html'}});
+  assert.equal(await inspect('https://example.com/real',transport),null);
+});
+test('BetaCat historical recovery requires the full exact article URL',async()=>{
+  const {betaCatExact}=await import('../src/metadata.js');
+  const page='<article><a class="post-url" href="https://example.com/other">Similar Name</a></article>'
+    +'<article><a class="post-url" href="https://example.com/story?id=123">Original Source Headline</a></article>';
+  const transport=async()=>new Response(page,{headers:{'Content-Type':'text/html'}});
+  const matched=await betaCatExact({url:'https://example.com/story?id=123',created_at:'2026-11-04T02:00:00Z'},transport);
+  assert.equal(matched.title,'Original Source Headline');
+  const missing=await betaCatExact({url:'https://example.com/story?id=456',created_at:'2026-11-04T02:00:00Z'},transport);
+  assert.equal(missing,null);
+});
