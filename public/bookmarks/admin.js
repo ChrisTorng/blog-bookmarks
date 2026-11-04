@@ -96,7 +96,14 @@ $('app').innerHTML=`
  <label>網站摘要（選填）<textarea id="editSummary" maxlength="5000"></textarea></label>
  <label>書籤標籤（逗號分隔）<input id="editTags" placeholder="AI, 音樂, 科學"></label>
  <div class="dialog-actions"><button type="submit">儲存書籤</button><button type="button" id="cancelEdit">取消</button><button type="button" id="deleteItem">刪除</button></div>
-</form></dialog>`;
+</form></dialog>
+<dialog id="tagsDialog" aria-labelledby="tagsHeading"><form id="tagsForm">
+ <h2 id="tagsHeading">書籤標籤中英對照</h2>
+ <p class="tag-hint">後台及 Tampermonkey 使用英文，公開書籤與 RSS 使用中文。標籤網址及既有書籤關聯不會因改名而改變。</p>
+ <div class="tag-columns"><b>English</b><b>繁體中文</b><b>筆數</b></div>
+ <div id="tagRows"></div>
+ <div class="dialog-actions"><button type="submit">儲存對照</button><button type="button" id="closeTags">關閉</button></div>
+ </form></dialog>`;
 if(local){
  $('auth').innerHTML='<input id="token" type="password" autocomplete="off" placeholder="本機管理 Token"><button id="login">登入</button><span class="hint">Token 僅儲存在此分頁</span>';
  $('token').value=sessionStorage.getItem(tokenKey)||'';
@@ -132,6 +139,39 @@ for(const id of ['filter','tag','sort']){
   refresh();
  });
 }
+function openTags(){
+ $('tagRows').innerHTML=state.tags.map(t=>
+  '<div class="tag-row" data-tag-id="'+esc(t.id)+'">' +
+  '<input class="tag-en" maxlength="80" aria-label="英文標籤 '+esc(t.name)+'" value="'+esc(t.name)+'">' +
+  '<input class="tag-zh" maxlength="80" aria-label="中文標籤 '+esc(t.name)+'" value="'+esc(t.name_zh||'')+'" placeholder="公開中文名稱">' +
+  '<span class="tag-count">'+Number(t.count||0)+'</span></div>'
+ ).join('');
+ $('tagsDialog').showModal();
+}
+$('manageTags').onclick=openTags;
+$('closeTags').onclick=()=>$('tagsDialog').close();
+$('tagsForm').onsubmit=async e=>{
+ e.preventDefault();
+ const save=$('tagsForm').querySelector('button[type="submit"]');
+ save.disabled=true;
+ let count=0;
+ try{
+  for(const row of $('tagRows').querySelectorAll('[data-tag-id]')){
+   const id=row.dataset.tagId;
+   const current=state.tags.find(x=>x.id===id);
+   const name=row.querySelector('.tag-en').value.trim();
+   const name_zh=row.querySelector('.tag-zh').value.trim();
+   if(!current||!name)throw Error('英文標籤不得為空');
+   if(current.name===name && (current.name_zh||'')===name_zh)continue;
+   await request('/tags/'+encodeURIComponent(id),'PATCH',{name,name_zh});
+   count++;
+  }
+  $('tagsDialog').close();
+  await refresh();
+  status(count?'已儲存 '+count+' 個標籤的中英對照':'標籤未變更');
+ }catch(error){status('標籤儲存失敗：'+error.message,true);}
+ finally{save.disabled=false;}
+};
 $('new').onclick=()=>edit(null);
 $('cancelEdit').onclick=()=>$('editDialog').close();
 $('items').addEventListener('click',async e=>{
