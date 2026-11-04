@@ -15,7 +15,7 @@ export function metadata(html) {
     description:clean(find('og:description')||find('description')), originalUrl:clean(find('og:url'))};
 }
 export function sameArticle(a,b) {
-  try {const x=new URL(a),y=new URL(b);return x.hostname===y.hostname&&x.pathname.replace(/\/+$/,'')===y.pathname.replace(/\/+$/,'');}
+  try {const x=new URL(a),y=new URL(b);return x.hostname===y.hostname&&x.pathname.replace(/\/+$/,'')===y.pathname.replace(/\/+$/,'')&&x.search===y.search;}
   catch{return false;}
 }
 export function trustedTitle(title) {
