@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { preferredRedirect,primaryUrl } from '../src/redirect.js';
+import { preferredRedirect,primaryUrl,ARCHIVE_TODAY_HOSTS,INTERNET_ARCHIVE_HOSTS } from '../src/redirect.js';
 import { validate } from '../src/data.js';
 
 test('redirects agree with deterministic RedirectUrls rules',()=>{
@@ -21,4 +21,34 @@ test('validate saves both title languages and both URLs',()=>{
  assert.equal(b.title_zh,'一篇文章');
  assert.deepEqual(b.tags,['AI']);
  assert.throws(()=>validate({url:'https://example.com',redirect_url:'javascript:alert(1)'}));
+});
+
+test('archival redirects cover all @match domains from both userscripts',()=>{
+ assert.equal(ARCHIVE_TODAY_HOSTS.size,11);
+ assert.equal(INTERNET_ARCHIVE_HOSTS.size,24);
+ for(const host of ARCHIVE_TODAY_HOSTS) {
+   assert.ok(INTERNET_ARCHIVE_HOSTS.has(host),'Overlap expected for '+host);
+   assert.equal(preferredRedirect('https://'+host+'/story?x=1'),'https://web.archive.org/https://'+host+'/story?x=1');
+ }
+ const onlyIA=[
+   'fortune.com','nautil.us','www.australiangeographic.com.au','www.bbc.com',
+   'www.cnbc.com','www.lrb.co.uk','www.scientificamerican.com','www.rawstory.com',
+   'www.scmp.com','www.smh.com.au','www.thetimes.com','www.theverge.com',
+   'www.washingtonpost.com'
+ ];
+ for(const host of onlyIA)
+   assert.equal(preferredRedirect('https://'+host+'/a'),'https://web.archive.org/https://'+host+'/a');
+ assert.equal(preferredRedirect('https://www.bbc.co.uk/a'),null);
+ assert.equal(preferredRedirect('http://www.bbc.com/a'),null);
+ assert.equal(preferredRedirect('https://web.archive.org/https://www.bbc.com/a'),null);
+});
+
+test('English-only title stays original; Chinese title is stored only when available',()=>{
+ const english=validate({url:'https://example.org/a',title:'Original English title',title_zh:null,title_original:'Original English title'});
+ assert.equal(english.title,'Original English title');
+ assert.equal(english.title_zh,null);
+ assert.equal(english.title_original,'Original English title');
+ const translated=validate({url:'https://example.org/b',title:'繁體中文標題',title_original:'English headline'});
+ assert.equal(translated.title_zh,'繁體中文標題');
+ assert.equal(translated.title_original,'English headline');
 });

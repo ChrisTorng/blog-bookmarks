@@ -7,7 +7,7 @@ const source = readFileSync(new URL('../tampermonkey/BlogBookmarks.user.js', imp
 test('userscript installs from blog-bookmarks and parses', () => {
   assert.doesNotThrow(() => new Function(source));
   assert.match(source, /\/\/ @name\s+Blog Bookmarks\n/);
-  assert.match(source, /\/\/ @version\s+0\.5\.0\n/);
+  assert.match(source, /\/\/ @version\s+0\.5\.1\n/);
   assert.match(source, /raw\.githubusercontent\.com\/ChrisTorng\/blog-bookmarks\/main\/tampermonkey\/BlogBookmarks\.user\.js/);
   assert.match(source, /\/\/ @match\s+https:\/\/hackernews\.betacat\.io\/\*/);
   assert.doesNotMatch(source, /cloudmark-christorng|cloudmark\.site/);
@@ -50,4 +50,15 @@ test('redirect mappings and optimistic updates preserve source URL', () => {
   assert.match(source, /sourceAndTarget\(key\)/);
   assert.match(source, /Optimistic star/);
   assert.match(source, /revisions\.set\(key, revision\)/);
+});
+
+test('all automatic archive-host redirects are included without triggering manual floating menu',()=>{
+  assert.match(source,/ARCHIVE_TODAY_HOSTS/);
+  assert.match(source,/INTERNET_ARCHIVE_HOSTS/);
+  assert.match(source,/www\.nytimes\.com/);
+  assert.match(source,/www\.bbc\.com/);
+  assert.match(source,/web\.archive\.org\/'/);
+  assert.match(source,/archive\.is\/submit\/\?url=/);
+  assert.match(source,/parsed\.hostname === 'web\.archive\.org'/);
+  assert.match(source,/sourceAndTarget/);
 });
