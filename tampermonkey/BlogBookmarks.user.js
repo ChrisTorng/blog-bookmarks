@@ -1,13 +1,14 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.1
+// @version      0.5.2
 // @description  One-tap unread bookmark star; organize and publish from the bookmarks manager
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
 // @downloadURL  https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
 // @match        https://hackernews.betacat.io/*
 // @connect      christorng.idv.tw
+// @connect      *
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
@@ -215,6 +216,62 @@
         return originalTitleTask;
     }
 
+
+    // Only the original publisher is an authoritative title source. Archive
+    // providers often replace <title> with their own branding or warnings.
+    function originalSiteTitle(sourceUrl) {
+        const invalidHost = host => ['archive.is','archive.ph','archive.today',
+            'web.archive.org','translate.goog','nitter.tiekoetter.com',
+            'nitter.meowing.monster','xnologin.com'].includes(host);
+        try {
+            if (invalidHost(new URL(sourceUrl).hostname.toLowerCase())) return Promise.resolve(null);
+        } catch { return Promise.resolve(null); }
+        return new Promise(resolve => {
+            let finished = false;
+            let transport;
+            const complete = value => {
+                if (finished) return;
+                finished = true;
+                clearTimeout(timer);
+                resolve(value);
+            };
+            const timer = setTimeout(() => {
+                complete(null);
+                transport?.abort?.();
+            }, 4500);
+            try {
+                transport = GM_xmlhttpRequest({
+                    method: 'GET',
+                    url: sourceUrl,
+                    anonymous: true,
+                    timeout: 4500,
+                    responseType: 'text',
+                    onload(response) {
+                        try {
+                            const destination = new URL(response.finalUrl || sourceUrl);
+                            // Do not read an archive page even if the publisher HTTP-redirected there.
+                            if (invalidHost(destination.hostname.toLowerCase()) ||
+                                response.status < 200 || response.status >= 400) return complete(null);
+                            const html = response.responseText;
+                            if (!html || !/<html[\s>]/i.test(html.slice(0, 12000))) return complete(null);
+                            const parsed = new DOMParser().parseFromString(html.slice(0, 400000), 'text/html');
+                            const metaTitle = parsed.querySelector('meta[property="og:title"]')?.getAttribute('content') ||
+                                parsed.querySelector('meta[name="twitter:title"]')?.getAttribute('content');
+                            const found = String(metaTitle || parsed.title || '')
+                                .replace(/\s+/g, ' ').trim().slice(0, 500);
+                            if (!found || /^(access denied|just a moment|attention required|please enable javascript)$/i.test(found))
+                                return complete(null);
+                            complete(found);
+                        } catch { complete(null); }
+                    },
+                    onerror: () => complete(null),
+                    ontimeout: () => complete(null),
+                    onabort: () => complete(null)
+                });
+            } catch { complete(null); }
+        });
+    }
+
     function articleData(link) {
         const article = link.closest('article.post-item');
         if (!article) throw new Error('找不到文章');
@@ -295,7 +352,11 @@
                 // Allow the original English page title to arrive before submission.
                 await Promise.race([loadOriginalTitles(),
                     new Promise(resolve => setTimeout(resolve, 2500))]);
-                const result = await request('', 'POST', articleData(link));
+                const article = articleData(link);
+                // Never fetch this title from article.redirect_url.
+                const publisherTitle = await originalSiteTitle(article.url);
+                if (publisherTitle) article.title_original = publisherTitle;
+                const result = await request('', 'POST', article);
                 const item = result.item || result;
                 saved.set(key, { id: item.id, status: item.status, tags: item.tags || [] });
             }
