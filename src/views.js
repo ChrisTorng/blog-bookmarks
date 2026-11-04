@@ -40,8 +40,8 @@ const css = `
 @media(max-width:767px){.bm-page{padding:.65rem 0 2rem}.bm-header{margin:0 0 1rem}.bm-columns{display:block}.bm-sidebar{display:none}.bm-mobile-tag{display:inline-flex;align-items:center;gap:.3rem}.bm-toolbar{gap:.7rem;justify-content:flex-start}.bm-item{padding:1.1rem 0}.bm-item h2{font-size:1.18rem}.bm-summary{font-size:.9rem}.bm-detail{margin-left:0}}
 `;
 
-export function layout(title,body,feed='/bookmarks/feed.xml') {
- return `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,follow"><title>${esc(title)} | ChrisTorng 學習天地</title>${feed?`<link rel="alternate" type="application/rss+xml" title="書籤 RSS" href="${esc(feed)}">`:''}<style>${css}</style></head><body><main>${body}</main></body></html>`;
+export function layout(title,body,feed='/bookmarks/feed.xml',feedTitle='全部書籤 RSS 訂閱') {
+ return `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,follow"><title>${esc(title)} | ChrisTorng 學習天地</title>${feed?`<link rel="alternate" type="application/rss+xml" title="${esc(feedTitle)}" href="${esc(feed)}">`:''}<style>${css}</style></head><body><main>${body}</main></body></html>`;
 }
 export const adminPage = '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>書籤管理</title><link rel="stylesheet" href="/bookmarks/admin.css"></head><body><div id="app"></div><script type="module" src="/bookmarks/admin.js"></script></body></html>';
 
@@ -58,22 +58,27 @@ function href(tag,sort='new',page=1) {
 }
 export function listing(data,tags,opt) {
  const active=opt.tag||'',sort=opt.sort||'new';
- const activeName=tags.find(x=>x.id===active)?.name||active;
- const categories=[{id:'',name:'所有書籤',count:null},...tags];
- const links=categories.map(t=>`<li><a href="${esc(href(t.id,sort))}"${active===t.id?' aria-current="page"':''}><span>${esc(t.name)}</span>${t.count===null?'':`<span class="bm-count">${t.count}</span>`}</a></li>`).join('');
+ const activeTag=tags.find(x=>x.id===active);
+ const activeName=activeTag?.name_zh||activeTag?.name||active;
+ const labels=new Map(tags.map(t=>[t.name.toLowerCase(),t]));
+ const display=t=>t.name_zh||t.name;
+ const categories=[{id:'',name:'所有書籤',name_zh:'所有書籤',count:null},...tags];
+ const links=categories.map(t=>`<li><a href="${esc(href(t.id,sort))}"${active===t.id?' aria-current="page"':''}><span>${esc(display(t))}</span>${t.count===null?'':`<span class="bm-count">${t.count}</span>`}</a></li>`).join('');
  const sidebar=`<aside class="bm-sidebar" aria-label="書籤標籤"><h2>標籤</h2><ul class="bm-categories">${links}</ul></aside>`;
- const options=categories.map(t=>`<option value="${esc(t.id)}"${t.id===active?' selected':''}>${esc(t.name)}${t.count===null?'':` (${t.count})`}</option>`).join('');
+ const options=categories.map(t=>`<option value="${esc(t.id)}"${t.id===active?' selected':''}>${esc(display(t))}${t.count===null?'':` (${t.count})`}</option>`).join('');
  const sortOptions=[['new','最新分享'],['old','最早分享'],['recommended','推薦優先'],['title','依標題']].map(([id,name])=>`<option value="${id}"${sort===id?' selected':''}>${name}</option>`).join('');
  const toolbar=`<form method="get" action="/bookmarks/" class="bm-toolbar"><label class="bm-mobile-tag">標籤 <select name="tag" aria-label="選擇書籤標籤">${options}</select></label><label>排序 <select name="sort" aria-label="書籤排序">${sortOptions}</select></label><button type="submit" class="bm-submit">套用</button></form>`;
  const entries=data.items.map(b=>{
    const time=b.status_at||b.published_at||b.created_at;
-   return `<article class="bm-item"><div><time datetime="${esc(time)}">${esc(zhTime(time))}</time>${b.status===3?'<span class="bm-recommended">☆ 推薦</span>':''}</div><h2><a href="${esc(b.url)}" target="_blank" rel="noopener noreferrer">${esc(b.title)}</a></h2>${b.summary?`<p class="bm-summary">${esc(b.summary)}</p>`:''}<div class="bm-item-footer"><div class="bm-tags">${b.tags.map(t=>`<a href="${esc(href(t.toLowerCase(),sort))}">#${esc(t)}</a>`).join('')}</div><a class="bm-detail" href="/bookmarks/${encodeURIComponent(b.id)}/">書籤詳情</a></div></article>`;
+   return `<article class="bm-item"><div><time datetime="${esc(time)}">${esc(zhTime(time))}</time>${b.status===3?'<span class="bm-recommended">☆ 推薦</span>':''}</div><h2><a href="${esc(b.url)}" target="_blank" rel="noopener noreferrer">${esc(b.title)}</a></h2>${b.summary?`<p class="bm-summary">${esc(b.summary)}</p>`:''}<div class="bm-item-footer"><div class="bm-tags">${b.tags.map(t=>{const tag=labels.get(t.toLowerCase());return `<a href="${esc(href(tag?.id||t.toLowerCase(),sort))}">#${esc(tag?display(tag):t)}</a>`}).join('')}</div><a class="bm-detail" href="/bookmarks/${encodeURIComponent(b.id)}/">書籤詳情</a></div></article>`;
  }).join('');
  const pagination=`<nav class="bm-pagination" aria-label="書籤分頁">${data.page>1?`<a href="${esc(href(active,sort,data.page-1))}">← 上一頁</a>`:'<span></span>'}<span>${data.page} / ${data.pages}</span>${data.page<data.pages?`<a href="${esc(href(active,sort,data.page+1))}">下一頁 →</a>`:'<span></span>'}</nav>`;
  const feed='/bookmarks/feed.xml'+(active?'?tag='+encodeURIComponent(active):'');
- return layout('書籤'+(activeName?' · '+activeName:''),`<section class="bm-page"><header class="bm-header"><div><h1>書籤 <small>Bookmarks</small></h1><p class="bm-subtitle">閱讀與分享的網頁收藏</p></div><a class="bm-rss" href="${esc(feed)}" type="application/rss+xml">RSS 訂閱</a></header><div class="bm-columns">${sidebar}<div class="bm-main">${toolbar}${entries||'<p class="bm-empty">目前沒有公開書籤。</p>'}${pagination}</div></div></section>`,feed);
+ const feedTitle=(active?activeName:'全部')+'書籤 RSS 訂閱';
+ return layout('書籤'+(activeName?' · '+activeName:''),`<section class="bm-page"><header class="bm-header"><div><h1>書籤 <small>Bookmarks</small></h1><p class="bm-subtitle">閱讀與分享的網頁收藏</p></div><a class="bm-rss" href="${esc(feed)}" type="application/rss+xml">${esc(feedTitle)}</a></header><div class="bm-columns">${sidebar}<div class="bm-main">${toolbar}${entries||'<p class="bm-empty">目前沒有公開書籤。</p>'}${pagination}</div></div></section>`,feed,feedTitle);
 }
-export function individual(b) {
+export function individual(b,tags=[]) {
+ const labels=new Map(tags.map(t=>[t.name.toLowerCase(),t]));
  const time=b.status_at||b.published_at||b.created_at;
- return layout(b.title,`<section class="bm-page bm-article"><a class="bm-back" href="/bookmarks/">← 書籤列表</a><div><time datetime="${esc(time)}">${esc(zhTime(time))}</time>${b.status===3?'<span class="bm-recommended">☆ 推薦</span>':''}</div><h1>${esc(b.title)}</h1><p class="bm-source"><a href="${esc(b.url)}" target="_blank" rel="noopener noreferrer">前往原始網站 ↗</a></p>${b.summary?`<p class="bm-summary">${esc(b.summary)}</p>`:''}<div class="bm-tags">${b.tags.map(t=>`<a href="${esc(href(t.toLowerCase()))}">#${esc(t)}</a>`).join('')}</div></section>`);
+ return layout(b.title,`<section class="bm-page bm-article"><a class="bm-back" href="/bookmarks/">← 書籤列表</a><div><time datetime="${esc(time)}">${esc(zhTime(time))}</time>${b.status===3?'<span class="bm-recommended">☆ 推薦</span>':''}</div><h1>${esc(b.title)}</h1><p class="bm-source"><a href="${esc(b.url)}" target="_blank" rel="noopener noreferrer">前往原始網站 ↗</a></p>${b.summary?`<p class="bm-summary">${esc(b.summary)}</p>`:''}<div class="bm-tags">${b.tags.map(t=>{const tag=labels.get(t.toLowerCase());return `<a href="${esc(href(tag?.id||t.toLowerCase()))}">#${esc(tag?.name_zh||tag?.name||t)}</a>`}).join('')}</div></section>`);
 }
