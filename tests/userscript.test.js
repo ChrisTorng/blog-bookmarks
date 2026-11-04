@@ -75,6 +75,6 @@ test('original-language publisher title never comes from redirect target',()=>{
 
 test('Archive Today uses generic submit URLs and contains no hardcoded snapshots',()=>{
  assert.doesNotMatch(source,/const KNOWN_ARCHIVE_SNAPSHOTS|const ORIGINAL_BY_SNAPSHOT/);
- assert.match(source,/encodeURIComponent\\(url\\.href\\)/);
- assert.match(source,/archive\\.is\\/submit\\/\\?url=/);
+ assert.ok(source.includes('encodeURIComponent(url.href)'));
+ assert.ok(source.includes('https://archive.is/submit/?url='));
 });
