@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.4.1
+// @version      0.4.2
 // @description  Collect links into private bookmarks
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -144,7 +144,12 @@
         tagsTask = request('/tags', 'GET', undefined, currentToken)
             .then(result => {
                 if (token !== currentToken) return;
-                for (const item of result) if (item.name) categories.add(item.name);
+                const received=new Set(result.map(item=>item.name).filter(Boolean));
+                const inUse=new Set([...saved.values()].flatMap(item=>item.tags||[]));
+                for(const name of [...categories]){
+                    if(!received.has(name)&&!inUse.has(name)) categories.delete(name);
+                }
+                for(const name of received) categories.add(name);
                 rememberCategories();
                 updateMenuCategories();
             }).catch(() => {
