@@ -23,7 +23,7 @@ test('public listing uses last publication status time, not collection time',()=
 });
 test('detail links original URL and has site bookmark path',()=>{
  const html=individual(item);
- assert.match(html,/前往原始網站/);
+ assert.match(html,/前往網站/);
  assert.match(html,/書籤列表/);
 });
 test('RSS timestamps use recommendation event not first collection',()=>{
@@ -45,4 +45,18 @@ test('RSS title is all bookmarks or selected Chinese tag',()=>{
  assert.match(rss([item],'https://christorng.idv.tw'),/<title>全部書籤 RSS 訂閱<\/title>/);
  assert.match(rss([item],'https://christorng.idv.tw','ai','人工智慧'),/<title>人工智慧書籤 RSS 訂閱<\/title>/);
  assert.match(rss([item],'https://christorng.idv.tw','ai','人工智慧'),/bookmarks\/\?tag=ai/);
+});
+
+test('public list/detail/RSS prioritize redirect and retain source URL and bilingual title',()=>{
+ const dual={...item, title:'原始標題的中文翻譯',title_zh:'原始標題的中文翻譯',title_original:'Original English title',redirect_url:'https://nitter.tiekoetter.com/user/status/123',url:'https://x.com/user/status/123'};
+ const list=listing({items:[dual],total:1,page:1,pages:1},[],{sort:'new',tag:''});
+ assert.match(list,/href="https:\/\/nitter\.tiekoetter\.com\/user\/status\/123"/);
+ assert.match(list,/原始網址/);
+ assert.match(list,/https:\/\/x\.com\/user\/status\/123/);
+ assert.match(list,/Original English title/);
+ const detail=individual(dual);
+ assert.match(detail,/Original English title/);
+ assert.match(detail,/原始網址/);
+ const feed=rss([dual],'https://christorng.idv.tw');
+ assert.match(feed,/<link>https:\/\/nitter\.tiekoetter\.com\/user\/status\/123<\/link>/);
 });
