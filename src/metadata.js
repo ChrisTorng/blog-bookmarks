@@ -51,7 +51,7 @@ export async function hnExact(url,fetcher=fetch) {
 }
 
 export async function review(item,transport=fetch) {
-  let publisher=null,hn=null,archive=null;
+  let publisher=null,hn=null,archive=null,betaCat=null;
   try {publisher=await inspect(item.url,transport);}catch{}
   try {hn=await hnExact(item.url,transport);}catch{}
   try {
@@ -62,10 +62,11 @@ export async function review(item,transport=fetch) {
       if(page && page.originalUrl && sameArticle(item.url,page.originalUrl))archive=page;
     }
   }catch{}
-  const title=hn?.title||publisher?.title||archive?.title||null;
+  if(!hn && !publisher && !archive){try{betaCat=await betaCatExact(item,transport);}catch{}}
+  const title=hn?.title||publisher?.title||archive?.title||betaCat?.title||null;
   const description=publisher?.description||archive?.description||null;
   return {verified:!!title,title_original:title,
-    source:hn?.source||(publisher?'publisher-exact-url':archive?'archive-exact-url':null),
+    source:hn?.source||(publisher?'publisher-exact-url':archive?'archive-exact-url':betaCat?.source||null),
     summary:description&&!invalidSummary(description)?description:null,
     invalid_existing_summary:invalidSummary(item.summary)};
 }
