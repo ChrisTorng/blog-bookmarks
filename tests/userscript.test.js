@@ -68,7 +68,7 @@ test('all automatic archive-host redirects are included without triggering manua
   assert.match(source,/sourceAndTarget/);
 });
 
-test('publisher fetching is server-only and browser access is limited to own API',()=>{
+test('no publisher fetching happens in the userscript and API is the only cross-origin host',()=>{
  assert.doesNotMatch(source,/originalSiteTitle|publisherTitle/);
  assert.doesNotMatch(source,/\/\/ @connect\s+\*/);
  assert.match(source,/\/\/ @connect\s+christorng\.idv\.tw/);
