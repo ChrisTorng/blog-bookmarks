@@ -298,8 +298,7 @@
             } else {
                 // Use the title snapshot, never refetch or wait on a click.
                 const article = articleData(link);
-                // The same-origin BetaCat HTML preserves its English title.
-                // The Worker can enrich missing titles without browser cross-origin access.
+                // No server-side publisher fetch: submit the cached BetaCat title as-is.
                 const result = await request('', 'POST', article);
                 const item = result.item || result;
                 saved.set(key, { id: item.id, status: item.status, tags: item.tags || [] });
