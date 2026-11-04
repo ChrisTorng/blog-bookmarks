@@ -29,6 +29,11 @@ try{
  const created=await req('/bookmarks/api/admin/','POST',{url:'https://example.org/sample?keep=1#fragment',title:'Sample article',summary:'Imported description',tags:['AI','AI']},true);
  assert.equal(created.status,201,created.text+'\nWorker output: '+output.slice(-1200));
  assert.equal(created.body.item.status,0);
+ const tagUpdate=await req('/bookmarks/api/admin/tags/ai','PATCH',{name:'AI Research',name_zh:'人工智慧'},true);
+ assert.equal(tagUpdate.status,200,tagUpdate.text);
+ assert.equal(tagUpdate.body.id,'ai');
+ const tags=await req('/bookmarks/api/admin/tags','GET',undefined,true);
+ assert.equal(tags.body.find(t=>t.id==='ai').name_zh,'人工智慧');
  const id=created.body.item.id;
  assert.equal((await req('/bookmarks/api/')).body.total,0);
  const again=await req('/bookmarks/api/admin/','POST',{url:'https://example.org/sample?keep=1',title:'duplicate'},true);
@@ -40,6 +45,8 @@ try{
  assert.equal(published.body.status,2);
  assert.equal((await req('/bookmarks/api/')).body.total,1);
  assert.match((await req('/bookmarks/feed.xml')).text,/Sample article/);
+ assert.match((await req('/bookmarks/feed.xml?tag=ai')).text,/人工智慧書籤 RSS 訂閱/);
+ assert.match((await req('/bookmarks/?tag=ai')).text,/人工智慧/);
  const starred=await req('/bookmarks/api/admin/'+id,'PATCH',{status:3},true);
  assert.equal(starred.body.status,3);
  const rotated=await req('/bookmarks/api/admin/ingest-token','POST',{},true);
