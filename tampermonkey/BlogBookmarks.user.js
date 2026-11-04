@@ -91,6 +91,7 @@
     function redirectedUrl(input) {
         const url = new URL(input);
         const host = url.hostname.toLowerCase();
+        if (url.protocol !== 'https:') return null; // Align with source userscript @match.
         const post = url.pathname.match(/^\/([^/]+)\/status\/(\d+)(?:\/|$)/);
         if (['x.com', 'twitter.com'].includes(host) && post)
             return 'https://nitter.tiekoetter.com/' + post[1] + '/status/' + post[2];

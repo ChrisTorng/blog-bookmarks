@@ -46,6 +46,7 @@ export const INTERNET_ARCHIVE_HOSTS = new Set([
 export function preferredRedirect(input) {
   const url = new URL(input);
   const host = url.hostname.toLowerCase();
+  if (url.protocol !== 'https:') return null; // All @match URL navigation rules use HTTPS.
   const post = url.pathname.match(/^\/([^/]+)\/status\/(\d+)(?:\/|$)/);
   if (['x.com','twitter.com'].includes(host) && post)
     return 'https://nitter.tiekoetter.com/' + post[1] + '/status/' + post[2];
