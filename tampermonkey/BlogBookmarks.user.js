@@ -572,7 +572,9 @@
             if (!toolbar) {
                 toolbar = document.createElement('div');
                 toolbar.className = TOOLBAR_CLASS;
-                article.insertBefore(toolbar, title);
+                const anchor = article.querySelector(':scope > .post-title') ||
+                    [...article.children].find(child => child.contains(title)) || article.firstChild;
+                article.insertBefore(toolbar, anchor);
             }
             const oldCollapseButton = article.querySelector(':scope > .auto-open-new-articles-item-toggle');
             if (oldCollapseButton) toolbar.prepend(oldCollapseButton);
