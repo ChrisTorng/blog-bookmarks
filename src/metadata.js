@@ -12,7 +12,7 @@ export function metadata(html) {
     return tag?.match(/content=["']([^"']*)["']/i)?.[1]||'';
   }
   return {title:clean(find('og:title')||html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]),
-    description:clean(find('og:description')||find('description'))};
+    description:clean(find('og:description')||find('description')), originalUrl:clean(find('og:url'))};
 }
 export function sameArticle(a,b) {
   try {const x=new URL(a),y=new URL(b);return x.hostname===y.hostname&&x.pathname.replace(/\/+$/,'')===y.pathname.replace(/\/+$/,'');}
@@ -51,13 +51,21 @@ export async function hnExact(url,fetcher=fetch) {
 }
 
 export async function review(item,transport=fetch) {
-  let publisher=null,hn=null;
+  let publisher=null,hn=null,archive=null;
   try {publisher=await inspect(item.url,transport);}catch{}
   try {hn=await hnExact(item.url,transport);}catch{}
-  const title=hn?.title||publisher?.title||null;
-  const description=publisher?.description||null;
+  try {
+    const target=new URL(item.redirect_url);
+    if(!publisher && ['archive.is','archive.ph','web.archive.org'].includes(target.hostname) &&
+       !target.pathname.startsWith('/submit/')){
+      const page=await inspect(target.href,transport);
+      if(page && page.originalUrl && sameArticle(item.url,page.originalUrl))archive=page;
+    }
+  }catch{}
+  const title=hn?.title||publisher?.title||archive?.title||null;
+  const description=publisher?.description||archive?.description||null;
   return {verified:!!title,title_original:title,
-    source:hn?.source||(publisher?'publisher-exact-url':null),
+    source:hn?.source||(publisher?'publisher-exact-url':archive?'archive-exact-url':null),
     summary:description&&!invalidSummary(description)?description:null,
     invalid_existing_summary:invalidSummary(item.summary)};
 }
