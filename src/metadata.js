@@ -24,7 +24,7 @@ export function trustedTitle(title) {
 
 export async function inspect(url,fetcher=fetch) {
   const parsed=new URL(url);
-  if(parsed.protocol!=='https:'||!parsed.hostname.includes('.')||parsed.username||parsed.password) return null;
+  if(parsed.protocol!=='https:'||!parsed.hostname.includes('.')||parsed.username||parsed.password||parsed.port||/^(?:localhost|[0-9.]+)$/.test(parsed.hostname)||/\.(?:local|internal|test|localhost)$/.test(parsed.hostname))return null;
   const res=await fetcher(url,{redirect:'manual'});
   if(!res.ok||!(res.headers.get('Content-Type')||'').includes('text/html'))return null;
   const data=metadata((await res.text()).slice(0,1000000));
