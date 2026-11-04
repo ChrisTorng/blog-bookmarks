@@ -29,6 +29,28 @@ try{
  const created=await req('/bookmarks/api/admin/','POST',{url:'https://example.org/sample?keep=1#fragment',title:'Sample article',summary:'Imported description',tags:['AI','AI']},true);
  assert.equal(created.status,201,created.text+'\nWorker output: '+output.slice(-1200));
  assert.equal(created.body.item.status,0);
+ const initialQuick=await req('/bookmarks/api/admin/quick?size=6','GET',undefined,true);
+ assert.equal(initialQuick.status,200,initialQuick.text);
+ assert.equal(initialQuick.body.size,6);
+ assert.equal(initialQuick.body.remaining,1);
+ assert.equal(initialQuick.body.pending[0].id,created.body.item.id);
+ const largerQuick=await req('/bookmarks/api/admin/quick?size=20','GET',undefined,true);
+ assert.equal(largerQuick.body.size,20);
+ const invalidSize=await req('/bookmarks/api/admin/quick?size=100','GET',undefined,true);
+ assert.equal(invalidSize.body.size,6);
+ const untagged=await req('/bookmarks/api/admin/','POST',{
+  url:'https://example.org/uncategorized',title:'Uncategorized'
+ },true);
+ const untaggedId=untagged.body.item.id;
+ const deniedPublic=await req('/bookmarks/api/admin/'+untaggedId,'PATCH',{status:3},true);
+ assert.equal(deniedPublic.status,400,deniedPublic.text);
+ assert.match(deniedPublic.body.error,/分類/);
+ assert.equal((await req('/bookmarks/api/admin/'+untaggedId,'PATCH',{status:4},true)).status,400);
+ assert.equal((await req('/bookmarks/api/admin/'+untaggedId,'PATCH',{status:2},true)).body.status,2);
+ assert.equal((await req('/bookmarks/api/admin/'+untaggedId,'PATCH',{status:3,tags:['Science']},true)).body.status,3);
+ assert.equal((await req('/bookmarks/api/admin/'+untaggedId,'PATCH',{tags:[]},true)).status,400);
+ assert.equal((await req('/bookmarks/api/admin/'+untaggedId,'PATCH',{status:2,tags:[]},true)).body.status,2);
+ assert.equal((await req('/bookmarks/api/admin/'+untaggedId,'DELETE',undefined,true)).body.deleted,true);
  const tagUpdate=await req('/bookmarks/api/admin/tags/ai','PATCH',{name:'AI Research',name_zh:'人工智慧'},true);
  assert.equal(tagUpdate.status,200,tagUpdate.text);
  assert.equal(tagUpdate.body.id,'ai');
@@ -46,6 +68,9 @@ try{
  assert.equal((await req('/bookmarks/api/')).body.total,0);
  const madePrivate=await req('/bookmarks/api/admin/'+id,'PATCH',{status:2},true);
  assert.equal(madePrivate.body.status,2);
+ const recentlyProcessed=await req('/bookmarks/api/admin/quick?size=6','GET',undefined,true);
+ assert.equal(recentlyProcessed.body.remaining,0);
+ assert.equal(recentlyProcessed.body.recent.at(-1).id,id);
  assert.equal((await req('/bookmarks/api/admin/?filter=pending','GET',undefined,true)).body.total,0);
  assert.equal((await req('/bookmarks/api/admin/?filter=private','GET',undefined,true)).body.total,1);
  assert.equal((await req('/bookmarks/api/')).body.total,0);
