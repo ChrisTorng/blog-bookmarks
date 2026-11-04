@@ -7,11 +7,11 @@ import { adminJavaScript, adminStylesheet } from './ui-assets.js';
 
 const response=(body,type='text/html; charset=utf-8',status=200)=>new Response(body,{status,headers:{'Content-Type':type,'X-Content-Type-Options':'nosniff','Cache-Control':'no-store'}});
 const worker={
- async fetch(req,env){
+ async fetch(req,env,ctx){
   const url=new URL(req.url),p=url.pathname;
-  if(req.method==='HEAD'){const x=await worker.fetch(new Request(req,{method:'GET'}),env);return new Response(null,{status:x.status,headers:x.headers});}
+  if(req.method==='HEAD'){const x=await worker.fetch(new Request(req,{method:'GET'}),env,ctx);return new Response(null,{status:x.status,headers:x.headers});}
   if(req.method==='OPTIONS')return response('','text/plain',405);
-  if(p.startsWith('/bookmarks/api'))return api(req,env,url);
+  if(p.startsWith('/bookmarks/api'))return api(req,env,url,ctx);
   if(p==='/bookmarks/admin'||p==='/bookmarks/admin/'){
    if(!(isLocal(req) && env.AUTH_MODE==='local') && !await isAdmin(req,env))return response('管理員驗證失敗','text/plain',401);
    return response(adminPage);
