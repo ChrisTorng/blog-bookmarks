@@ -1,6 +1,8 @@
 -- v2 workflow: 0 unread, 1 read/undecided, 2 read/decided private,
 -- 3 public, 4 recommended.
 -- Preserve legacy status (0 unread, 1 read, 2 public, 3 recommended) for a safe rollout.
+CREATE TABLE IF NOT EXISTS bookmark_status_before_stage_v2 (id TEXT PRIMARY KEY,legacy_status INTEGER NOT NULL,read_at TEXT,published_at TEXT,starred_at TEXT);
+INSERT OR IGNORE INTO bookmark_status_before_stage_v2 SELECT id,status,read_at,published_at,starred_at FROM bookmarks;
 ALTER TABLE bookmarks ADD COLUMN stage INTEGER NOT NULL DEFAULT 0 CHECK(stage BETWEEN 0 AND 4);
 UPDATE bookmarks SET stage=CASE status WHEN 2 THEN 3 WHEN 3 THEN 4 ELSE status END;
 CREATE INDEX IF NOT EXISTS idx_bookmarks_stage_created ON bookmarks(stage,created_at DESC);
