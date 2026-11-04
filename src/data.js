@@ -45,14 +45,15 @@ export async function list(db, {privateList=false,filter='unread',page=1,tag='',
   return {items:rows.results.map(decode),page:n,pages:Math.max(1,Math.ceil(total/20)),total};
 }
 export async function tagsList(db,includePrivate=false) {
-  const rows=await db.prepare(`SELECT t.id,t.name,COUNT(*) count FROM tags t JOIN bookmark_tags bt ON bt.tag_id=t.id JOIN bookmarks b ON b.id=bt.bookmark_id ${includePrivate?'':"WHERE b.status>=2"} GROUP BY t.id,t.name ORDER BY count DESC,t.name`).all();
+  const rows=await db.prepare(`SELECT t.id,t.name,t.name_zh,COUNT(*) count FROM tags t JOIN bookmark_tags bt ON bt.tag_id=t.id JOIN bookmarks b ON b.id=bt.bookmark_id ${includePrivate?'':"WHERE b.status>=2"} GROUP BY t.id,t.name,t.name_zh ORDER BY count DESC,t.name`).all();
   return rows.results;
 }
 async function replaceTags(db,id,tags) {
   const statements=[db.prepare('DELETE FROM bookmark_tags WHERE bookmark_id=?').bind(id)];
   for(const name of tags) {
-    const key=name.toLowerCase();
-    statements.push(db.prepare('INSERT INTO tags(id,name) VALUES(?,?) ON CONFLICT(id) DO NOTHING').bind(key,name));
+    const existing=await db.prepare('SELECT id FROM tags WHERE name=? COLLATE NOCASE OR id=? LIMIT 1').bind(name,name.toLowerCase()).first();
+    const key=existing?.id||name.toLowerCase();
+    if(!existing)statements.push(db.prepare('INSERT OR IGNORE INTO tags(id,name) VALUES(?,?)').bind(key,name));
     statements.push(db.prepare('INSERT INTO bookmark_tags(bookmark_id,tag_id) VALUES(?,?)').bind(id,key));
   }
   await db.batch(statements);
@@ -89,4 +90,16 @@ export async function patch(db,id,raw) {
 }
 export async function remove(db,id){
   const result=await db.prepare('DELETE FROM bookmarks WHERE id=?').bind(id).run();return Boolean(result.meta.changes);
+}
+
+export async function renameTag(db,id,value){
+  const current=await db.prepare('SELECT id,name,name_zh FROM tags WHERE id=?').bind(id).first();
+  if(!current)return null;
+  const name=String(value.name??current.name).trim();
+  const nameZh=String(value.name_zh??'').trim();
+  if(!name||name.length>80||nameZh.length>80)throw new Error('標籤名稱不可為空或超過 80 字');
+  const conflict=await db.prepare('SELECT id FROM tags WHERE name=? COLLATE NOCASE AND id<>?').bind(name,id).first();
+  if(conflict)throw new Error('英文標籤名稱已存在');
+  await db.prepare('UPDATE tags SET name=?,name_zh=? WHERE id=?').bind(name,nameZh||null,id).run();
+  return db.prepare('SELECT id,name,name_zh FROM tags WHERE id=?').bind(id).first();
 }
