@@ -54,12 +54,12 @@ function status(msg,error=false){$('message').textContent=msg;$('message').class
 function options(){const q=new URLSearchParams();for(const k of ['filter','sort','tag','q','page'])q.set(k,state[k]);return q.toString();}
 const levelName=['未讀','已讀 · 待決定','已讀 · 確定不公開','已公開','★ 已推薦'];
 function itemHtml(b) {
- const pending=state.pending.has(b.id), label=levelName[b.status]||'';
+ const pending=state.pending.has(b.id), reviewing=pending||b.status===1||['pending','unread','readPending'].includes(state.filter), label=levelName[b.status]||'';
  const statusDate=b.status>=3?' · '+(b.status===4?'推薦':'公開')+' '+dateText(b.status_at||b.starred_at||b.published_at):'';
  const info='<div class="meta">加入 '+esc(dateText(b.created_at))+' · '+esc(new URL(b.url).hostname)+esc(statusDate)+'</div>';
  const checks=[1,3,4].map((level,i)=>'<label><input type="checkbox" data-level="'+level+'" '+(b.status>=level?'checked ':'')+((level===3&&b.status<1)||(level===4&&b.status<3)?'disabled ':'')+'> '+['已讀','公開','推薦'][i]+'</label>').join('');
  const actions='<div class="actions">'+checks+'<button type="button" data-edit>編輯</button>'+(b.status>=3?'<a class="write-note" href="/notes/editor/?bookmark='+encodeURIComponent(b.id)+'" target="_blank" rel="noopener">寫隨筆 ↗</a>':'')+'</div>';
- const decision=pending?'<div class="decision-row"><button type="button" data-keep class="private" '+(b.status===0?'disabled ':'')+'>確定不公開</button>'+(b.status>=2?'<button type="button" data-finish class="finish">完成，下一筆</button>':'')+'<p>已讀但未決定的書籤會留在待決定清單。</p></div>':'';
+ const decision=reviewing?'<div class="decision-row"><button type="button" data-keep class="private" '+(b.status===0?'disabled ':'')+'>確定不公開</button>'+(b.status>=2?'<button type="button" data-finish class="finish">完成，下一筆</button>':'')+'<p>已讀但未決定的書籤會留在待決定清單。</p></div>':b.status===2?'<div class="decision-row"><button type="button" data-undecided>改回待決定</button></div>':'';
  return '<article class="item'+(pending?' pending':'')+'" data-id="'+esc(b.id)+'"><div class="item-header"><div class="item-heading"><a class="title" href="'+esc(b.url)+'" target="_blank" rel="noopener noreferrer" data-read="'+esc(b.id)+'">'+esc(b.title)+' ↗</a>'+info+'</div><span class="status-name">'+label+'</span></div>'+(b.summary?'<p class="summary">'+esc(b.summary)+'</p>':'')+(b.tags.length?'<div class="tagline">'+b.tags.map(t=>'#'+esc(t)).join(' · ')+'</div>':'')+actions+decision+'</article>';
 }
 function renderItem(b){
@@ -225,6 +225,7 @@ $('items').addEventListener('click',async e=>{
    catch(e){status(e.message,true);}
    return;
  }
+ if(e.target.closest('[data-undecided]')){try{await persistStatus(b,1);await refresh();}catch(e){status(e.message,true);}return;}
  if(e.target.closest('[data-finish]')){
    if(b.status<2){status('仍未決定，請選擇確定不公開、公開或推薦。',true);return;}
    try{await state.writes.get(b.id);state.pending.delete(b.id);await refresh();}
