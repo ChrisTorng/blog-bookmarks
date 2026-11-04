@@ -12,7 +12,7 @@ function readLocationState(){
   sort: allowedSorts.includes(query.get('sort')) ? query.get('sort') : 'new',
   tag: (query.get('tag') || '').slice(0,80),
   q: (query.get('q') || '').slice(0,100),
-  page: /^\\d+$/.test(rawPage) ? Math.min(100000, Math.max(1,Number(rawPage))) : 1
+  page: /^\d+$/.test(rawPage) ? Math.min(100000, Math.max(1,Number(rawPage))) : 1
  };
 }
 const state = {...readLocationState(), items:[], tags:[], pending:new Map(), writes:new Map()};
