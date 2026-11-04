@@ -51,3 +51,5 @@ test('back/forward and stale response protection are present',()=>{
  assert.match(source,/if\(generation!==refreshGeneration\)return/);
  assert.match(source,/if\(state\.page>data\.pages\)/);
 });
+
+// Refresh intentionally discards ephemeral pending cards and queries D1 again.
