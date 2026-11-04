@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.3
+// @version      0.5.4
 // @description  One-tap unread bookmark star; organize and publish from the bookmarks manager
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -78,13 +78,6 @@
         "www.washingtonpost.com"
     ]);
 
-    const KNOWN_ARCHIVE_SNAPSHOTS = new Map([
-        ['https://www.404media.co/anyone-can-push-updates-to-the-doge-gov-website-2/', 'https://archive.ph/wy1Wt'],
-        ['https://www.theatlantic.com/magazine/archive/2025/02/american-loneliness-personality-politics/681091/', 'https://archive.is/20250108154250/https://www.theatlantic.com/magazine/archive/2025/02/american-loneliness-personality-politics/681091'],
-        ['https://www.wsj.com/world/dozens-feared-dead-in-crash-after-passenger-flight-diverts-from-russia-fb2cdf2c', 'https://archive.is/T0atg']
-    ]);
-    const ORIGINAL_BY_SNAPSHOT = new Map([...KNOWN_ARCHIVE_SNAPSHOTS].map(([url,snapshot])=>[snapshot,url]));
-
     function redirectedUrl(input) {
         const url = new URL(input);
         const host = url.hostname.toLowerCase();
@@ -116,8 +109,7 @@
             if (id) return 'https://arxiv.org/html/' + id;
         }
         if (ARCHIVE_TODAY_HOSTS.has(host))
-            return KNOWN_ARCHIVE_SNAPSHOTS.get(url.href) ||
-                'https://archive.is/submit/?url=' + encodeURIComponent(url.href);
+            return 'https://archive.is/submit/?url=' + encodeURIComponent(url.href);
         if (INTERNET_ARCHIVE_HOSTS.has(host))
             return 'https://web.archive.org/' + url.href;
         return null;
@@ -127,8 +119,6 @@
         const url = normalize(input);
         const parsed = new URL(url);
         // Article lists may already point to an archive entry point. Retain both.
-        const knownOriginal = ORIGINAL_BY_SNAPSHOT.get(url);
-        if (knownOriginal) return { url: knownOriginal, redirect_url: url };
         if (parsed.hostname === 'web.archive.org') {
             const match = parsed.pathname.match(/^\/(?:web\/[^/]+\/)?(https?:\/\/.*)$/i);
             if (match) {

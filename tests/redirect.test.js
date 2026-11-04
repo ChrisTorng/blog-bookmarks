@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { preferredRedirect,primaryUrl,ARCHIVE_TODAY_HOSTS,INTERNET_ARCHIVE_HOSTS,KNOWN_ARCHIVE_SNAPSHOTS,correctLegacyRedirect } from '../src/redirect.js';
+import { preferredRedirect,primaryUrl,ARCHIVE_TODAY_HOSTS,INTERNET_ARCHIVE_HOSTS,correctLegacyRedirect } from '../src/redirect.js';
 import { validate } from '../src/data.js';
 
 test('redirects agree with deterministic RedirectUrls rules',()=>{
@@ -53,13 +53,16 @@ test('English-only title stays original; Chinese title is stored only when avail
  assert.equal(translated.title_original,'English headline');
 });
 
-test('exact verified snapshot links and already saved old Wayback redirects are corrected',()=>{
- const originals=["https://www.404media.co/anyone-can-push-updates-to-the-doge-gov-website-2/","https://www.theatlantic.com/magazine/archive/2025/02/american-loneliness-personality-politics/681091/","https://www.wsj.com/world/dozens-feared-dead-in-crash-after-passenger-flight-diverts-from-russia-fb2cdf2c"];
- const snapshots=["https://archive.ph/wy1Wt","https://archive.is/20250108154250/https://www.theatlantic.com/magazine/archive/2025/02/american-loneliness-personality-politics/681091","https://archive.is/T0atg"];
- originals.forEach((original,i)=>{
-   assert.equal(KNOWN_ARCHIVE_SNAPSHOTS.get(original),snapshots[i]);
-   assert.equal(preferredRedirect(original),snapshots[i]);
-   assert.equal(primaryUrl({url:original,redirect_url:'https://web.archive.org/'+original}),snapshots[i]);
- });
+test('legacy archive redirect is corrected without article snapshot exceptions',()=>{
+ const originals=[
+ 'https://www.404media.co/anyone-can-push-updates-to-the-doge-gov-website-2/',
+ 'https://www.theatlantic.com/magazine/archive/2025/02/american-loneliness-personality-politics/681091/',
+ 'https://www.wsj.com/world/dozens-feared-dead-in-crash-after-passenger-flight-diverts-from-russia-fb2cdf2c'
+ ];
+ for(const original of originals){
+   const expected='https://archive.is/submit/?url='+encodeURIComponent(original);
+   assert.equal(preferredRedirect(original),expected);
+   assert.equal(primaryUrl({url:original,redirect_url:'https://web.archive.org/'+original}),expected);
+ }
  assert.equal(correctLegacyRedirect(originals[0],'https://custom.example/a'),'https://custom.example/a');
 });

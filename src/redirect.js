@@ -1,7 +1,6 @@
 // Derived from TampermonkeyScripts on 2026-11-05.
 // User tested all 11 overlapping hosts: Archive Today wins. They are now
 // removed from InternetArchive.user.js; no active @match overlap remains.
-// Fixed snapshots are exact-article overrides, not live latest-snapshot URLs.
 export const ARCHIVE_TODAY_HOSTS = new Set([
   'www.404media.co',
   'www.bloomberg.com',
@@ -29,12 +28,6 @@ export const INTERNET_ARCHIVE_HOSTS = new Set([
   'www.thetimes.com',
   'www.theverge.com',
   'www.washingtonpost.com']);
-
-export const KNOWN_ARCHIVE_SNAPSHOTS = new Map([
-  ['https://www.404media.co/anyone-can-push-updates-to-the-doge-gov-website-2/', 'https://archive.ph/wy1Wt'],
-  ['https://www.theatlantic.com/magazine/archive/2025/02/american-loneliness-personality-politics/681091/', 'https://archive.is/20250108154250/https://www.theatlantic.com/magazine/archive/2025/02/american-loneliness-personality-politics/681091'],
-  ['https://www.wsj.com/world/dozens-feared-dead-in-crash-after-passenger-flight-diverts-from-russia-fb2cdf2c', 'https://archive.is/T0atg']
-]);
 
 export function preferredRedirect(input) {
   const url = new URL(input);
@@ -70,8 +63,7 @@ export function preferredRedirect(input) {
 
   // Every original publisher URL belongs to exactly one archive service.
   if (ARCHIVE_TODAY_HOSTS.has(host))
-    return KNOWN_ARCHIVE_SNAPSHOTS.get(url.href) ||
-      'https://archive.is/submit/?url=' + encodeURIComponent(url.href);
+    return 'https://archive.is/submit/?url=' + encodeURIComponent(url.href);
   if (INTERNET_ARCHIVE_HOSTS.has(host))
     return 'https://web.archive.org/' + url.href;
   return null;

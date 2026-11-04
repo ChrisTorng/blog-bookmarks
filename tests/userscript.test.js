@@ -7,7 +7,7 @@ const source = readFileSync(new URL('../tampermonkey/BlogBookmarks.user.js', imp
 test('userscript installs from blog-bookmarks and parses', () => {
   assert.doesNotThrow(() => new Function(source));
   assert.match(source, /\/\/ @name\s+Blog Bookmarks\n/);
-  assert.match(source, /\/\/ @version\s+0\.5\.2\n/);
+  assert.match(source, /\/\/ @version\s+0\.5\.4\n/);
   assert.match(source, /raw\.githubusercontent\.com\/ChrisTorng\/blog-bookmarks\/main\/tampermonkey\/BlogBookmarks\.user\.js/);
   assert.match(source, /\/\/ @match\s+https:\/\/hackernews\.betacat\.io\/\*/);
   assert.doesNotMatch(source, /cloudmark-christorng|cloudmark\.site/);
@@ -73,10 +73,8 @@ test('original-language publisher title never comes from redirect target',()=>{
  assert.match(source,/\/\/ @connect\s+\*/);
 });
 
-test('publisher-specific snapshots and corrected archive owners match source rules',()=>{
- assert.match(source,/KNOWN_ARCHIVE_SNAPSHOTS/);
- assert.match(source,/ORIGINAL_BY_SNAPSHOT/);
- assert.match(source,/KNOWN_ARCHIVE_SNAPSHOTS\\.get\\(url\\.href\\)/);
+test('Archive Today uses generic submit URLs and contains no hardcoded snapshots',()=>{
+ assert.doesNotMatch(source,/const KNOWN_ARCHIVE_SNAPSHOTS|const ORIGINAL_BY_SNAPSHOT/);
  assert.match(source,/encodeURIComponent\\(url\\.href\\)/);
- assert.match(source,/https:\\/\\/archive\\.is\\/T0atg/);
+ assert.match(source,/archive\\.is\\/submit\\/\\?url=/);
 });

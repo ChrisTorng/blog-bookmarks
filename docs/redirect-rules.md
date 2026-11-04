@@ -28,7 +28,7 @@
 
 ### 3. ArchiveToday.user.js
 
-11 個 HTTPS 網域，無固定快照時轉 `https://archive.is/submit/?url=<URL 編碼後原始網址>`：
+11 個 HTTPS 網域，一律轉 `https://archive.is/submit/?url=<URL 編碼後原始網址>`：
 
 - `www.404media.co`、`www.bloomberg.com`、`www.economist.com`
 - `www.ft.com`、`www.nature.com`、`www.newscientist.com`
@@ -37,7 +37,7 @@
 
 使用者 2026-11-05 逐項測試 11 筆文章，**11 筆全部到 Archive Today（a）**；已移除 InternetArchive.user.js 的重疊匹配，更新 Bookmarks 優先規則。
 
-三筆有具體固定快照連結的文章直接開啟快照（404 Media：https://archive.ph/wy1Wt；The Atlantic：https://archive.is/20250108154250/https://www.theatlantic.com/magazine/archive/2025/02/american-loneliness-personality-politics/681091；WSJ：https://archive.is/T0atg，最後一筆由使用者實測提供）。其他文章繼續 /submit/ 流程，不推測快照 ID。
+所有文章均透過 `/submit/?url=` 交給 Archive Today 決定後續快照或驗證，**沒有任何單篇文章固定快照對應**。
 
 兩支 archive 腳本加入 `@run-at document-start`，減少先顯示原站再跳轉；但瀏覽器的初始 HTTP 請求可能已送出，不能保證完全不發生原站網路連線。RedirectUrls.user.js 已使用 document-start；X/Twitter 特定分支為保留正常 Back/Forward 歷史順序，仍有意等待原始頁面 load 完成。
 
@@ -63,11 +63,6 @@
 - 即使原文標題未能取得，也不把英文標題填入 `title_zh` 假裝成中文翻譯。
 - 後續若要區分多個啟用狀態，可加入使用者個別規則優先權設定，而不應依任意檔名順序假設瀏覽器實際導向。
 
-## 動態最新快照路徑（尚未改為預設）
+## 快照政策
 
-Archive Today 另有社群與擴充功能使用的 `https://archive.is/newest/<原始網址>` 端點，服務會嘗試尋找**最新已存在的快照**，並導向像 `https://archive.is/T0atg` 的固定網址。參考：
-
-- https://github.com/jackar/archive_viewer
-- https://chromewebstore.google.com/detail/archivetoday-automator/mmhadhnchpgicjlmlcdfaapkekknnkha
-
-它不等於 `/submit/?url=`：未找到既有快照時，可能顯示建立快照頁或其他錯誤。第三方工具也提醒可能遇到 CAPTCHA 或服務限流。由於**未能從目前環境連線驗證原始 8 篇的 /newest 回應**，暫不把它無條件取代正式 fallback；保留既定 `/submit/` 行為，並只對三筆已知文章使用固定快照直連。
+維持 `/submit/?url=` 原有流程，不指定任何固定快照 ID，也不預設使用未確認可靠性的 `/newest/`。
