@@ -30,3 +30,22 @@ export async function inspect(url,fetcher=fetch) {
   const data=metadata((await res.text()).slice(0,1000000));
   return trustedTitle(data.title)?data:null;
 }
+
+export async function hnExact(url,fetcher=fetch) {
+  const u=new URL(url);
+  if(u.hostname==='news.ycombinator.com'&&u.pathname==='/item'){
+    const id=u.searchParams.get('id');
+    if(!/^\\d+$/.test(id||''))return null;
+    const r=await fetcher('https://hacker-news.firebaseio.com/v0/item/'+id+'.json');
+    const x=r.ok?await r.json():null;
+    return x?.id===Number(id)&&trustedTitle(x.title||'')?{title:x.title,source:'hn-item-id'}:null;
+  }
+  const q=new URL('https://hn.algolia.com/api/v1/search');
+  q.searchParams.set('query',u.hostname+u.pathname);
+  q.searchParams.set('tags','story');
+  q.searchParams.set('hitsPerPage','50');
+  const r=await fetcher(q.href);
+  if(!r.ok)return null;
+  const matches=((await r.json()).hits||[]).filter(x=>x.url&&sameArticle(url,x.url)&&trustedTitle(x.title||''));
+  return matches.length===1?{title:matches[0].title,source:'hn-exact-url'}:null;
+}
