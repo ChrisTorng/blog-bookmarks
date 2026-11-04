@@ -37,6 +37,12 @@ export async function api(req,env,url){
    if(req.method==='DELETE')return json({deleted:await remove(env.DB,match[1])});
   }
   if(p==='/bookmarks/api/ingest/status'&&req.method==='POST')return bulkStatus(req,env);
+  if(p==='/bookmarks/api/ingest/remove'&&req.method==='POST'){
+   if(!await validIngestToken(req,env))return json({error:'Token 無效'},401);
+   const body=await input(req),item=await byUrl(env.DB,body.url);
+   if(!item)return json({deleted:false});
+   return json({deleted:await remove(env.DB,item.id)});
+  }
   if(p==='/bookmarks/api/ingest/update-tags'&&req.method==='POST')return updateTags(req,env);
   if(p==='/bookmarks/api/ingest/tags'&&req.method==='GET'){
    if(!await validIngestToken(req,env))return json({error:'Token 無效'},401);

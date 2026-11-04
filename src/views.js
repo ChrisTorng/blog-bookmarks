@@ -26,6 +26,9 @@ const css = `
 .bm-item h2{font-size:clamp(1.13rem,2.15vw,1.42rem);line-height:1.45;font-weight:680;margin:.5rem 0 .55rem;letter-spacing:-.01em}
 .bm-item h2 a{text-decoration:none;color:inherit}
 .bm-item h2 a:hover{color:var(--site-primary,#3b82f6)}
+.bm-original-title{font-size:.83rem;opacity:.65;line-height:1.5;margin:.1rem 0 .5rem;overflow-wrap:anywhere}
+.bm-original-url{font-size:.78rem;opacity:.68;line-height:1.6;overflow-wrap:anywhere;margin:.3rem 0 .7rem}
+.bm-original-url a{color:inherit;text-decoration:underline}
 .bm-summary{opacity:.83;line-height:1.76;margin:.3rem 0 .75rem;white-space:pre-wrap;font-size:.94rem}
 .bm-item-footer{display:flex;align-items:center;gap:.55rem 1rem;flex-wrap:wrap;margin-top:.75rem;font-size:.82rem}
 .bm-tags{display:flex;gap:.45rem;flex-wrap:wrap}
@@ -70,7 +73,10 @@ export function listing(data,tags,opt) {
  const toolbar=`<form method="get" action="/bookmarks/" class="bm-toolbar"><label class="bm-mobile-tag">標籤 <select name="tag" aria-label="選擇書籤標籤">${options}</select></label><label>排序 <select name="sort" aria-label="書籤排序">${sortOptions}</select></label><button type="submit" class="bm-submit">套用</button></form>`;
  const entries=data.items.map(b=>{
    const time=b.status_at||b.published_at||b.created_at;
-   return `<article class="bm-item"><div><time datetime="${esc(time)}">${esc(zhTime(time))}</time>${b.status===4?'<span class="bm-recommended">☆ 推薦</span>':''}</div><h2><a href="${esc(b.url)}" target="_blank" rel="noopener noreferrer">${esc(b.title)}</a></h2>${b.summary?`<p class="bm-summary">${esc(b.summary)}</p>`:''}<div class="bm-item-footer"><div class="bm-tags">${b.tags.map(t=>{const tag=labels.get(t.toLowerCase());return `<a href="${esc(href(tag?.id||t.toLowerCase(),sort))}">#${esc(tag?display(tag):t)}</a>`}).join('')}</div><a class="bm-detail" href="/bookmarks/${encodeURIComponent(b.id)}/">書籤詳情</a></div></article>`;
+   const target=b.preferred_url||b.redirect_url||b.url;
+   const originalTitle=b.title_original&&b.title_original!==b.title?`<p class="bm-original-title" lang="en">${esc(b.title_original)}</p>`:'';
+   const source=target!==b.url?`<p class="bm-original-url">原始網址：<a href="${esc(b.url)}" target="_blank" rel="noopener noreferrer">${esc(b.url)}</a></p>`:'';
+   return `<article class="bm-item"><div><time datetime="${esc(time)}">${esc(zhTime(time))}</time>${b.status===4?'<span class="bm-recommended">☆ 推薦</span>':''}</div><h2><a href="${esc(target)}" target="_blank" rel="noopener noreferrer">${esc(b.title)}</a></h2>${originalTitle}${b.summary?`<p class="bm-summary">${esc(b.summary)}</p>`:''}${source}<div class="bm-item-footer"><div class="bm-tags">${b.tags.map(t=>{const tag=labels.get(t.toLowerCase());return `<a href="${esc(href(tag?.id||t.toLowerCase(),sort))}">#${esc(tag?display(tag):t)}</a>`}).join('')}</div><a class="bm-detail" href="/bookmarks/${encodeURIComponent(b.id)}/">書籤詳情</a></div></article>`;
  }).join('');
  const pagination=`<nav class="bm-pagination" aria-label="書籤分頁">${data.page>1?`<a href="${esc(href(active,sort,data.page-1))}">← 上一頁</a>`:'<span></span>'}<span>${data.page} / ${data.pages}</span>${data.page<data.pages?`<a href="${esc(href(active,sort,data.page+1))}">下一頁 →</a>`:'<span></span>'}</nav>`;
  const feed='/bookmarks/feed.xml'+(active?'?tag='+encodeURIComponent(active):'');
@@ -80,5 +86,8 @@ export function listing(data,tags,opt) {
 export function individual(b,tags=[]) {
  const labels=new Map(tags.map(t=>[t.name.toLowerCase(),t]));
  const time=b.status_at||b.published_at||b.created_at;
- return layout(b.title,`<section class="bm-page bm-article"><a class="bm-back" href="/bookmarks/">← 書籤列表</a><div><time datetime="${esc(time)}">${esc(zhTime(time))}</time>${b.status===4?'<span class="bm-recommended">☆ 推薦</span>':''}</div><h1>${esc(b.title)}</h1><p class="bm-source"><a href="${esc(b.url)}" target="_blank" rel="noopener noreferrer">前往原始網站 ↗</a></p>${b.summary?`<p class="bm-summary">${esc(b.summary)}</p>`:''}<div class="bm-tags">${b.tags.map(t=>{const tag=labels.get(t.toLowerCase());return `<a href="${esc(href(tag?.id||t.toLowerCase()))}">#${esc(tag?.name_zh||tag?.name||t)}</a>`}).join('')}</div></section>`);
+ const target=b.preferred_url||b.redirect_url||b.url;
+ const originalTitle=b.title_original&&b.title_original!==b.title?`<p class="bm-original-title" lang="en">${esc(b.title_original)}</p>`:'';
+ const source=target!==b.url?`<p class="bm-original-url">原始網址：<a href="${esc(b.url)}" target="_blank" rel="noopener noreferrer">${esc(b.url)}</a></p>`:'';
+ return layout(b.title,`<section class="bm-page bm-article"><a class="bm-back" href="/bookmarks/">← 書籤列表</a><div><time datetime="${esc(time)}">${esc(zhTime(time))}</time>${b.status===4?'<span class="bm-recommended">☆ 推薦</span>':''}</div><h1>${esc(b.title)}</h1>${originalTitle}<p class="bm-source"><a href="${esc(target)}" target="_blank" rel="noopener noreferrer">前往網站 ↗</a></p>${source}${b.summary?`<p class="bm-summary">${esc(b.summary)}</p>`:''}<div class="bm-tags">${b.tags.map(t=>{const tag=labels.get(t.toLowerCase());return `<a href="${esc(href(tag?.id||t.toLowerCase()))}">#${esc(tag?.name_zh||tag?.name||t)}</a>`}).join('')}</div></section>`);
 }

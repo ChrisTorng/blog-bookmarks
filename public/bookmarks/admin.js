@@ -54,32 +54,37 @@ function status(msg,error=false){$('message').textContent=msg;$('message').class
 function options(){const q=new URLSearchParams();for(const k of ['filter','sort','tag','q','page'])q.set(k,state[k]);return q.toString();}
 const levelName=['未讀','已讀 · 待決定','已讀 · 確定不公開','已公開','★ 已推薦'];
 function itemHtml(b) {
- const pending=state.pending.has(b.id), reviewing=pending||b.status===1||['pending','unread','readPending'].includes(state.filter), label=levelName[b.status]||'';
+ const label=levelName[b.status]||'';
+ const target=b.preferred_url||b.redirect_url||b.url;
+ const source=target!==b.url?'<div class="source-reference">原始網址：<a href="'+esc(b.url)+'" target="_blank" rel="noopener noreferrer">'+esc(b.url)+'</a></div>':'';
+ const originalTitle=b.title_original&&b.title_original!==b.title?'<div class="original-title" lang="en">'+esc(b.title_original)+'</div>':'';
  const statusDate=b.status>=3?' · '+(b.status===4?'推薦':'公開')+' '+dateText(b.status_at||b.starred_at||b.published_at):'';
  const info='<div class="meta">加入 '+esc(dateText(b.created_at))+' · '+esc(new URL(b.url).hostname)+esc(statusDate)+'</div>';
- const checks=[1,3,4].map((level,i)=>'<label><input type="checkbox" data-level="'+level+'" '+(b.status>=level?'checked ':'')+((level===3&&b.status<1)||(level===4&&b.status<3)?'disabled ':'')+'> '+['已讀','公開','推薦'][i]+'</label>').join('');
- const actions='<div class="actions">'+checks+'<button type="button" data-edit>編輯</button>'+(b.status>=3?'<a class="write-note" href="/notes/editor/?bookmark='+encodeURIComponent(b.id)+'" target="_blank" rel="noopener">寫隨筆 ↗</a>':'')+'</div>';
- const decision=reviewing?'<div class="decision-row"><button type="button" data-keep class="private" '+(b.status===0?'disabled ':'')+'>確定不公開</button>'+(b.status>=2?'<button type="button" data-finish class="finish">完成，下一筆</button>':'')+'<p>已讀但未決定的書籤會留在待決定清單。</p></div>':b.status===2?'<div class="decision-row"><button type="button" data-undecided>改回待決定</button></div>':'';
- return '<article class="item'+(pending?' pending':'')+'" data-id="'+esc(b.id)+'"><div class="item-header"><div class="item-heading"><a class="title" href="'+esc(b.url)+'" target="_blank" rel="noopener noreferrer" data-read="'+esc(b.id)+'">'+esc(b.title)+' ↗</a>'+info+'</div><span class="status-name">'+label+'</span></div>'+(b.summary?'<p class="summary">'+esc(b.summary)+'</p>':'')+(b.tags.length?'<div class="tagline">'+b.tags.map(t=>'#'+esc(t)).join(' · ')+'</div>':'')+actions+decision+'</article>';
+ const tagNames=new Set(b.tags.map(x=>x.toLowerCase()));
+ const choices=state.tags.map(t=>'<button type="button" data-tag-name="'+esc(t.name)+'" aria-pressed="'+String(tagNames.has(t.name.toLowerCase()))+'">'+esc(t.name_zh||t.name)+'</button>').join('');
+ const picker='<details class="category-picker"><summary>分類：'+(b.tags.length?b.tags.map(t=>esc(state.tags.find(x=>x.name.toLowerCase()===t.toLowerCase())?.name_zh||t)).join('、'):'未分類')+' · 點擊選擇</summary><div class="category-choices">'+choices+'</div><form class="add-category" data-add-tag><input name="newtag" maxlength="80" placeholder="新增分類名稱" aria-label="新增分類"><button type="submit">新增並選取</button></form></details>';
+ const note=b.status>=3?'<a class="write-note" href="/notes/editor/?bookmark='+encodeURIComponent(b.id)+'" target="_blank" rel="noopener">寫隨筆 ↗</a>':'';
+ const actions='<div class="actions"><button type="button" data-decision="2">不公開</button><button type="button" data-decision="3">公開</button><button type="button" data-decision="4">推薦</button><button type="button" data-edit>編輯</button>'+note+'</div>';
+ return '<article class="item" data-id="'+esc(b.id)+'"><div class="item-header"><div class="item-heading"><a class="title" href="'+esc(target)+'" target="_blank" rel="noopener noreferrer" data-read="'+esc(b.id)+'">'+esc(b.title)+' ↗</a>'+originalTitle+info+source+'</div><span class="status-name">'+label+'</span></div>'+(b.summary?'<p class="summary">'+esc(b.summary)+'</p>':'')+picker+actions+'</article>';
 }
 function renderItem(b){
  const article=[...document.querySelectorAll('#items [data-id]')].find(el=>el.dataset.id===b.id);
- if(article)article.outerHTML=itemHtml(b);
+ if(!article)return;
+ const open=Boolean(article.querySelector('.category-picker')?.open);
+ article.outerHTML=itemHtml(b);
+ if(open)[...document.querySelectorAll('#items [data-id]')].find(el=>el.dataset.id===b.id)?.querySelector('.category-picker')?.setAttribute('open','');
 }
 async function persistStatus(b,target){
  const previous=b.status;
  b.status=target;
- if(['pending','unread','readPending'].includes(state.filter))state.pending.set(b.id,b);
  renderItem(b);
  const prior=state.writes.get(b.id)||Promise.resolve();
  const chain=prior.catch(()=>{}).then(()=>request('/'+b.id,'PATCH',{status:target}));
  state.writes.set(b.id,chain);
  try {
   const item=await chain;
-  if(b.status===target){
-   Object.assign(b,item);
-   status('已儲存「'+levelName[target]+'」');
-  }
+  if(b.status===target)Object.assign(b,item);
+  status('已儲存「'+levelName[target]+'」');
   return item;
  }catch(e){
   if(b.status===target)b.status=previous;
@@ -98,25 +103,24 @@ async function refresh() {
    navigate({page:data.pages},{replace:true});
    return;
   }
-  const ids=new Set(data.items.map(b=>b.id));
-  const pinned=['pending','unread','readPending'].includes(state.filter)?[...state.pending.values()].filter(b=>!ids.has(b.id)):[];
-  state.items=[...pinned,...data.items];
+  state.items=data.items;
   state.tags=tags;
   $('items').innerHTML=state.items.map(itemHtml).join('')||'<p class="empty">此篩選目前沒有書籤。</p>';
-  $('pager').innerHTML='<button id="prev" '+(data.page<=1?'disabled':'')+'>上一頁</button><span>第 '+data.page+' / '+data.pages+' 頁 · '+data.total+' 筆'+(pinned.length?' · '+pinned.length+' 筆待完成':'')+'</span><button id="next" '+(data.page>=data.pages?'disabled':'')+'>下一頁</button>';
+  $('pager').innerHTML='<button id="prev" '+(data.page<=1?'disabled':'')+'>上一頁</button><span>第 '+data.page+' / '+data.pages+' 頁 · '+data.total+' 筆'+'</span><button id="next" '+(data.page>=data.pages?'disabled':'')+'>下一頁</button>';
   $('prev').onclick=()=>navigate({page:state.page-1},{scrollTop:true});
   $('next').onclick=()=>navigate({page:state.page+1},{scrollTop:true});
-  $('tag').innerHTML='<option value="">全部標籤</option>'+tags.map(t=>'<option value="'+esc(t.id)+'"'+(state.tag===t.id?' selected':'')+'>'+esc(t.name)+' ('+t.count+')</option>').join('');
+  $('tag').innerHTML='<option value="">全部標籤</option>'+tags.map(t=>'<option value="'+esc(t.id)+'"'+(state.tag===t.id?' selected':'')+'>'+esc(t.name_zh||t.name)+' ('+t.count+')</option>').join('');
   syncControls();
   status('');
  }catch(e){if(generation===refreshGeneration)status(e.message,true);}
 }
 function edit(b) {
  $('editId').value=b?.id||'';
- $('editTitle').value=b?.title||'';
+ $('editTitle').value=b?.title_zh||b?.title||'';
+ $('editOriginalTitle').value=b?.title_original||'';
+ $('editRedirectUrl').value=b?.redirect_url||'';
  $('editUrl').value=b?.url||'';
  $('editSummary').value=b?.summary||'';
- $('editTags').value=b?.tags?.join(', ')||'';
  $('editHeading').textContent=b?'編輯書籤':'新增書籤';
  $('deleteItem').disabled=!b;
  $('editDialog').showModal();
@@ -137,15 +141,16 @@ $('app').innerHTML=`
 <div id="items"></div><nav id="pager" class="pager"></nav>
 <dialog id="editDialog" aria-labelledby="editHeading"><form id="editForm">
  <h2 id="editHeading">編輯書籤</h2><input id="editId" type="hidden">
- <label>標題<input id="editTitle" required maxlength="500" autocomplete="off"></label>
+ <label>繁體中文標題<input id="editTitle" required maxlength="500" autocomplete="off"></label>
+ <label>原文標題（例如英文）<input id="editOriginalTitle" maxlength="500" autocomplete="off"></label>
  <label>原始網址<input id="editUrl" type="url" required autocomplete="url"></label>
+ <label>重導向網址（選填，優先開啟）<input id="editRedirectUrl" type="url" autocomplete="off"></label>
  <label>網站摘要（選填）<textarea id="editSummary" maxlength="5000"></textarea></label>
- <label>書籤標籤（逗號分隔）<input id="editTags" placeholder="AI, 音樂, 科學"></label>
  <div class="dialog-actions"><button type="submit">儲存書籤</button><button type="button" id="cancelEdit">取消</button><button type="button" id="deleteItem">刪除</button></div>
 </form></dialog>
 <dialog id="tagsDialog" aria-labelledby="tagsHeading"><form id="tagsForm">
  <h2 id="tagsHeading">書籤標籤中英對照</h2>
- <p class="tag-hint">後台及 Tampermonkey 使用英文，公開書籤與 RSS 使用中文。標籤網址及既有書籤關聯不會因改名而改變。</p>
+ <p class="tag-hint">後台與公開頁面優先顯示中文分類名稱。標籤 ID 與既有書籤關聯不會因改名而改變。</p>
  <div class="tag-columns"><b>English</b><b>繁體中文</b><b>筆數</b></div>
  <div id="tagRows"></div>
  <div class="dialog-actions"><button type="submit">儲存對照</button><button type="button" id="closeTags">關閉</button></div>
@@ -216,33 +221,67 @@ $('items').addEventListener('click',async e=>{
  const itemElement=e.target.closest('[data-id]');if(!itemElement)return;
  const b=state.items.find(x=>x.id===itemElement.dataset.id);if(!b)return;
  if(e.target.closest('[data-read]')){
-   if(b.status===0)persistStatus(b,1).catch(()=>{});
-   return;
+  if(b.status===0)persistStatus(b,1).then(()=>{if(state.filter==='unread')void refresh();}).catch(()=>{});
+  return;
  }
  if(e.target.closest('[data-edit]')){edit(b);return;}
- if(e.target.closest('[data-keep]')){
-   try{if(b.status===0){status('請先開啟文章或勾選已讀。',true);return;}if(b.status!==2)await persistStatus(b,2);await state.writes.get(b.id);state.pending.delete(b.id);await refresh();}
-   catch(e){status(e.message,true);}
-   return;
+ const tag=e.target.closest('[data-tag-name]');
+ if(tag){
+  const name=tag.dataset.tagName,old=[...b.tags];
+  b.tags=old.some(t=>t.toLowerCase()===name.toLowerCase())?
+   old.filter(t=>t.toLowerCase()!==name.toLowerCase()):[...old,name];
+  renderItem(b);
+  try{
+   const updated=await request('/'+b.id,'PATCH',{tags:b.tags});
+   Object.assign(b,updated);
+   state.tags=await request('/tags');
+   renderItem(b);
+  }catch(error){b.tags=old;renderItem(b);status(error.message,true);}
+  return;
  }
- if(e.target.closest('[data-undecided]')){try{await persistStatus(b,1);await refresh();}catch(e){status(e.message,true);}return;}
- if(e.target.closest('[data-finish]')){
-   if(b.status<2){status('仍未決定，請選擇確定不公開、公開或推薦。',true);return;}
-   try{await state.writes.get(b.id);state.pending.delete(b.id);await refresh();}
-   catch(e){status(e.message,true);}
+ const decision=e.target.closest('[data-decision]');
+ if(decision){
+  const level=Number(decision.dataset.decision);
+  const queue=['pending','unread','readPending'].includes(state.filter);
+  const previous=b.status;
+  if(queue){
+   itemElement.remove();
+   state.items=state.items.filter(x=>x.id!==b.id);
+   if(!state.items.length)$('items').innerHTML='<p class="empty">正在載入下一筆…</p>';
+  }
+  try{
+   await request('/'+b.id,'PATCH',{status:level});
+   await refresh();
+   status('已決定：'+levelName[level]);
+  }catch(error){
+   b.status=previous;
+   await refresh();
+   status(error.message,true);
+  }
  }
 });
-$('items').addEventListener('change',e=>{
- const input=e.target.closest('[data-level]');if(!input)return;
- const b=state.items.find(x=>x.id===input.closest('[data-id]').dataset.id);if(!b)return;
- const level=Number(input.dataset.level);
- const target=input.checked?Math.max(b.status,level):(level===4?3:level===3?1:0);
- persistStatus(b,target).catch(()=>{});
+$('items').addEventListener('submit',async e=>{
+ const form=e.target.closest('[data-add-tag]');if(!form)return;
+ e.preventDefault();
+ const element=form.closest('[data-id]');
+ const b=state.items.find(x=>x.id===element?.dataset.id);
+ const name=form.elements.newtag.value.trim();
+ if(!b||!name||name.length>80)return;
+ const old=[...b.tags];
+ if(!b.tags.some(x=>x.toLowerCase()===name.toLowerCase()))b.tags.push(name);
+ try{
+  const updated=await request('/'+b.id,'PATCH',{tags:b.tags});
+  Object.assign(b,updated);
+  state.tags=await request('/tags');
+  renderItem(b);
+  status('已加入分類：'+name);
+ }catch(error){b.tags=old;status(error.message,true);}
 });
+
 $('editForm').onsubmit=async e=>{
  e.preventDefault();
  const id=$('editId').value;
- const body={title:$('editTitle').value,url:$('editUrl').value,summary:$('editSummary').value,tags:$('editTags').value.split(',').map(x=>x.trim()).filter(Boolean)};
+ const body={title:$('editTitle').value,title_zh:$('editTitle').value,title_original:$('editOriginalTitle').value,url:$('editUrl').value,redirect_url:$('editRedirectUrl').value,summary:$('editSummary').value};
  try{await request(id?'/'+id:'',id?'PATCH':'POST',body);$('editDialog').close();await refresh();status('已儲存');}
  catch(err){status(err.message,true);}
 };
