@@ -82,8 +82,9 @@ $('app').innerHTML=`
  <select id="filter" aria-label="狀態"><option value="unread">未讀</option><option value="read">已讀</option><option value="all">全部</option><option value="published">公開</option><option value="starred">推薦</option></select>
  <select id="tag" aria-label="標籤"><option value="">全部標籤</option></select>
  <select id="sort" aria-label="排序"><option value="new">加入時間：最新</option><option value="old">加入時間：最舊</option><option value="recommended">推薦優先</option><option value="title">標題</option></select>
- <button type="submit">篩選</button>
+ <button type="button" id="manageTags">標籤中英對照</button>
  <input id="q" placeholder="搜尋標題、網址、摘要" aria-label="搜尋書籤">
+ <button id="searchBtn" type="submit">搜尋</button>
  <button id="new" type="button">＋ 新增</button>
 </form>
 <div id="message" role="status" aria-live="polite"></div>
@@ -115,8 +116,22 @@ $('copyToken').onclick=async()=>{
  catch{$('tokenValue').select();status('請複製已選取的 Token');}
 };
 $('filters').onsubmit=e=>{
- e.preventDefault();state.pending.clear();state.filter=$('filter').value;state.sort=$('sort').value;state.tag=$('tag').value;state.q=$('q').value;state.page=1;refresh();
+ e.preventDefault();
+ state.pending.clear();
+ state.q=$('q').value.trim();
+ state.page=1;
+ refresh();
 };
+for(const id of ['filter','tag','sort']){
+ $(id).addEventListener('change',()=>{
+  state.pending.clear();
+  state.filter=$('filter').value;
+  state.tag=$('tag').value;
+  state.sort=$('sort').value;
+  state.page=1;
+  refresh();
+ });
+}
 $('new').onclick=()=>edit(null);
 $('cancelEdit').onclick=()=>$('editDialog').close();
 $('items').addEventListener('click',async e=>{
