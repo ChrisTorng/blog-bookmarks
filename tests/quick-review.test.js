@@ -98,7 +98,8 @@ test('mobile preserves 3+3, 5+5 and 10+10 as scrollable entries',()=>{
  assert.doesNotMatch(css,/\.quick-categories\{[^}]*overscroll-behavior:contain/);
 });
 test('delete stays in left content area and edit dialog does not focus input',()=>{
- assert.match(js,/'<div class="quick-danger"><button type="button" class="quick-delete"/);
+ assert.match(js,/data-delete>刪除/);
+ assert.doesNotMatch(js,/quick-danger/);
  assert.match(js,/'<aside class="quick-categories"/);
  assert.match(js,/id="editHeading" tabindex="-1" autofocus/);
  assert.match(js,/\$\('editHeading'\)\.focus\(\{preventScroll:true\}\)/);
@@ -134,7 +135,7 @@ test('mobile classification uses intrinsic width and leaves room for the article
 });
 test('mobile card keeps exactly two footer action rows visible while long text scrolls',()=>{
  assert.match(js,/const actions=\[3,4,2\]/);
- assert.match(js,/'<div class="quick-actions">'\+actions/);
+ assert.match(js,/'<\/div><div class="quick-actions">'\+actions/);
  assert.match(js,/data-edit>編輯/);
  assert.match(js,/data-delete>刪除/);
  assert.match(css,/\.quick-main\{min-width:0;min-height:0;display:flex;flex-direction:column/);
