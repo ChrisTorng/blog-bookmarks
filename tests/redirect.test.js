@@ -13,6 +13,9 @@ test('redirects agree with deterministic RedirectUrls rules',()=>{
 test('preferred URL uses explicit redirect over fallback, then source',()=>{
  assert.equal(primaryUrl({url:'https://x.com/a/status/7',redirect_url:'https://nitter.meowing.monster/a/status/7'}),'https://nitter.meowing.monster/a/status/7');
  assert.equal(primaryUrl({url:'https://example.com',redirect_url:null}),'https://example.com');
+ assert.equal(primaryUrl({url:'https://x.com/a/status/7',redirect_url:null}),'https://x.com/a/status/7');
+ assert.equal(validate({url:'https://x.com/a/status/7',redirect_url:''}).redirect_url,null);
+ assert.equal(validate({url:'https://x.com/a/status/7',redirect_url:null}).redirect_url,null);
 });
 test('validate saves both title languages and both URLs',()=>{
  const b=validate({url:'https://x.com/a/status/7',title:'一篇文章',title_zh:'一篇文章',title_original:'An article',tags:['AI']});
@@ -62,7 +65,17 @@ test('legacy archive redirect is corrected without article snapshot exceptions',
  for(const original of originals){
    const expected='https://archive.is/submit/?url='+encodeURIComponent(original);
    assert.equal(preferredRedirect(original),expected);
-   assert.equal(primaryUrl({url:original,redirect_url:'https://web.archive.org/'+original}),expected);
+   assert.equal(primaryUrl({url:original,redirect_url:'https://web.archive.org/'+original}),'https://web.archive.org/'+original);
  }
  assert.equal(correctLegacyRedirect(originals[0],'https://custom.example/a'),'https://custom.example/a');
+});
+
+test('user explicitly chosen Wayback and manual original both override former Archive.today host fallback',()=>{
+ const original='https://www.theverge.com/news/123';
+ assert.equal(primaryUrl({url:original,redirect_url:null}),original);
+ assert.equal(primaryUrl({url:original,redirect_url:'https://archive.is/submit/?url='+encodeURIComponent(original)}),'https://archive.is/submit/?url='+encodeURIComponent(original));
+ const overlap='https://www.nytimes.com/2026/11/a';
+ assert.equal(primaryUrl({url:overlap,redirect_url:'https://web.archive.org/'+overlap}),'https://web.archive.org/'+overlap);
+ assert.equal(validate({url:overlap,redirect_url:''}).redirect_url,null);
+ assert.equal(validate({url:overlap}).redirect_url,'https://archive.is/submit/?url='+encodeURIComponent(overlap));
 });
