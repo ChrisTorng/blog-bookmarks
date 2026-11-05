@@ -147,8 +147,6 @@ function takeDecision(b,level){
  const oldStatus=b.status;
  if(oldStatus===level)return;
  const previousRecent=[...state.recent];
- const previousPending=[...state.pending];
- const previousRemaining=state.remaining;
  const wasPending=oldStatus<2;
  state.busy.add(b.id);
  state.inflight++;
@@ -164,11 +162,22 @@ function takeDecision(b,level){
   message('已儲存：'+levels[level]);
  },error=>{
   // Restore the preceding state on failure; never silently discard a decision.
-  state.recent=previousRecent;
-  state.pending=previousPending;
-  state.remaining=previousRemaining;
+  // Roll back only this record: other pending decisions may have advanced already.
+  state.recent=state.recent.filter(x=>x.id!==b.id);
+  if(wasPending){
+   if(!state.pending.some(x=>x.id===b.id)){
+    state.pending=[...state.pending,{...b,status:oldStatus}]
+     .sort((a,z)=>z.created_at.localeCompare(a.created_at)||z.id.localeCompare(a.id));
+    state.remaining++;
+   }
+  }else{
+   const original=previousRecent.find(x=>x.id===b.id)||{...b,status:oldStatus};
+   const position=previousRecent.findIndex(x=>x.id===b.id);
+   state.recent.splice(Math.min(Math.max(0,position),state.recent.length),0,original);
+   state.recent=state.recent.slice(-half());
+  }
   state.changeVersion++;
-  render({preserveId:wasPending?firstPending()?.dataset.id:b.id});
+  render({focus:wasPending,preserveId:wasPending?null:b.id});
   message('儲存失敗：'+error.message,true);
  }).finally(()=>{
   state.busy.delete(b.id);

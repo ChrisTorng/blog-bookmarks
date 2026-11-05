@@ -52,5 +52,6 @@ test('decisions immediately advance, retain undo history, and reconcile prefetch
  assert.match(js,/render\(\{focus:wasPending/);
  assert.match(js,/state\.changeVersion/);
  assert.match(js,/reconcile\(\)/);
- assert.match(js,/previousPending/);
+ assert.match(js,/Roll back only this record/);
+ assert.match(js,/state\.remaining\+\+/);
 });
