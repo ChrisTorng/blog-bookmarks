@@ -44,6 +44,9 @@ function queueWrite(id,action){
 }
 function card(b,kind){
  const target=b.preferred_url||b.redirect_url||b.url;
+ const domain=new URL(b.url).hostname;
+ const original=b.title_original&&b.title_original!==(b.title_zh||b.title)
+  ?'<div class="quick-original" lang="en">'+esc(b.title_original)+'</div>':'';
  const tags=new Set(b.tags.map(t=>t.toLowerCase()));
  const categoryButtons=state.tags.map(t=>{
   const selected=tags.has(t.name.toLowerCase());
@@ -56,14 +59,14 @@ function card(b,kind){
  }).join('');
  return '<article class="quick-item '+kind+'" data-id="'+esc(b.id)+'" data-kind="'+kind+'" tabindex="-1">'+
   '<div class="quick-main"><a class="quick-title" href="'+esc(target)+'" target="_blank" rel="noopener noreferrer" data-read>'+esc(b.title_zh||b.title)+' ↗</a>'+
-  '<div class="quick-date">加入 '+esc(dateText(b.created_at))+'</div>'+
+  original+'<div class="quick-date">'+esc(dateText(b.created_at))+' · '+esc(domain)+'</div>'+
   (b.summary?'<p class="quick-summary">'+esc(b.summary)+'</p>':'')+
-  '<div class="quick-actions">'+actions+'</div></div>'+
-  '<aside class="quick-categories" aria-label="選擇分類">'+
-  '<div class="quick-category-heading">分類（可複選）</div>'+categoryButtons+
-  (!b.tags.length?'<div class="quick-hint">公開或推薦前請先選分類</div>':'')+
-  '</aside></article>';
+  '<div class="quick-actions">'+actions+
+  '<button type="button" data-edit>編輯</button>'+
+  '<button type="button" class="quick-delete" data-delete>刪除</button></div></div>'+
+  '<aside class="quick-categories" aria-label="分類">'+categoryButtons+'</aside></article>';
 }
+
 function findCard(id){
  return [...$('items').querySelectorAll('.quick-item')].find(x=>x.dataset.id===id);
 }
@@ -74,18 +77,25 @@ function focusNext(){
  const next=firstPending();
  if(!next)return;
  next.focus({preventScroll:true});
- next.scrollIntoView({block:'start',behavior:'instant'});
+ ($('items').querySelector('.pending-label')||next).scrollIntoView({block:'start',behavior:'instant'});
 }
 function render({focus=false,preserveId=null}={}){
  const anchor=preserveId?findCard(preserveId):null;
  const top=anchor?.getBoundingClientRect().top;
  const recent=state.recent.slice(-half());
  const pending=state.pending.slice(0,half());
- $('remaining').textContent=state.remaining.toLocaleString('zh-TW');
+ const last=state.recent.at(-1);
+ const lastTags=last?.tags.map(name=>{
+  const t=state.tags.find(t=>t.name.toLowerCase()===name.toLowerCase());
+  return esc(t?.name_zh||t?.name||name);
+ }).join('、');
+ const lastLabel=last?'<span class="quick-latest" title="最新處理結果">'+
+  esc(last.status===4?'已推薦':last.status===3?'已公開':'不公開')+
+  (lastTags?' · '+lastTags:'')+'</span>':'';
  $('items').innerHTML=
   (recent.length?'<div class="quick-section-label">最近已處理 · '+recent.length+' 筆</div>':'')+
   recent.map(b=>card(b,'recent')).join('')+
-  '<div class="quick-section-label pending-label">待處理 · '+pending.length+' 筆</div>'+
+  '<div class="quick-section-label pending-label"><span>待處理 '+state.remaining.toLocaleString('zh-TW')+' 筆</span>'+lastLabel+'</div>'+
   (pending.length?pending.map(b=>card(b,'pending')).join(''):
    '<p class="empty">'+(state.remaining?'正在載入待處理書籤…':'目前已全部處理完成。')+'</p>');
  if(focus){focusNext();return;}
@@ -94,13 +104,18 @@ function render({focus=false,preserveId=null}={}){
   if(next)window.scrollBy({top:next.getBoundingClientRect().top-top,behavior:'instant'});
  }
 }
+
 function updateCard(b){
  const item=findCard(b.id);
  if(!item)return;
  const wasFocused=item===document.activeElement;
  const kind=item.dataset.kind;
+ const categoriesScroll=item.querySelector('.quick-categories')?.scrollTop||0;
  item.outerHTML=card(b,kind);
- if(wasFocused)findCard(b.id)?.focus({preventScroll:true});
+ const replacement=findCard(b.id);
+ const categories=replacement?.querySelector('.quick-categories');
+ if(categories)categories.scrollTop=categoriesScroll;
+ if(wasFocused)replacement?.focus({preventScroll:true});
 }
 async function load(size=state.size,{focus=true}={}){
  const generation=++state.generation;
@@ -157,7 +172,7 @@ function takeDecision(b,level){
  if(wasPending)state.remaining--;
  render({focus:wasPending,preserveId:wasPending?null:b.id});
  message('已選擇「'+levels[level]+'」，正在儲存…');
- queueWrite(b.id,()=>request('/'+b.id,'PATCH',{status:level}))
+ queueWrite(b.id,()=>request('/'+b.id,'PATCH',{status:level,tags:[...b.tags]}))
  .then(()=>{
   message('已儲存：'+levels[level]);
  },error=>{
@@ -208,16 +223,98 @@ function changeTag(b,name){
   message('分類儲存失敗：'+error.message,true);
  });
 }
+function edit(b){
+ if(state.busy.has(b.id))return;
+ $('editId').value=b.id;
+ $('editTitle').value=b.title_zh||b.title||'';
+ $('editOriginalTitle').value=b.title_original||'';
+ $('editUrl').value=b.url||'';
+ $('editRedirectUrl').value=b.redirect_url||'';
+ $('editSummary').value=b.summary||'';
+ $('editDialog').showModal();
+}
+function deleteBookmark(b){
+ if(state.busy.has(b.id)||state.loading)return;
+ if(!confirm('確定永久刪除這筆書籤？'))return;
+ const wasPending=b.status<2;
+ state.busy.add(b.id);
+ state.inflight++;
+ state.changeVersion++;
+ state.recent=state.recent.filter(item=>item.id!==b.id);
+ state.pending=state.pending.filter(item=>item.id!==b.id);
+ if(wasPending)state.remaining--;
+ render({focus:wasPending});
+ message('正在刪除…');
+ queueWrite(b.id,()=>request('/'+b.id,'DELETE')).then(result=>{
+  if(!result.deleted)throw Error('找不到書籤');
+  message('已刪除');
+ },error=>{
+  if(wasPending){
+   state.pending.push(b);
+   state.pending.sort((a,z)=>z.created_at.localeCompare(a.created_at)||z.id.localeCompare(a.id));
+   state.remaining++;
+  }else state.recent=[...state.recent,b].slice(-half());
+  state.changeVersion++;
+  render({focus:wasPending});
+  message('刪除失敗：'+error.message,true);
+ }).finally(()=>{
+  state.busy.delete(b.id);
+  state.inflight--;
+  if(!state.inflight)void reconcile();
+ });
+}
 $('app').innerHTML=
  '<header class="quick-header"><h1>書籤快速處理</h1><nav><a href="/bookmarks/admin/">完整管理</a> · <a href="/bookmarks/" target="_blank" rel="noopener">公開列表 ↗</a></nav></header>'+
- '<div class="quick-toolbar"><strong>待處理剩餘 <span id="remaining">—</span> 筆</strong>'+
- '<label>顯示 <select id="size" aria-label="顯示項目數">'+
- '<option value="6">6 筆（3＋3）</option><option value="10">10 筆（5＋5）</option>'+
- '<option value="20">20 筆（10＋10）</option></select></label></div>'+
+ '<div class="quick-toolbar"><select id="size" aria-label="顯示數量">'+
+ '<option value="6">3＋3</option><option value="10">5＋5</option>'+
+ '<option value="20">10＋10</option></select></div>'+
  '<div class="auth" id="auth"></div>'+
  '<div id="message" role="status" aria-live="polite"></div>'+
- '<main id="items" aria-label="快速處理清單"></main>';
+ '<main id="items" aria-label="快速處理清單"></main>'+
+ '<dialog id="editDialog" aria-labelledby="editHeading"><form id="editForm">'+
+ '<h2 id="editHeading">編輯書籤</h2><input id="editId" type="hidden">'+
+ '<label>繁體中文標題<input id="editTitle" required maxlength="500" autocomplete="off"></label>'+
+ '<label>原文標題<input id="editOriginalTitle" maxlength="500" autocomplete="off"></label>'+
+ '<label>原始網址<input id="editUrl" type="url" required></label>'+
+ '<label>重導向網址<input id="editRedirectUrl" type="url"></label>'+
+ '<label>摘要<textarea id="editSummary" maxlength="5000"></textarea></label>'+
+ '<div class="dialog-actions"><button id="saveEdit" type="submit">儲存</button><button id="cancelEdit" type="button">取消</button></div>'+
+ '</form></dialog>';
 $('size').value=String(state.size);
+$('cancelEdit').onclick=()=>$('editDialog').close();
+$('editForm').addEventListener('submit',async event=>{
+ event.preventDefault();
+ const id=$('editId').value;
+ const b=[...state.recent,...state.pending].find(x=>x.id===id);
+ if(!b||state.busy.has(id))return;
+ const raw={
+  title_zh:$('editTitle').value.trim(),
+  title_original:$('editOriginalTitle').value.trim(),
+  url:$('editUrl').value.trim(),
+  redirect_url:$('editRedirectUrl').value.trim(),
+  summary:$('editSummary').value.trim()
+ };
+ if(!raw.title_zh||!raw.url)return;
+ state.busy.add(id);
+ state.inflight++;
+ state.changeVersion++;
+ $('saveEdit').disabled=true;
+ $('cancelEdit').disabled=true;
+ try{
+  const updated=await queueWrite(id,()=>request('/'+id,'PATCH',raw));
+  Object.assign(b,updated);
+  updateCard(b);
+  $('editDialog').close();
+  message('已儲存');
+ }catch(error){message('編輯失敗：'+error.message,true);}
+ finally{
+  state.busy.delete(id);
+  state.inflight--;
+  $('saveEdit').disabled=false;
+  $('cancelEdit').disabled=false;
+  if(!state.inflight)void reconcile();
+ }
+});
 $('size').addEventListener('change',()=>{
  const size=Number($('size').value);
  if(!choices.includes(size))return;
@@ -239,6 +336,8 @@ $('items').addEventListener('click',event=>{
  if(!element)return;
  const b=[...state.recent,...state.pending].find(x=>x.id===element.dataset.id);
  if(!b)return;
+ if(event.target.closest('[data-edit]')){edit(b);return;}
+ if(event.target.closest('[data-delete]')){deleteBookmark(b);return;}
  const tag=event.target.closest('[data-tag-name]');
  if(tag){changeTag(b,tag.dataset.tagName);return;}
  const decision=event.target.closest('[data-decision]');

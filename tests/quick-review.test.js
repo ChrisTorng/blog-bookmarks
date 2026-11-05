@@ -21,7 +21,8 @@ test('quick admin has a separate protected route and switches back to full manag
 test('queue includes 3+3, 5+5, or 10+10 with a real pending count',()=>{
  assert.match(js,/choices = \[6,10,20\]/);
  assert.match(js,/state\.size\/2/);
- assert.match(js,/id="remaining"/);
+ assert.match(js,/state\.remaining\.toLocaleString/);
+ assert.doesNotMatch(css,/position:sticky/);
  assert.match(js,/scrollIntoView/);
  assert.match(js,/focus\(\{preventScroll:true\}\)/);
  assert.match(api,/reviewWindow\(env\.DB/);
@@ -33,8 +34,8 @@ test('quick card shows Chinese heading, full summary, added time and vertical mu
  assert.match(js,/b\.title_zh\|\|b\.title/);
  assert.match(js,/b\.summary/);
  assert.match(js,/dateText\(b\.created_at\)/);
- assert.doesNotMatch(js,/title_original/);
- assert.doesNotMatch(js,/new URL\(b\.url\)\.hostname/);
+ assert.match(js,/b\.title_original/);
+ assert.match(js,/new URL\(b\.url\)\.hostname/);
  assert.match(js,/aria-pressed/);
  assert.match(css,/flex-direction:column/);
  assert.match(css,/white-space:pre-wrap/);
@@ -54,4 +55,26 @@ test('decisions immediately advance, retain undo history, and reconcile prefetch
  assert.match(js,/reconcile\(\)/);
  assert.match(js,/Roll back only this record/);
  assert.match(js,/state\.remaining\+\+/);
+});
+
+test('quick review shows total pending and latest decision with selected Chinese categories',()=>{
+ assert.match(js,/待處理 '\+state\.remaining\.toLocaleString/);
+ assert.match(js,/last\.status===4\?'已推薦'/);
+ assert.match(js,/last\.status===3\?'已公開'/);
+ assert.match(js,/quick-latest/);
+ assert.match(js,/t\?\.name_zh\|\|t\?\.name\|\|name/);
+ assert.match(js,/pending-label/);
+ assert.doesNotMatch(js,/quick-category-heading/);
+ assert.doesNotMatch(js,/quick-hint/);
+});
+test('quick screen edits all content without duplicating status or tag controls',()=>{
+ for(const field of ['editTitle','editOriginalTitle','editUrl','editRedirectUrl','editSummary'])
+  assert.match(js,new RegExp(field));
+ assert.match(js,/data-edit/);
+ assert.match(js,/data-delete/);
+ assert.match(js,/request\('\/'\+id,'PATCH',raw\)/);
+ assert.match(js,/request\('\/'\+b\.id,'DELETE'\)/);
+ assert.match(js,/confirm\('確定永久刪除這筆書籤？'\)/);
+ assert.match(css,/\.quick-delete/);
+ assert.match(css,/max-height:min\(60dvh,440px\)/);
 });
