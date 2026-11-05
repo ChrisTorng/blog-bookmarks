@@ -96,7 +96,7 @@ try{
  const publicDetail=await req('/bookmarks/api/'+id);
  assert.equal(publicDetail.status,200);
  assert.equal(publicDetail.body.id,id);
- assert.match(publicDetail.body.status_at,/^\\d{4}-\\d{2}-\\d{2}$/);
+ assert.match(publicDetail.body.status_at,/^\d{4}-\d{2}-\d{2}$/);
  const starred=await req('/bookmarks/api/admin/'+id,'PATCH',{status:4},true);
  assert.equal(starred.body.status,4);
  const rotated=await req('/bookmarks/api/admin/ingest-token','POST',{},true);
