@@ -53,7 +53,7 @@ const css = `
 @media(max-width:767px){.bm-page{padding:.65rem 0 2rem}.bm-header{margin:0 0 .75rem}.bm-columns{display:block}.bm-sidebar{display:none}.bm-mobile-tag{display:inline-flex;align-items:center;gap:.3rem}.bm-toolbar{gap:.5rem;justify-content:flex-start}.bm-toolbar input[type=search]{width:100%}.bm-toolbar label.bm-search{flex-basis:100%}.bm-item{padding:.8rem 0}.bm-item h2{font-size:1.05rem}.bm-date{font-size:.75rem}.bm-summary{font-size:.87rem}.bm-detail{margin-left:0}}
 `;
 
-export function layout(title,body,feed='/bookmarks/feed.xml',feedTitle='全部書籤 RSS 訂閱') {
+export function layout(title,body,feed='/bookmarks/feed.xml',feedTitle='書籤 RSS') {
  return `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,follow"><title>${esc(title)} | ChrisTorng 學習天地</title>${feed?`<link rel="alternate" type="application/rss+xml" title="${esc(feedTitle)}" href="${esc(feed)}">`:''}<style>${css}</style></head><body><main>${body}</main></body></html>`;
 }
 export const quickAdminPage = '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>書籤快速處理</title><link rel="stylesheet" href="/bookmarks/admin.css"><link rel="stylesheet" href="/bookmarks/admin-quick.css"></head><body><div id="app"></div><script type="module" src="/bookmarks/admin-quick.js"></script></body></html>';
