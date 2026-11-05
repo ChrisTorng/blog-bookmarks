@@ -59,17 +59,22 @@ export function layout(title,body,feed='/bookmarks/feed.xml',feedTitle='全部�
 export const quickAdminPage = '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>書籤快速處理</title><link rel="stylesheet" href="/bookmarks/admin.css"><link rel="stylesheet" href="/bookmarks/admin-quick.css"></head><body><div id="app"></div><script type="module" src="/bookmarks/admin-quick.js"></script></body></html>';
 export const adminPage = '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>書籤管理</title><link rel="stylesheet" href="/bookmarks/admin.css"></head><body><div id="app"></div><script type="module" src="/bookmarks/admin.js"></script></body></html>';
 
-export const zhTime = date => new Intl.DateTimeFormat('zh-TW',{
- timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'
+export const zhTime = date => new Intl.DateTimeFormat('sv-SE',{
+ timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit'
 }).format(new Date(date));
-function href(tag,sort='new',page=1) {
+function href(tag,sort='new',page=1,search='',from='',to='') {
  const q=new URLSearchParams();
  if(tag)q.set('tag',tag);
  if(sort!=='new')q.set('sort',sort);
+ if(search)q.set('q',search);
+ if(from)q.set('from',from);
+ if(to)q.set('to',to);
  if(page>1)q.set('page',String(page));
  const qs=q.toString();
  return '/bookmarks/'+(qs?'?'+qs:'');
 }
+export const rssIcon = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M4 11a9 9 0 0 1 9 9\"/><path d=\"M4 4a16 16 0 0 1 16 16\"/><circle cx=\"5\" cy=\"19\" r=\"1\"/></svg>";
+export const filtersScript = "(()=>{const form=document.getElementById('bookmark-filter-form');if(!form)return;const submit=()=>{const q=new URLSearchParams(new FormData(form));for(const [k,v] of [...q])if(!v)q.delete(k);location.assign('/bookmarks/'+(q.size?'?'+q:''));};form.querySelectorAll('select,input[type=date]').forEach(el=>el.addEventListener('change',submit));let timer;const search=form.querySelector('input[type=search]');search?.addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(submit,750)});form.addEventListener('submit',e=>{e.preventDefault();clearTimeout(timer);submit()});})();";
 export function listing(data,tags,opt) {
  const active=opt.tag||'',sort=opt.sort||'new';
  const activeTag=tags.find(x=>x.id===active);
