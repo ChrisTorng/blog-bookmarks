@@ -22,7 +22,7 @@ test('queue includes 3+3, 5+5, or 10+10 with a real pending count',()=>{
  assert.match(js,/choices = \[6,10,20\]/);
  assert.match(js,/state\.size\/2/);
  assert.match(js,/state\.remaining\.toLocaleString/);
- assert.doesNotMatch(css,/position:sticky/);
+ assert.doesNotMatch(css,/\.quick-toolbar\{[^}]*position:sticky/);
  assert.match(js,/scrollIntoView/);
  assert.match(js,/focus\(\{preventScroll:true\}\)/);
  assert.match(api,/reviewWindow\(env\.DB/);
@@ -79,7 +79,7 @@ test('quick screen edits all content without duplicating status or tag controls'
  assert.match(css,/\.quick-main\{min-width:0;display:flex;flex-direction:column/);
  assert.match(css,/\.quick-danger\{display:flex;justify-content:flex-end;margin-top:auto;padding-top:24px/);
  assert.doesNotMatch(css,/max-height:min/);
- assert.doesNotMatch(css,/overflow-y:auto/);
+ assert.doesNotMatch(css,/\.quick-categories\{[^}]*overflow-y:auto/);
 });
 
 test('mobile preserves 3+3, 5+5 and 10+10 as scrollable entries',()=>{
@@ -93,7 +93,7 @@ test('mobile preserves 3+3, 5+5 and 10+10 as scrollable entries',()=>{
  assert.match(css,/\.quick-toolbar\{display:flex\}/);
  assert.match(css,/\.pending-label\{display:grid;grid-template-columns:max-content minmax\(0,1fr\)/);
  assert.match(css,/\.quick-latest\{justify-self:end/);
- assert.doesNotMatch(css,/overscroll-behavior:contain/);
+ assert.doesNotMatch(css,/\.quick-categories\{[^}]*overscroll-behavior:contain/);
 });
 test('delete stays in left content area and edit dialog does not focus input',()=>{
  assert.match(js,/'<div class="quick-danger"><button type="button" class="quick-delete"/);
@@ -102,4 +102,25 @@ test('delete stays in left content area and edit dialog does not focus input',()
  assert.match(js,/\$\('editHeading'\)\.focus\(\{preventScroll:true\}\)/);
  assert.doesNotMatch(js,/editTitle'\)\.focus/);
  assert.match(js,/data-scroll-previous/);
+});
+
+test('edit dialog uses browser history for Back and avoids the mobile keyboard',()=>{
+ assert.match(js,/history\.pushState\(/);
+ assert.match(js,/quickReviewEditing:true/);
+ assert.match(js,/window\.addEventListener\('popstate'/);
+ assert.match(js,/history\.back\(\)/);
+ assert.match(js,/\$\('cancelEdit'\)\.onclick=closeEdit/);
+ assert.match(js,/addEventListener\('cancel',event=>/);
+ assert.match(js,/\$\('editHeading'\)\.focus\(\{preventScroll:true\}\)/);
+ assert.doesNotMatch(js,/\$\('editTitle'\)\.focus\(/);
+});
+test('compact mobile edit modal keeps action buttons visible and makes decisions equally wide',()=>{
+ assert.match(css,/#editDialog\{/);
+ assert.match(css,/width:min\(calc\(100vw - 12px\),880px\)/);
+ assert.match(css,/#editDialog #editForm\{/);
+ assert.match(css,/#editDialog \.dialog-actions\{/);
+ assert.match(css,/position:sticky/);
+ assert.match(css,/grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+ assert.match(css,/\.quick-actions\{display:grid;grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
+ assert.match(css,/\.quick-actions \[data-edit\]\{grid-column:1\/-1\}/);
 });
