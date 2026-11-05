@@ -103,3 +103,24 @@ test('delete stays in left content area and edit dialog does not focus input',()
  assert.doesNotMatch(js,/editTitle'\)\.focus/);
  assert.match(js,/data-scroll-previous/);
 });
+
+test('edit dialog uses browser history for Back and avoids the mobile keyboard',()=>{
+ assert.match(js,/history\.pushState\(/);
+ assert.match(js,/quickReviewEditing:true/);
+ assert.match(js,/window\.addEventListener\('popstate'/);
+ assert.match(js,/history\.back\(\)/);
+ assert.match(js,/\$\('cancelEdit'\)\.onclick=closeEdit/);
+ assert.match(js,/addEventListener\('cancel',event=>/);
+ assert.match(js,/\$\('editHeading'\)\.focus\(\{preventScroll:true\}\)/);
+ assert.doesNotMatch(js,/\$\('editTitle'\)\.focus\(/);
+});
+test('compact mobile edit modal keeps action buttons visible and makes decisions equally wide',()=>{
+ assert.match(css,/#editDialog\{/);
+ assert.match(css,/width:min\(calc\(100vw - 12px\),880px\)/);
+ assert.match(css,/#editDialog #editForm\{/);
+ assert.match(css,/#editDialog \.dialog-actions\{/);
+ assert.match(css,/position:sticky/);
+ assert.match(css,/grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+ assert.match(css,/\.quick-actions\{display:grid;grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
+ assert.match(css,/\.quick-actions \[data-edit\]\{grid-column:1\/-1\}/);
+});
