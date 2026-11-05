@@ -15,19 +15,24 @@
 .quick-item:focus{outline:2px solid var(--accent);outline-offset:1px}
 .quick-item.recent{opacity:.8}
 .quick-item.pending{border-left:3px solid var(--accent)}
-.quick-main{min-width:0;display:flex;flex-direction:column}
+.quick-main{min-width:0;min-height:0;display:flex;flex-direction:column}
+.quick-content{min-width:0;min-height:0;flex:1 1 auto}
 .quick-title{font-size:1.05rem;line-height:1.47;font-weight:680}
 .quick-original{font-size:.82rem;line-height:1.43;color:var(--muted);margin-top:3px}
 .quick-date{font-size:.76rem;color:var(--muted);font-variant-numeric:tabular-nums;margin-top:4px}
 .quick-summary{font-size:.9rem;line-height:1.73;white-space:pre-wrap;color:var(--muted);margin:11px 0 12px;overflow-wrap:anywhere}
-.quick-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+.quick-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:12px;flex:0 0 auto}
+.quick-actions [data-decision="3"]{grid-column:1 / span 2;grid-row:1}
+.quick-actions [data-decision="4"]{grid-column:3;grid-row:1}
+.quick-actions [data-decision="2"]{grid-column:1;grid-row:2}
+.quick-actions [data-edit]{grid-column:2;grid-row:2}
+.quick-actions [data-delete]{grid-column:3;grid-row:2}
 .quick-actions button{font-size:.81rem;padding:5px 9px}
 .quick-actions button[data-decision="3"]{background:var(--soft);color:var(--accent)}
 .quick-actions button[data-decision="4"]{background:var(--accent);color:white;border-color:var(--accent)}
 .quick-actions button[aria-pressed="true"]{outline:2px solid var(--accent);outline-offset:1px}
-.quick-danger{display:flex;justify-content:flex-end;margin-top:auto;padding-top:24px}
-.quick-danger .quick-delete{font-size:.81rem;padding:5px 9px;color:#dc2626;border-color:#dc2626;background:transparent}
-.quick-danger .quick-delete:hover:enabled{color:#fff;background:#dc2626;border-color:#dc2626}
+.quick-actions .quick-delete{color:#dc2626;border-color:#dc2626;background:transparent}
+.quick-actions .quick-delete:hover:enabled{color:#fff;background:#dc2626;border-color:#dc2626}
 .quick-categories{border-left:1px solid var(--line);padding-left:10px;display:flex;flex-direction:column;align-items:stretch;gap:4px}
 .quick-categories .category{font-size:.79rem;line-height:1.3;padding:5px 5px;text-align:left;white-space:normal;word-break:break-word;flex-shrink:0}
 .quick-categories .category[aria-pressed="true"]{border-color:var(--accent);background:var(--soft);color:var(--accent);font-weight:700}
@@ -39,17 +44,16 @@
  .quick-toolbar select{font-size:.78rem}
  .quick-section-label{padding:7px 2px 3px}
  .quick-latest{font-size:.75rem}
- .quick-item{grid-template-columns:minmax(0,1fr) 93px;gap:7px;padding:10px 8px;margin:7px 0}
+ .quick-item{grid-template-columns:minmax(0,1fr) fit-content(28vw);gap:5px;padding:8px 6px;margin:7px 0;height:calc(100dvh - 90px);min-height:min-content}
+ .quick-content{overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;-webkit-overflow-scrolling:touch}
+ .quick-actions{flex:0 0 auto;margin-top:8px;padding-top:8px;border-top:1px solid var(--line);gap:5px;background:var(--surface)}
  .quick-title{font-size:.99rem}
  .quick-original{font-size:.75rem}
  .quick-date{font-size:.72rem}
  .quick-summary{font-size:.87rem;line-height:1.68}
- .quick-actions{gap:5px}
- .quick-actions button{font-size:.76rem;padding:5px 6px}
- .quick-danger{padding-top:26px}
- .quick-danger .quick-delete{font-size:.76rem;padding:5px 9px}
- .quick-categories{padding-left:6px;gap:4px}
- .quick-categories .category{font-size:.76rem;padding:6px 4px}
+ .quick-actions button{min-width:0;width:100%;font-size:.78rem;padding:6px 2px}
+ .quick-categories{min-width:0;width:100%;padding-left:5px;gap:3px}
+ .quick-categories .category{width:100%;min-width:0;font-size:.74rem;line-height:1.22;padding:5px 2px}
 }
 
 
@@ -86,9 +90,12 @@
 }
 #editDialog .dialog-actions button{min-height:38px;padding:6px 9px}
 @media(max-width:650px){
- .quick-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
- .quick-actions button{min-width:0;width:100%;padding:7px 2px;font-size:.8rem}
- .quick-actions [data-edit]{grid-column:1/-1}
+ .quick-actions{grid-template-columns:repeat(3,minmax(0,1fr))}
+ .quick-actions [data-decision="3"]{grid-column:1 / span 2}
+ .quick-actions [data-decision="4"]{grid-column:3}
+ .quick-actions [data-decision="2"]{grid-column:1}
+ .quick-actions [data-edit]{grid-column:2}
+ .quick-actions [data-delete]{grid-column:3}
  #editDialog{border-radius:10px}
  #editDialog #editForm{gap:7px;padding:10px 10px 0}
  #editDialog h2{font-size:1.03rem}
