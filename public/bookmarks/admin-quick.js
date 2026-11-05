@@ -223,8 +223,23 @@ function changeTag(b,name){
   message('分類儲存失敗：'+error.message,true);
  });
 }
+let editHistoryOpen=false;
+let editClosing=false;
+function closeEdit(){
+ if($('editDialog').open)$('editDialog').close();
+ if(editHistoryOpen&&!editClosing){
+  editClosing=true;
+  history.back();
+ }
+}
+window.addEventListener('popstate',()=>{
+ if(!editHistoryOpen)return;
+ editHistoryOpen=false;
+ editClosing=false;
+ if($('editDialog').open)$('editDialog').close();
+});
 function edit(b){
- if(state.busy.has(b.id))return;
+ if(state.busy.has(b.id)||editClosing||$('editDialog').open)return;
  $('editId').value=b.id;
  $('editTitle').value=b.title_zh||b.title||'';
  $('editOriginalTitle').value=b.title_original||'';
@@ -232,6 +247,10 @@ function edit(b){
  $('editRedirectUrl').value=b.redirect_url||'';
  $('editSummary').value=b.summary||'';
  $('editDialog').showModal();
+ // A same-URL history entry makes the Android browser Back key close editing.
+ // Keep focus on a non-input element so opening the dialog never raises the IME.
+ history.pushState({...((history.state&&typeof history.state==='object')?history.state:{}),quickReviewEditing:true},'',location.href);
+ editHistoryOpen=true;
  $('editHeading').focus({preventScroll:true});
 }
 function deleteBookmark(b){
@@ -282,7 +301,11 @@ $('app').innerHTML=
  '<div class="dialog-actions"><button id="saveEdit" type="submit">儲存</button><button id="cancelEdit" type="button">取消</button></div>'+
  '</form></dialog>';
 $('size').value=String(state.size);
-$('cancelEdit').onclick=()=>$('editDialog').close();
+$('cancelEdit').onclick=closeEdit;
+$('editDialog').addEventListener('cancel',event=>{
+ event.preventDefault();
+ closeEdit();
+});
 $('editForm').addEventListener('submit',async event=>{
  event.preventDefault();
  const id=$('editId').value;
@@ -305,7 +328,7 @@ $('editForm').addEventListener('submit',async event=>{
   const updated=await queueWrite(id,()=>request('/'+id,'PATCH',raw));
   Object.assign(b,updated);
   updateCard(b);
-  $('editDialog').close();
+  closeEdit();
   message('已儲存');
  }catch(error){message('編輯失敗：'+error.message,true);}
  finally{
