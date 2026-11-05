@@ -17,7 +17,7 @@ test('public listing uses last publication status time, not collection time',()=
  assert.match(html,/bm-sidebar/);
  assert.match(html,/bm-mobile-tag/);
  assert.match(html,/推薦/);
- assert.match(html,/2026\/11\/03/);
+ assert.match(html,/2026-11-03/);
  assert.doesNotMatch(html,/2026\/09\/01/);
  assert.match(html,/\?x=1&amp;y=2/);
 });
