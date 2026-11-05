@@ -44,7 +44,6 @@ function queueWrite(id,action){
 }
 function card(b,kind){
  const target=b.preferred_url||b.redirect_url||b.url;
- const domain=new URL(b.url).hostname;
  const original=b.title_original&&b.title_original!==(b.title_zh||b.title)
   ?'<div class="quick-original" lang="en">'+esc(b.title_original)+'</div>':'';
  const tags=new Set(b.tags.map(t=>t.toLowerCase()));
@@ -52,18 +51,18 @@ function card(b,kind){
   const selected=tags.has(t.name.toLowerCase());
   return '<button type="button" class="category" data-tag-name="'+esc(t.name)+'" aria-pressed="'+selected+'">'+esc(t.name_zh||t.name)+'</button>';
  }).join('');
- const actions=[2,3,4].map(level=>{
+ const actions=[3,4,2].map(level=>{
   const disabled=(level>=3&&!b.tags.length)||state.busy.has(b.id);
   const selected=b.status===level;
   return '<button type="button" data-decision="'+level+'" aria-pressed="'+selected+'"'+(disabled?' disabled':'')+'>'+levels[level]+'</button>';
  }).join('');
  return '<article class="quick-item '+kind+'" data-id="'+esc(b.id)+'" data-kind="'+kind+'" tabindex="-1">'+
-  '<div class="quick-main"><a class="quick-title" href="'+esc(target)+'" target="_blank" rel="noopener noreferrer" data-read>'+esc(b.title_zh||b.title)+' ↗</a>'+
-  original+'<div class="quick-date">'+esc(dateText(b.created_at))+' · '+esc(domain)+'</div>'+
+  '<div class="quick-main"><div class="quick-content"><a class="quick-title" href="'+esc(target)+'" target="_blank" rel="noopener noreferrer" data-read>'+esc(b.title_zh||b.title)+' ↗</a>'+
+  original+'<div class="quick-date">'+esc(dateText(b.created_at))+'</div>'+
   (b.summary?'<p class="quick-summary">'+esc(b.summary)+'</p>':'')+
-  '<div class="quick-actions">'+actions+
-  '<button type="button" data-edit>編輯</button></div>'+
-  '<div class="quick-danger"><button type="button" class="quick-delete" data-delete>刪除</button></div></div>'+
+  '</div><div class="quick-actions">'+actions+
+  '<button type="button" data-edit>編輯</button>'+
+  '<button type="button" class="quick-delete" data-delete>刪除</button></div></div>'+
   '<aside class="quick-categories" aria-label="分類">'+categoryButtons+'</aside></article>';
 }
 
@@ -110,11 +109,11 @@ function updateCard(b){
  if(!item)return;
  const wasFocused=item===document.activeElement;
  const kind=item.dataset.kind;
- const categoriesScroll=item.querySelector('.quick-categories')?.scrollTop||0;
+ const contentScroll=item.querySelector('.quick-content')?.scrollTop||0;
  item.outerHTML=card(b,kind);
  const replacement=findCard(b.id);
- const categories=replacement?.querySelector('.quick-categories');
- if(categories)categories.scrollTop=categoriesScroll;
+ const content=replacement?.querySelector('.quick-content');
+ if(content)content.scrollTop=contentScroll;
  if(wasFocused)replacement?.focus({preventScroll:true});
 }
 async function load(size=state.size,{focus=true}={}){
