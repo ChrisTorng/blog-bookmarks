@@ -90,8 +90,13 @@ try{
  assert.equal((await req('/bookmarks/api/?from=2099-01-01')).body.total,0);
  assert.equal((await req('/bookmarks/api/?to=1999-01-01')).body.total,0);
  assert.equal((await req('/bookmarks/api/?from=1999-01-01&to=2099-12-31')).body.total,1);
- assert.match((await req('/bookmarks/filters.js')).text,/bookmark-filter-form/);
- assert.match((await req('/bookmarks/?tag=ai')).text,/人工智慧/);
+ assert.equal((await req('/bookmarks/filters.js')).status,404);
+ assert.equal((await req('/bookmarks/')).status,404);
+ assert.equal((await req('/bookmarks/?tag=ai')).status,404);
+ const publicDetail=await req('/bookmarks/api/'+id);
+ assert.equal(publicDetail.status,200);
+ assert.equal(publicDetail.body.id,id);
+ assert.match(publicDetail.body.status_at,/^\\d{4}-\\d{2}-\\d{2}$/);
  const starred=await req('/bookmarks/api/admin/'+id,'PATCH',{status:4},true);
  assert.equal(starred.body.status,4);
  const rotated=await req('/bookmarks/api/admin/ingest-token','POST',{},true);
@@ -105,6 +110,7 @@ try{
  const privateAgain=await req('/bookmarks/api/admin/'+id,'PATCH',{status:2},true);
  assert.equal(privateAgain.body.status,2);
  assert.equal((await req('/bookmarks/api/')).body.total,0);
+ assert.equal((await req('/bookmarks/api/'+id)).status,404);
  const hidden=await req('/bookmarks/api/admin/'+id,'PATCH',{status:0},true);
  assert.equal(hidden.body.status,0);
  assert.equal((await req('/bookmarks/api/')).body.total,0);
