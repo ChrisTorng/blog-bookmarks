@@ -58,6 +58,21 @@ export async function list(db, {privateList=false,filter='pending',page=1,tag=''
   const rows=await db.prepare(`SELECT ${fields} FROM bookmarks b${where} ORDER BY ${order} LIMIT 20 OFFSET ?`).bind(...params,(n-1)*20).all();
   return {items:rows.results.map(decode),page:n,pages:Math.max(1,Math.ceil(total/20)),total};
 }
+// Fast review: display newest decisions just above the next pending item.
+// Overfetch pending items to allow immediate advancement without a new request.
+export async function reviewWindow(db,requested=6) {
+  const size=[6,10,20].includes(Number(requested))?Number(requested):6;
+  const half=size/2;
+  const [recent,pending,count]=await Promise.all([
+    db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.stage>=2
+      ORDER BY b.updated_at DESC,b.id DESC LIMIT ?`).bind(half).all(),
+    db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.stage IN (0,1)
+      ORDER BY b.created_at DESC,b.id DESC LIMIT ?`).bind(half+Math.max(12,size)).all(),
+    db.prepare('SELECT COUNT(*) n FROM bookmarks WHERE stage IN (0,1)').first()
+  ]);
+  return {recent:recent.results.map(decode).reverse(),pending:pending.results.map(decode),
+    remaining:Number(count.n),size};
+}
 export async function tagsList(db,includePrivate=false) {
   const rows=await db.prepare(`SELECT t.id,t.name,t.name_zh,COUNT(*) count FROM tags t JOIN bookmark_tags bt ON bt.tag_id=t.id JOIN bookmarks b ON b.id=bt.bookmark_id ${includePrivate?'':"WHERE b.stage>=3"} GROUP BY t.id,t.name,t.name_zh ORDER BY count DESC,t.name`).all();
   return rows.results;
@@ -84,6 +99,13 @@ export async function create(db,raw) {
 }
 export async function patch(db,id,raw) {
   const current=await get(db,id,true);if(!current)return null;
+  // Publication must have a persisted or concurrently submitted category.
+  const desired='status' in raw?Number(raw.status):Number(current.status);
+  const finalTags='tags' in raw
+    ?(Array.isArray(raw.tags)?raw.tags.map(t=>String(t).trim()).filter(Boolean):[])
+    :current.tags;
+  if(desired>=3 && desired<=4 && finalTags.length===0)
+    throw new Error('公開或推薦必須先選擇至少一個分類');
   if('status' in raw){
     const status=Number(raw.status);
     if(!Number.isInteger(status)||status<0||status>4)throw new Error('狀態無效');

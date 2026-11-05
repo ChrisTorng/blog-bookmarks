@@ -47,3 +47,11 @@ Production Worker and D1: blog-bookmarks; routes and Access settings: wrangler.j
 ## Metadata repair
 
 Use the admin-only `POST /bookmarks/api/admin/enrich` endpoint with JSON `{ "id": "<bookmark UUID>" }` to preview verified source metadata. Include `"apply": true` to fill missing English titles or replace an invalid summary using a validated source description. Searches require matching source URLs; never substitute merely similar search results. This is separate from the Tampermonkey star-click path.
+
+## 快速處理後台
+
+- `/bookmarks/admin/quick/`：與既有完整管理後台並存，預設最近已決定 3 筆與待決定 3 筆，可切換 5+5 或 10+10；開頁定位第一筆待決定。
+- 右側分類依使用頻率排序，可複選；公開與推薦強制至少一個分類（伺服器也驗證），不公開不需要分類。
+- 待處理按加入時間由新至舊排序。處理後焦點移至下一筆，預載待處理項目補位，固定顯示剩餘待決定筆數。
+- 快速處理只顯示中文標題、完整摘要與加入時間；點標題以新分頁開原文，既有搜尋、篩選、編輯仍在 `/bookmarks/admin/`。
+- 不新增 Migration；最近已處理依 `updated_at` 排序（包含決策更改與分類修改），確保回頭修正的書籤也會排在最近。

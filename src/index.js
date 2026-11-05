@@ -1,9 +1,9 @@
 import { isAdmin, isLocal } from './auth.js';
 import { list, get, tagsList } from './data.js';
 import { api, opts } from './api.js';
-import { layout, listing, individual, adminPage } from './views.js';
+import { layout, listing, individual, adminPage, quickAdminPage } from './views.js';
 import { rss, shellPage } from './feeds.js';
-import { adminJavaScript, adminStylesheet } from './ui-assets.js';
+import { adminJavaScript, adminStylesheet, quickJavaScript, quickStylesheet } from './ui-assets.js';
 
 const response=(body,type='text/html; charset=utf-8',status=200)=>new Response(body,{status,headers:{'Content-Type':type,'X-Content-Type-Options':'nosniff','Cache-Control':'no-store'}});
 const worker={
@@ -12,9 +12,17 @@ const worker={
   if(req.method==='HEAD'){const x=await worker.fetch(new Request(req,{method:'GET'}),env);return new Response(null,{status:x.status,headers:x.headers});}
   if(req.method==='OPTIONS')return response('','text/plain',405);
   if(p.startsWith('/bookmarks/api'))return api(req,env,url);
+  if(p==='/bookmarks/admin/quick'||p==='/bookmarks/admin/quick/'){
+   if(!(isLocal(req) && env.AUTH_MODE==='local') && !await isAdmin(req,env))return response('管理員驗證失敗','text/plain',401);
+   return response(quickAdminPage);
+  }
   if(p==='/bookmarks/admin'||p==='/bookmarks/admin/'){
    if(!(isLocal(req) && env.AUTH_MODE==='local') && !await isAdmin(req,env))return response('管理員驗證失敗','text/plain',401);
    return response(adminPage);
+  }
+  if(p==='/bookmarks/admin-quick.js'||p==='/bookmarks/admin-quick.css'){
+   if(env.ASSETS)return env.ASSETS.fetch(req);
+   return response(p.endsWith('.css')?quickStylesheet:quickJavaScript,p.endsWith('.css')?'text/css; charset=utf-8':'text/javascript; charset=utf-8');
   }
   if(p==='/bookmarks/admin.js'||p==='/bookmarks/admin.css'){
    if(env.ASSETS)return env.ASSETS.fetch(req);
