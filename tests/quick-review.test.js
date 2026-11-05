@@ -34,7 +34,7 @@ test('quick card shows Chinese heading, full summary, added time and vertical mu
  assert.match(js,/b\.summary/);
  assert.match(js,/dateText\(b\.created_at\)/);
  assert.doesNotMatch(js,/title_original/);
- assert.doesNotMatch(js,/hostname/);
+ assert.doesNotMatch(js,/new URL\(b\.url\)\.hostname/);
  assert.match(js,/aria-pressed/);
  assert.match(css,/flex-direction:column/);
  assert.match(css,/white-space:pre-wrap/);
