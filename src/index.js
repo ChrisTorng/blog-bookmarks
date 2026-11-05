@@ -1,7 +1,7 @@
 import { isAdmin, isLocal } from './auth.js';
 import { list, get, tagsList } from './data.js';
 import { api, opts } from './api.js';
-import { layout, listing, individual, adminPage, quickAdminPage } from './views.js';
+import { layout, listing, individual, adminPage, quickAdminPage, filtersScript } from './views.js';
 import { rss, shellPage } from './feeds.js';
 import { adminJavaScript, adminStylesheet, quickJavaScript, quickStylesheet } from './ui-assets.js';
 
@@ -20,6 +20,7 @@ const worker={
    if(!(isLocal(req) && env.AUTH_MODE==='local') && !await isAdmin(req,env))return response('管理員驗證失敗','text/plain',401);
    return response(adminPage);
   }
+  if(p==='/bookmarks/filters.js')return response(filtersScript,'text/javascript; charset=utf-8');
   if(p==='/bookmarks/admin-quick.js'||p==='/bookmarks/admin-quick.css'){
    // Serve embedded quick-review assets even when an older ASSETS collection is retained.
    return response(p.endsWith('.css')?quickStylesheet:quickJavaScript,p.endsWith('.css')?'text/css; charset=utf-8':'text/javascript; charset=utf-8');
