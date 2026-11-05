@@ -58,7 +58,8 @@
 
 - `url` / `normalized_url` 是**原始網址**，不可因推導出的優先重導向而覆寫。
 - `redirect_url` 代表使用者設定、當時已知的目的地，或上述**推導候選**，且在後台可編輯。
-- `preferred_url` 優先採用 `redirect_url`，否則套用已知規則，再回退原始網址；唯一例外是**舊版自動產生的精確 Wayback 重疊網址**，會自動改用現行 Archive Today 規則，人工指定的其他網址不變。
+- `preferred_url` 使用已儲存的 `redirect_url`；若明確清空則使用原始 `url`。讀取時不得覆寫手動選擇。預設推導只發生在新建書籤且未提供 `redirect_url` 欄位時。
+- `correctLegacyRedirect()` 留作歷史重疊網址修復工具，不在一般讀取時自動覆寫使用者選擇。
 - 不宣稱已驗證候選網址可用或是 archive 的永久快照；使用者可在後台改為確定可用的快照連結。
 - 即使原文標題未能取得，也不把英文標題填入 `title_zh` 假裝成中文翻譯。
 - 後續若要區分多個啟用狀態，可加入使用者個別規則優先權設定，而不應依任意檔名順序假設瀏覽器實際導向。
@@ -66,3 +67,10 @@
 ## 快照政策
 
 維持 `/submit/?url=` 原有流程，不指定任何固定快照 ID，也不預設使用未確認可靠性的 `/newest/`。
+
+
+## 2026-11-06 前端單選規則
+
+GitHub Pages 的 `redirect-options.mjs` 依原始網址提供手動、Wayback、Archive.today；符合來源時另提供 X 的 Nitter A/B 及 Reddit、GitHub、arXiv。Archive.today 採 `/submit/?url=`，不綁定任何固定快照 ID。手動模式可以留空；切換至自動規則時，完整目標網址唯讀。
+
+不需要變更 D1 Schema 或執行 Migration。

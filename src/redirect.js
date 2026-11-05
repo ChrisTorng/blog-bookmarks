@@ -79,4 +79,6 @@ export function correctLegacyRedirect(url, redirectUrl) {
   } catch {}
   return redirectUrl || null;
 }
-export const primaryUrl = item => correctLegacyRedirect(item.url,item.redirect_url) || preferredRedirect(item.url) || item.url;
+// Existing redirect_url is authoritative: explicitly cleared values return the original URL.
+// Create-time presets still come from preferredRedirect() inside validate().
+export const primaryUrl = item => item.redirect_url || item.url;

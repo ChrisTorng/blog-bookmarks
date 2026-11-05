@@ -26,8 +26,9 @@ export function validate(raw) {
   const title_zh=String(raw.title_zh ?? (/[\u3400-\u9fff]/.test(visible)?visible:'')).trim();
   const title_original=String(raw.title_original||'').trim();
   const title=String(title_zh || visible || title_original || url).trim();
-  const redirect_url=raw.redirect_url == null ? preferredRedirect(url) :
-    (String(raw.redirect_url).trim() || null);
+  const redirect_url=Object.prototype.hasOwnProperty.call(raw,'redirect_url')
+    ? (String(raw.redirect_url ?? '').trim() || null)
+    : preferredRedirect(url);
   const normalizedRedirect=redirect_url ? normalUrl(redirect_url) : null;
   if (normalizedRedirect && (normalizedRedirect.length>4096 || normalizedRedirect===normalized_url))
     throw new Error('重導向網址無效');
