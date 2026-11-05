@@ -4,12 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "npm run build:ui && wrangler dev --local --ip 127.0.0.1 --port 8788 --infer-origin-from-routes=false",
+    "dev": "wrangler dev --local --ip 127.0.0.1 --port 8788 --infer-origin-from-routes=false",
     "db:migrate": "wrangler d1 migrations apply DB --local",
-    "check": "node scripts/sync-ui.mjs --check && node --test tests/*.test.js",
-    "deploy": "npm run build:ui && wrangler deploy",
-    "test:integration": "node tests/integration.mjs",
-    "build:ui": "node scripts/sync-ui.mjs"
+    "check": "node --check src/index.js && node --check src/api.js && node --test tests/*.test.js",
+    "deploy": "wrangler deploy",
+    "test:integration": "node tests/integration.mjs"
   },
   "dependencies": {},
   "devDependencies": {
