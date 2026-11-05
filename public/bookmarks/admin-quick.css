@@ -51,3 +51,49 @@
  .quick-categories{padding-left:6px;gap:4px}
  .quick-categories .category{font-size:.76rem;padding:6px 4px}
 }
+
+
+/* Quick review's mobile-first edit dialog: keep the full form and actions in view. */
+#editDialog{
+ width:min(calc(100vw - 12px),880px);
+ max-width:calc(100vw - 12px);
+ max-height:calc(100dvh - 12px);
+ overflow:hidden;
+}
+#editDialog #editForm{
+ max-height:calc(100dvh - 12px);
+ min-height:0;
+ overflow-y:auto;
+ overscroll-behavior:contain;
+ gap:8px;
+ padding:12px 14px 0;
+}
+#editDialog h2{font-size:1.1rem;line-height:1.2;margin:0 0 2px}
+#editDialog label{gap:3px;font-size:.8rem;line-height:1.25}
+#editDialog input{padding:6px 9px;min-height:36px;font-size:.92rem}
+#editDialog textarea{min-height:72px;max-height:30dvh;padding:7px 9px;font-size:.9rem;line-height:1.45}
+#editDialog .dialog-actions{
+ position:sticky;
+ bottom:0;
+ z-index:2;
+ margin:2px -14px 0;
+ padding:8px 14px calc(8px + env(safe-area-inset-bottom, 0px));
+ display:grid;
+ grid-template-columns:repeat(2,minmax(0,1fr));
+ gap:8px;
+ background:var(--surface);
+ box-shadow:0 -5px 12px #0002;
+}
+#editDialog .dialog-actions button{min-height:38px;padding:6px 9px}
+@media(max-width:650px){
+ .quick-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+ .quick-actions button{min-width:0;width:100%;padding:7px 2px;font-size:.8rem}
+ .quick-actions [data-edit]{grid-column:1/-1}
+ #editDialog{border-radius:10px}
+ #editDialog #editForm{gap:7px;padding:10px 10px 0}
+ #editDialog h2{font-size:1.03rem}
+ #editDialog label{font-size:.76rem;gap:2px}
+ #editDialog input{min-height:34px;padding:5px 8px;font-size:.87rem}
+ #editDialog textarea{min-height:68px;padding:5px 8px;font-size:.87rem}
+ #editDialog .dialog-actions{margin:2px -10px 0;padding:7px 10px calc(7px + env(safe-area-inset-bottom, 0px))}
+}
