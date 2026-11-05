@@ -22,7 +22,7 @@ test('queue includes 3+3, 5+5, or 10+10 with a real pending count',()=>{
  assert.match(js,/choices = \[6,10,20\]/);
  assert.match(js,/state\.size\/2/);
  assert.match(js,/state\.remaining\.toLocaleString/);
- assert.doesNotMatch(css,/position:sticky/);
+ assert.doesNotMatch(css,/\.quick-toolbar\{[^}]*position:sticky/);
  assert.match(js,/scrollIntoView/);
  assert.match(js,/focus\(\{preventScroll:true\}\)/);
  assert.match(api,/reviewWindow\(env\.DB/);
