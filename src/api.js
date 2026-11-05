@@ -70,6 +70,11 @@ export async function api(req,env,url){
    if(!await validIngestToken(req,env))return json({error:'無效的新增 Token'},401);
    return json(await create(env.DB,{...await input(req),source:'tampermonkey'}),201);
   }
+  const publicDetail=p.match(/^\\/bookmarks\\/api\\/([0-9a-f-]{36})\\/?$/);
+  if(publicDetail && req.method==='GET'){
+    const item=await get(env.DB,publicDetail[1]);
+    return item?json(item):json({error:'書籤不存在'},404);
+  }
   if((p==='/bookmarks/api'||p==='/bookmarks/api/')&&req.method==='GET')return json(await list(env.DB,opts(url)));
   if(p==='/bookmarks/api/tags'&&req.method==='GET')return json(await tagsList(env.DB));
   return json({error:'不存在的 API'},404);
