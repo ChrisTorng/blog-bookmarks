@@ -21,7 +21,7 @@ const worker={
    return response(adminPage);
   }
   if(p==='/bookmarks/admin-quick.js'||p==='/bookmarks/admin-quick.css'){
-   if(env.ASSETS)return env.ASSETS.fetch(req);
+   // Serve embedded quick-review assets even when an older ASSETS collection is retained.
    return response(p.endsWith('.css')?quickStylesheet:quickJavaScript,p.endsWith('.css')?'text/css; charset=utf-8':'text/javascript; charset=utf-8');
   }
   if(p==='/bookmarks/admin.js'||p==='/bookmarks/admin.css'){
