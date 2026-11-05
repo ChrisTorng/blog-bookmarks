@@ -16,6 +16,8 @@ const dateText = value => value ? new Intl.DateTimeFormat('zh-TW',{
 }).format(new Date(value)) : '';
 const levels = ['未讀','已讀','不公開','公開','推薦'];
 const half = () => state.size/2;
+const mobileView = () => window.matchMedia('(max-width:650px)').matches;
+let showPrevious = false;
 function message(text='',error=false){
  $('message').textContent=text;
  $('message').classList.toggle('error',error);
@@ -62,9 +64,9 @@ function card(b,kind){
   original+'<div class="quick-date">'+esc(dateText(b.created_at))+' · '+esc(domain)+'</div>'+
   (b.summary?'<p class="quick-summary">'+esc(b.summary)+'</p>':'')+
   '<div class="quick-actions">'+actions+
-  '<button type="button" data-edit>編輯</button>'+
-  '<button type="button" class="quick-delete" data-delete>刪除</button></div></div>'+
-  '<aside class="quick-categories" aria-label="分類">'+categoryButtons+'</aside></article>';
+  '<button type="button" data-edit>編輯</button></div></div>'+
+  '<aside class="quick-categories" aria-label="分類">'+categoryButtons+'</aside>'+
+  '<button type="button" class="quick-delete" data-delete>刪除</button></article>';
 }
 
 function findCard(id){
@@ -82,19 +84,21 @@ function focusNext(){
 function render({focus=false,preserveId=null}={}){
  const anchor=preserveId?findCard(preserveId):null;
  const top=anchor?.getBoundingClientRect().top;
- const recent=state.recent.slice(-half());
- const pending=state.pending.slice(0,half());
+ const mobile=mobileView();
+ const recent=state.recent.slice(-(mobile?1:half()));
+ const pending=state.pending.slice(0,mobile?1:half());
  const last=state.recent.at(-1);
  const lastTags=last?.tags.map(name=>{
   const t=state.tags.find(t=>t.name.toLowerCase()===name.toLowerCase());
   return esc(t?.name_zh||t?.name||name);
  }).join('、');
- const lastLabel=last?'<span class="quick-latest" title="最新處理結果">'+
+ const lastLabel=last?'<button type="button" class="quick-latest" data-toggle-previous aria-expanded="'+String(mobile&&showPrevious)+'" title="查看或收起上一筆已處理書籤">'+
   esc(last.status===4?'已推薦':last.status===3?'已公開':'不公開')+
-  (lastTags?' · '+lastTags:'')+'</span>':'';
+  (lastTags?' · '+lastTags:'')+'</button>':'';
+ const showHistory=!mobile||showPrevious;
  $('items').innerHTML=
-  (recent.length?'<div class="quick-section-label">最近已處理 · '+recent.length+' 筆</div>':'')+
-  recent.map(b=>card(b,'recent')).join('')+
+  (showHistory&&recent.length?'<div class="quick-section-label">最近已處理 · '+recent.length+' 筆</div>':'')+
+  (showHistory?recent.map(b=>card(b,'recent')).join(''):'')+
   '<div class="quick-section-label pending-label"><span>待處理 '+state.remaining.toLocaleString('zh-TW')+' 筆</span>'+lastLabel+'</div>'+
   (pending.length?pending.map(b=>card(b,'pending')).join(''):
    '<p class="empty">'+(state.remaining?'正在載入待處理書籤…':'目前已全部處理完成。')+'</p>');
@@ -167,6 +171,7 @@ function takeDecision(b,level){
  state.inflight++;
  state.changeVersion++;
  const next={...b,status:level};
+ showPrevious=false;
  state.pending=state.pending.filter(x=>x.id!==b.id);
  state.recent=[...state.recent.filter(x=>x.id!==b.id),next].slice(-half());
  if(wasPending)state.remaining--;
@@ -240,6 +245,7 @@ function deleteBookmark(b){
  state.busy.add(b.id);
  state.inflight++;
  state.changeVersion++;
+ showPrevious=false;
  state.recent=state.recent.filter(item=>item.id!==b.id);
  state.pending=state.pending.filter(item=>item.id!==b.id);
  if(wasPending)state.remaining--;
@@ -332,6 +338,14 @@ if(local){
  });
 }
 $('items').addEventListener('click',event=>{
+ if(event.target.closest('[data-toggle-previous]')){
+  if(!mobileView())return;
+  showPrevious=!showPrevious;
+  render();
+  const destination=$('items').querySelector(showPrevious?'.quick-item.recent':'.pending-label');
+  destination?.scrollIntoView({block:'start',behavior:'instant'});
+  return;
+ }
  const element=event.target.closest('.quick-item');
  if(!element)return;
  const b=[...state.recent,...state.pending].find(x=>x.id===element.dataset.id);
@@ -349,4 +363,5 @@ $('items').addEventListener('click',event=>{
    .catch(error=>message('已開啟原文，但標記已讀失敗：'+error.message,true));
  }
 });
+window.matchMedia('(max-width:650px)').addEventListener('change',()=>{showPrevious=false;render();});
 void load();

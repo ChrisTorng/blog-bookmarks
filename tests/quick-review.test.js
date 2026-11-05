@@ -76,5 +76,20 @@ test('quick screen edits all content without duplicating status or tag controls'
  assert.match(js,/request\('\/'\+b\.id,'DELETE'\)/);
  assert.match(js,/confirm\('確定永久刪除這筆書籤？'\)/);
  assert.match(css,/\.quick-delete/);
- assert.match(css,/max-height:min\(60dvh,440px\)/);
+ assert.match(css,/\.quick-item>\.quick-delete\{position:absolute;right:14px;bottom:12px/);
+ assert.doesNotMatch(css,/max-height:min/);
+ assert.doesNotMatch(css,/overflow-y:auto/);
+});
+
+test('mobile shows only the active pending bookmark, with buffered items still available',()=>{
+ assert.match(js,/const mobileView = \(\) => window\.matchMedia/);
+ assert.match(js,/state\.pending\.slice\(0,mobile\?1:half\(\)\)/);
+ assert.match(js,/const showHistory=!mobile\|\|showPrevious/);
+ assert.match(js,/data-toggle-previous/);
+ assert.match(js,/showPrevious=false/);
+ assert.match(css,/@media\(max-width:650px\)/);
+ assert.match(css,/\.quick-toolbar\{display:none\}/);
+ assert.match(css,/\.pending-label\{display:grid;grid-template-columns:max-content minmax\(0,1fr\)/);
+ assert.match(css,/\.quick-latest\{justify-self:end/);
+ assert.doesNotMatch(css,/overscroll-behavior:contain/);
 });
