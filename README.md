@@ -1,3 +1,7 @@
+## 架構分工（2026-11-05）
+
+本 repo 的 Cloudflare Worker 僅處理 `/bookmarks/api*`（D1／認證／API）和 `/bookmarks/feed.xml*`（RSS 資料）；`/bookmarks/`、`/bookmarks/admin/`、`/bookmarks/admin/quick/`、詳情頁與其 HTML/JS/CSS 由 `ChrisTorng/christorng.github.io` 的 GitHub Pages Action 發布。純 UI 修改只改主站，不部署 Worker。正式 D1 Migration 是獨立、一次性操作，`npm run deploy` 不會執行；CI 可初始化拋棄式本機資料庫作測試。歷史 UI 檔案僅供搬遷稽核參考，不是 Worker 執行入口。
+
 # blog-bookmarks
 
 Personal bookmark collection for <https://christorng.idv.tw/bookmarks/>. Cloudflare Worker + D1; manager at /bookmarks/admin/.

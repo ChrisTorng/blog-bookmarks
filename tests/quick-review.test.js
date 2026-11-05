@@ -11,8 +11,9 @@ const worker=read('src/index.js');
 const views=read('src/views.js');
 const generator=read('scripts/sync-ui.mjs');
 
-test('quick admin has a separate protected route and switches back to full manager',()=>{
- assert.match(worker,/\/bookmarks\/admin\/quick/);
+test('quick admin UI assets are retained for Pages while Worker handles only API',()=>{
+ assert.doesNotMatch(worker,/\/bookmarks\/admin\/quick/);
+ assert.match(worker,/\/bookmarks\/feed\.xml/);
  assert.match(views,/quickAdminPage/);
  assert.match(js,/href="\/bookmarks\/admin\/"/);
  assert.match(old,/href="\/bookmarks\/admin\/quick\/"/);
