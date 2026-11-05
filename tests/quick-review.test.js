@@ -35,7 +35,7 @@ test('quick card shows Chinese heading, full summary, added time and vertical mu
  assert.match(js,/b\.summary/);
  assert.match(js,/dateText\(b\.created_at\)/);
  assert.match(js,/b\.title_original/);
- assert.match(js,/new URL\(b\.url\)\.hostname/);
+ assert.doesNotMatch(js,/new URL\(b\.url\)\.hostname/);
  assert.match(js,/aria-pressed/);
  assert.match(css,/flex-direction:column/);
  assert.match(css,/white-space:pre-wrap/);
@@ -77,7 +77,9 @@ test('quick screen edits all content without duplicating status or tag controls'
  assert.match(js,/confirm\('確定永久刪除這筆書籤？'\)/);
  assert.match(css,/\.quick-delete/);
  assert.match(css,/\.quick-main\{min-width:0;display:flex;flex-direction:column/);
- assert.match(css,/\.quick-danger\{display:flex;justify-content:flex-end;margin-top:auto;padding-top:24px/);
+ assert.doesNotMatch(js,/quick-danger/);
+ assert.match(js,/class="quick-content"/);
+ assert.match(css,/\.quick-actions \.quick-delete\{/);
  assert.doesNotMatch(css,/max-height:min/);
  assert.doesNotMatch(css,/\.quick-categories\{[^}]*overflow-y:auto/);
 });
@@ -122,5 +124,28 @@ test('compact mobile edit modal keeps action buttons visible and makes decisions
  assert.match(css,/position:sticky/);
  assert.match(css,/grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
  assert.match(css,/\.quick-actions\{display:grid;grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
- assert.match(css,/\.quick-actions \[data-edit\]\{grid-column:1\/-1\}/);
+ assert.match(css,/\.quick-actions \[data-edit\]\{grid-column:2;grid-row:2\}/);
+});
+
+test('mobile classification uses intrinsic width and leaves room for the article',()=>{
+ assert.match(css,/\.quick-item\{grid-template-columns:minmax\(0,1fr\) fit-content\(28vw\)/);
+ assert.match(css,/\.quick-categories \.category\{width:100%;min-width:0/);
+ assert.doesNotMatch(css,/\.quick-categories\{[^}]*overflow-y:auto/);
+});
+test('mobile card keeps exactly two footer action rows visible while long text scrolls',()=>{
+ assert.match(js,/const actions=\[3,4,2\]/);
+ assert.match(js,/'<div class="quick-actions">'\+actions/);
+ assert.match(js,/data-edit>編輯/);
+ assert.match(js,/data-delete>刪除/);
+ assert.match(css,/\.quick-main\{min-width:0;min-height:0;display:flex;flex-direction:column/);
+ assert.match(css,/\.quick-content\{overflow-y:auto;overscroll-behavior:contain/);
+ assert.match(css,/\.quick-item\{grid-template-columns:minmax\(0,1fr\) fit-content\(28vw\)[^}]*height:calc\(100dvh - 90px\)/);
+ assert.match(css,/\.quick-actions\{flex:0 0 auto;margin-top:8px;padding-top:8px;border-top:1px solid var\(--line\)/);
+ assert.match(css,/\.quick-actions \[data-decision="3"\]\{grid-column:1 \/ span 2;grid-row:1\}/);
+ assert.match(css,/\.quick-actions \[data-decision="4"\]\{grid-column:3;grid-row:1\}/);
+ assert.match(css,/\.quick-actions \[data-decision="2"\]\{grid-column:1;grid-row:2\}/);
+ assert.match(css,/\.quick-actions \[data-edit\]\{grid-column:2;grid-row:2\}/);
+ assert.match(css,/\.quick-actions \[data-delete\]\{grid-column:3;grid-row:2\}/);
+ assert.match(js,/const contentScroll=item\.querySelector\('\.quick-content'\)\?\.scrollTop/);
+ assert.doesNotMatch(js,/esc\(domain\)/);
 });
