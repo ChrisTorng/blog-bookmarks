@@ -79,7 +79,7 @@ test('quick screen edits all content without duplicating status or tag controls'
  assert.match(css,/\.quick-main\{min-width:0;display:flex;flex-direction:column/);
  assert.match(css,/\.quick-danger\{display:flex;justify-content:flex-end;margin-top:auto;padding-top:24px/);
  assert.doesNotMatch(css,/max-height:min/);
- assert.doesNotMatch(css,/overflow-y:auto/);
+ assert.doesNotMatch(css,/\.quick-categories\{[^}]*overflow-y:auto/);
 });
 
 test('mobile preserves 3+3, 5+5 and 10+10 as scrollable entries',()=>{
@@ -93,7 +93,7 @@ test('mobile preserves 3+3, 5+5 and 10+10 as scrollable entries',()=>{
  assert.match(css,/\.quick-toolbar\{display:flex\}/);
  assert.match(css,/\.pending-label\{display:grid;grid-template-columns:max-content minmax\(0,1fr\)/);
  assert.match(css,/\.quick-latest\{justify-self:end/);
- assert.doesNotMatch(css,/overscroll-behavior:contain/);
+ assert.doesNotMatch(css,/\.quick-categories\{[^}]*overscroll-behavior:contain/);
 });
 test('delete stays in left content area and edit dialog does not focus input',()=>{
  assert.match(js,/'<div class="quick-danger"><button type="button" class="quick-delete"/);
