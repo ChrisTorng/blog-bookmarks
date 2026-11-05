@@ -64,10 +64,8 @@ export async function reviewWindow(db,requested=6) {
   const size=[6,10,20].includes(Number(requested))?Number(requested):6;
   const half=size/2;
   const [recent,pending,count]=await Promise.all([
-    db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.stage>=2 ORDER BY
-      CASE b.stage WHEN 4 THEN COALESCE(b.starred_at,b.updated_at)
-                   WHEN 3 THEN COALESCE(b.published_at,b.updated_at)
-                   ELSE b.updated_at END DESC,b.id DESC LIMIT ?`).bind(half).all(),
+    db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.stage>=2
+      ORDER BY b.updated_at DESC,b.id DESC LIMIT ?`).bind(half).all(),
     db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.stage IN (0,1)
       ORDER BY b.created_at DESC,b.id DESC LIMIT ?`).bind(half+Math.max(12,size)).all(),
     db.prepare('SELECT COUNT(*) n FROM bookmarks WHERE stage IN (0,1)').first()
