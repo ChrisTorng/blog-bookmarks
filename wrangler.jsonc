@@ -5,7 +5,6 @@
   "compatibility_date": "2026-10-27",
   "workers_dev": false,
   "preview_urls": false,
-  "assets": {"directory":"./public","binding":"ASSETS","run_worker_first":true,"html_handling":"none"},
   "d1_databases": [
     {
       "binding": "DB",
@@ -23,7 +22,7 @@
     "ACCESS_AUD": "6b0e80ebc88296549323cf796dbfa719bff9f95c26601da07ef5fd67ed696453"
   },
   "routes": [
-    {"pattern":"christorng.idv.tw/bookmarks","zone_id":"c5475506538ba09563cacc12b8acb3d0"},
-    {"pattern":"christorng.idv.tw/bookmarks/*","zone_id":"c5475506538ba09563cacc12b8acb3d0"}
+    {"pattern":"christorng.idv.tw/bookmarks/api*","zone_id":"c5475506538ba09563cacc12b8acb3d0"},
+    {"pattern":"christorng.idv.tw/bookmarks/feed.xml*","zone_id":"c5475506538ba09563cacc12b8acb3d0"}
   ]
 }
