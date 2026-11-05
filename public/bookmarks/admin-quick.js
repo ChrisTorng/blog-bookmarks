@@ -110,8 +110,12 @@ function updateCard(b){
  if(!item)return;
  const wasFocused=item===document.activeElement;
  const kind=item.dataset.kind;
+ const categoriesScroll=item.querySelector('.quick-categories')?.scrollTop||0;
  item.outerHTML=card(b,kind);
- if(wasFocused)findCard(b.id)?.focus({preventScroll:true});
+ const replacement=findCard(b.id);
+ const categories=replacement?.querySelector('.quick-categories');
+ if(categories)categories.scrollTop=categoriesScroll;
+ if(wasFocused)replacement?.focus({preventScroll:true});
 }
 async function load(size=state.size,{focus=true}={}){
  const generation=++state.generation;
