@@ -1,6 +1,16 @@
 import { preferredRedirect, primaryUrl } from './redirect.js';
 const fields = "b.id,b.url,b.normalized_url,b.redirect_url,b.title,b.title_original,b.title_zh,b.summary,b.source,b.stage AS status,b.created_at,b.updated_at,b.read_at,b.published_at,b.starred_at, CASE WHEN b.stage=4 THEN COALESCE(b.starred_at,b.published_at,b.created_at) WHEN b.stage=3 THEN COALESCE(b.published_at,b.created_at) ELSE b.created_at END AS status_at,COALESCE((SELECT json_group_array(t.name) FROM bookmark_tags bt JOIN tags t ON t.id=bt.tag_id WHERE bt.bookmark_id=b.id),'[]') AS tags";
 const decode = row => row && ({...row, preferred_url:primaryUrl(row), tags:JSON.parse(row.tags || '[]')});
+// Public feeds, markup and API must not expose the visitor's precise collection/reading times.
+const taipeiDay = date => date ? new Intl.DateTimeFormat('sv-SE',{
+  timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit'
+}).format(new Date(date)) : null;
+const publicEntry = row => row && ({
+  ...row,
+  read_at:null,
+  ...Object.fromEntries(['created_at','updated_at','published_at','starred_at','status_at']
+   .map(key=>[key,taipeiDay(row[key])]))
+});
 export const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function normalUrl(input) {
   const u = new URL(input);
@@ -32,13 +42,13 @@ export function validate(raw) {
 }
 export async function get(db,id,includePrivate=false) {
   const row=await db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.id=?${includePrivate?'':' AND b.stage>=3'}`).bind(id).first();
-  return decode(row);
+  return includePrivate?decode(row):publicEntry(decode(row));
 }
 export async function byUrl(db,url) {
   const row=await db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.normalized_url=? OR b.redirect_url=? LIMIT 1`).bind(normalUrl(url),normalUrl(url)).first();
   return decode(row);
 }
-export async function list(db, {privateList=false,filter='pending',page=1,tag='',sort='new',q=''}={}) {
+export async function list(db, {privateList=false,filter='pending',page=1,tag='',sort='new',q='',from='',to=''}={}) {
   const n=Math.max(1,Math.min(100000,Number(page)||1)), params=[], conditions=[];
   if(!privateList) conditions.push('b.stage>=3');
   else if(filter==='pending') conditions.push('b.stage IN (0,1)');
@@ -51,12 +61,20 @@ export async function list(db, {privateList=false,filter='pending',page=1,tag=''
   else if(filter==='starred') conditions.push('b.stage=4');
   if(tag){conditions.push("EXISTS(SELECT 1 FROM bookmark_tags t WHERE t.bookmark_id=b.id AND t.tag_id=?)");params.push(tag.toLowerCase());}
   if(q){conditions.push('(b.title LIKE ? OR b.title_original LIKE ? OR b.title_zh LIKE ? OR b.url LIKE ? OR b.redirect_url LIKE ? OR b.summary LIKE ?)');params.push(...Array(6).fill('%'+q.slice(0,100)+'%'));}
+  const dateExpression=privateList?'b.created_at':`CASE WHEN b.stage=4 THEN COALESCE(b.starred_at,b.published_at,b.created_at) WHEN b.stage=3 THEN COALESCE(b.published_at,b.created_at) ELSE b.created_at END`;
+  // SQLite applies the Taipei offset before extracting the public calendar date.
+  if(/^\d{4}-\d{2}-\d{2}$/.test(from)){
+    conditions.push(`date(${dateExpression}, '+8 hours') >= ?`);params.push(from);
+  }
+  if(/^\d{4}-\d{2}-\d{2}$/.test(to)){
+    conditions.push(`date(${dateExpression}, '+8 hours') <= ?`);params.push(to);
+  }
   const where=conditions.length?' WHERE '+conditions.join(' AND '):'';
   const total=(await db.prepare('SELECT COUNT(*) n FROM bookmarks b'+where).bind(...params).first()).n;
   const dateCol=privateList?'b.created_at':'status_at';
   const order=sort==='old'?`${dateCol} ASC,b.id ASC`:sort==='title'?'b.title COLLATE NOCASE ASC,b.id DESC':sort==='recommended'?`b.stage DESC,${dateCol} DESC,b.id DESC`:`${dateCol} DESC,b.id DESC`;
   const rows=await db.prepare(`SELECT ${fields} FROM bookmarks b${where} ORDER BY ${order} LIMIT 20 OFFSET ?`).bind(...params,(n-1)*20).all();
-  return {items:rows.results.map(decode),page:n,pages:Math.max(1,Math.ceil(total/20)),total};
+  return {items:rows.results.map(decode).map(row=>privateList?row:publicEntry(row)),page:n,pages:Math.max(1,Math.ceil(total/20)),total};
 }
 // Fast review: display newest decisions just above the next pending item.
 // Overfetch pending items to allow immediate advancement without a new request.
