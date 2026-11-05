@@ -76,7 +76,7 @@ test('quick screen edits all content without duplicating status or tag controls'
  assert.match(js,/request\('\/'\+b\.id,'DELETE'\)/);
  assert.match(js,/confirm\('確定永久刪除這筆書籤？'\)/);
  assert.match(css,/\.quick-delete/);
- assert.match(css,/\\.quick-item>\\.quick-delete\\{position:absolute;right:14px;bottom:12px/);
+ assert.match(css,/\.quick-item>\.quick-delete\{position:absolute;right:14px;bottom:12px/);
  assert.doesNotMatch(css,/max-height:min/);
  assert.doesNotMatch(css,/overflow-y:auto/);
 });
