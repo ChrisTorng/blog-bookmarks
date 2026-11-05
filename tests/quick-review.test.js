@@ -76,20 +76,30 @@ test('quick screen edits all content without duplicating status or tag controls'
  assert.match(js,/request\('\/'\+b\.id,'DELETE'\)/);
  assert.match(js,/confirm\('確定永久刪除這筆書籤？'\)/);
  assert.match(css,/\.quick-delete/);
- assert.match(css,/\.quick-item>\.quick-delete\{position:absolute;right:14px;bottom:12px/);
+ assert.match(css,/\.quick-main\{min-width:0;display:flex;flex-direction:column/);
+ assert.match(css,/\.quick-danger\{display:flex;justify-content:flex-end;margin-top:auto;padding-top:24px/);
  assert.doesNotMatch(css,/max-height:min/);
  assert.doesNotMatch(css,/overflow-y:auto/);
 });
 
-test('mobile shows only the active pending bookmark, with buffered items still available',()=>{
- assert.match(js,/const mobileView = \(\) => window\.matchMedia/);
- assert.match(js,/state\.pending\.slice\(0,mobile\?1:half\(\)\)/);
- assert.match(js,/const showHistory=!mobile\|\|showPrevious/);
- assert.match(js,/data-toggle-previous/);
- assert.match(js,/showPrevious=false/);
+test('mobile preserves 3+3, 5+5 and 10+10 as scrollable entries',()=>{
+ assert.match(js,/state\.recent\.slice\(-half\(\)\)/);
+ assert.match(js,/state\.pending\.slice\(0,half\(\)\)/);
+ assert.doesNotMatch(js,/mobileView/);
+ assert.doesNotMatch(js,/showPrevious/);
+ assert.match(js,/recent\.map\(b=>card\(b,'recent'\)\)\.join/);
+ assert.match(js,/pending\.map\(b=>card\(b,'pending'\)\)\.join/);
  assert.match(css,/@media\(max-width:650px\)/);
- assert.match(css,/\.quick-toolbar\{display:none\}/);
+ assert.match(css,/\.quick-toolbar\{display:flex\}/);
  assert.match(css,/\.pending-label\{display:grid;grid-template-columns:max-content minmax\(0,1fr\)/);
  assert.match(css,/\.quick-latest\{justify-self:end/);
  assert.doesNotMatch(css,/overscroll-behavior:contain/);
+});
+test('delete stays in left content area and edit dialog does not focus input',()=>{
+ assert.match(js,/'<div class="quick-danger"><button type="button" class="quick-delete"/);
+ assert.match(js,/'<aside class="quick-categories"/);
+ assert.match(js,/id="editHeading" tabindex="-1" autofocus/);
+ assert.match(js,/\$\('editHeading'\)\.focus\(\{preventScroll:true\}\)/);
+ assert.doesNotMatch(js,/editTitle'\)\.focus/);
+ assert.match(js,/data-scroll-previous/);
 });
