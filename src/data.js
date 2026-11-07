@@ -77,7 +77,8 @@ export async function list(db, {privateList=false,filter='pending',page=1,tag=''
   const rows=await db.prepare(`SELECT ${fields} FROM bookmarks b${where} ORDER BY ${order} LIMIT 20 OFFSET ?`).bind(...params,(n-1)*20).all();
   return {items:rows.results.map(decode).map(row=>privateList?row:publicEntry(row)),page:n,pages:Math.max(1,Math.ceil(total/20)),total};
 }
-// Fast review: display newest decisions just above the next pending item.
+// Fast review: show newest decisions above the oldest undecided bookmarks.
+// Reading an item must not alter its chronological position in the queue.
 // Overfetch pending items to allow immediate advancement without a new request.
 export async function reviewWindow(db,requested=6) {
   const size=[6,10,20].includes(Number(requested))?Number(requested):6;
@@ -86,7 +87,7 @@ export async function reviewWindow(db,requested=6) {
     db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.stage>=2
       ORDER BY b.updated_at DESC,b.id DESC LIMIT ?`).bind(half).all(),
     db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.stage IN (0,1)
-      ORDER BY b.created_at DESC,b.id DESC LIMIT ?`).bind(half+Math.max(12,size)).all(),
+      ORDER BY b.created_at ASC,b.id ASC LIMIT ?`).bind(half+Math.max(12,size)).all(),
     db.prepare('SELECT COUNT(*) n FROM bookmarks WHERE stage IN (0,1)').first()
   ]);
   return {recent:recent.results.map(decode).reverse(),pending:pending.results.map(decode),
