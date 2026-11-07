@@ -1,5 +1,5 @@
 import { preferredRedirect, primaryUrl } from './redirect.js';
-const fields = "b.id,b.url,b.normalized_url,b.redirect_url,b.title,b.title_original,b.title_zh,b.summary,b.source,b.stage AS status,b.created_at,b.updated_at,b.read_at,b.published_at,b.starred_at, CASE WHEN b.stage=4 THEN COALESCE(b.starred_at,b.published_at,b.created_at) WHEN b.stage=3 THEN COALESCE(b.published_at,b.created_at) ELSE b.created_at END AS status_at,COALESCE((SELECT json_group_array(t.name) FROM bookmark_tags bt JOIN tags t ON t.id=bt.tag_id WHERE bt.bookmark_id=b.id),'[]') AS tags";
+const fields = "b.id,b.url,b.normalized_url,b.redirect_url,b.title,b.title_original,b.title_zh,b.summary,b.source,CASE WHEN b.stage=1 AND b.deferred=1 THEN 5 ELSE b.stage END AS status,b.created_at,b.updated_at,b.read_at,b.published_at,b.starred_at, CASE WHEN b.stage=4 THEN COALESCE(b.starred_at,b.published_at,b.created_at) WHEN b.stage=3 THEN COALESCE(b.published_at,b.created_at) ELSE b.created_at END AS status_at,COALESCE((SELECT json_group_array(t.name) FROM bookmark_tags bt JOIN tags t ON t.id=bt.tag_id WHERE bt.bookmark_id=b.id),'[]') AS tags";
 const decode = row => row && ({...row, preferred_url:primaryUrl(row), tags:JSON.parse(row.tags || '[]')});
 // Public feeds, markup and API must not expose the visitor's precise collection/reading times.
 const taipeiDay = date => date ? new Intl.DateTimeFormat('sv-SE',{
@@ -52,9 +52,10 @@ export async function byUrl(db,url) {
 export async function list(db, {privateList=false,filter='pending',page=1,tag='',sort='new',q='',from='',to=''}={}) {
   const n=Math.max(1,Math.min(100000,Number(page)||1)), params=[], conditions=[];
   if(!privateList) conditions.push('b.stage>=3');
-  else if(filter==='pending') conditions.push('b.stage IN (0,1)');
+  else if(filter==='pending') conditions.push('b.stage IN (0,1) AND b.deferred=0');
   else if(filter==='unread') conditions.push('b.stage=0');
-  else if(filter==='readPending') conditions.push('b.stage=1');
+  else if(filter==='readPending') conditions.push('b.stage=1 AND b.deferred=0');
+  else if(filter==='deferred') conditions.push('b.stage=1 AND b.deferred=1');
   else if(filter==='private') conditions.push('b.stage=2');
   else if(filter==='decided') conditions.push('b.stage>=2');
   else if(filter==='read') conditions.push('b.stage>=1');
@@ -80,18 +81,23 @@ export async function list(db, {privateList=false,filter='pending',page=1,tag=''
 // Fast review: show newest decisions above the oldest undecided bookmarks.
 // Reading an item must not alter its chronological position in the queue.
 // Overfetch pending items to allow immediate advancement without a new request.
-export async function reviewWindow(db,requested=6) {
-  const size=[6,10,20].includes(Number(requested))?Number(requested):6;
-  const half=size/2;
-  const [recent,pending,count]=await Promise.all([
-    db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.stage>=2
-      ORDER BY b.updated_at DESC,b.id DESC LIMIT ?`).bind(half).all(),
-    db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.stage IN (0,1)
-      ORDER BY b.created_at ASC,b.id ASC LIMIT ?`).bind(half+Math.max(12,size)).all(),
-    db.prepare('SELECT COUNT(*) n FROM bookmarks WHERE stage IN (0,1)').first()
+// Three chronological groups: deferred (collapsed), recently decided, oldest actionable.
+// Deferred entries never block the pending queue and never leak into the public feed.
+export async function reviewWindow(db,requested=3) {
+  const size=[3,6,10].includes(Number(requested))?Number(requested):3;
+  const [recent,deferred,pending,pendingCount,deferredCount]=await Promise.all([
+    db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.stage IN (2,3,4)
+      ORDER BY b.updated_at DESC,b.id DESC LIMIT ?`).bind(size).all(),
+    db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.stage=1 AND b.deferred=1
+      ORDER BY b.created_at ASC,b.id ASC LIMIT ?`).bind(size).all(),
+    db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.stage IN (0,1) AND b.deferred=0
+      ORDER BY b.created_at ASC,b.id ASC LIMIT ?`).bind(size+Math.max(12,size)).all(),
+    db.prepare('SELECT COUNT(*) n FROM bookmarks WHERE stage IN (0,1) AND deferred=0').first(),
+    db.prepare('SELECT COUNT(*) n FROM bookmarks WHERE stage=1 AND deferred=1').first()
   ]);
-  return {recent:recent.results.map(decode).reverse(),pending:pending.results.map(decode),
-    remaining:Number(count.n),size,pending_order:'oldest'};
+  return {recent:recent.results.map(decode).reverse(),deferred:deferred.results.map(decode),
+    pending:pending.results.map(decode),remaining:Number(pendingCount.n),
+    deferredRemaining:Number(deferredCount.n),size,pending_order:'oldest'};
 }
 export async function tagsList(db,includePrivate=false) {
   const rows=await db.prepare(`SELECT t.id,t.name,t.name_zh,COUNT(*) count FROM tags t JOIN bookmark_tags bt ON bt.tag_id=t.id JOIN bookmarks b ON b.id=bt.bookmark_id ${includePrivate?'':"WHERE b.stage>=3"} GROUP BY t.id,t.name,t.name_zh ORDER BY count DESC,t.name`).all();
@@ -128,14 +134,15 @@ export async function patch(db,id,raw) {
     throw new Error('公開或推薦必須先選擇至少一個分類');
   if('status' in raw){
     const status=Number(raw.status);
-    if(!Number.isInteger(status)||status<0||status>4)throw new Error('狀態無效');
+    if(!Number.isInteger(status)||status<0||status>5)throw new Error('狀態無效');
     const now=new Date().toISOString();
     if(current.status!==status){
-      const legacyStatus=status===2?1:status>=3?status-1:status;
-      const readAt=status>=1?(current.read_at||now):null;
+      const stage=status===5?1:status;
+      const legacyStatus=status===5?1:status===2?1:status>=3?status-1:status;
+      const readAt=status===5?current.read_at:status>=1?(current.read_at||now):null;
       const publishAt=status>=3?(current.status>=3&&current.published_at?current.published_at:now):null;
       const starredAt=status===4?(current.status===4&&current.starred_at?current.starred_at:now):null;
-      await db.prepare('UPDATE bookmarks SET stage=?,status=?,read_at=?,published_at=?,starred_at=?,updated_at=? WHERE id=?').bind(status,legacyStatus,readAt,publishAt,starredAt,now,id).run();
+      await db.prepare('UPDATE bookmarks SET stage=?,deferred=?,status=?,read_at=?,published_at=?,starred_at=?,updated_at=? WHERE id=?').bind(stage,status===5?1:0,legacyStatus,readAt,publishAt,starredAt,now,id).run();
     }
   }
   if(['url','redirect_url','title','title_original','title_zh','summary','tags'].some(x=>x in raw)){
