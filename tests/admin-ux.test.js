@@ -40,8 +40,9 @@ test('source and redirected URL plus original title are editable and visible',()
  assert.match(admin,/b\.preferred_url\|\|b\.redirect_url\|\|b\.url/);
 });
 
-test('BetaCat toolbar still preserves existing collapse control',()=>{
- assert.match(script,/tm-betacat-article-tools/);
- assert.match(script,/oldCollapseButton/);
- assert.match(script,/toolbar\.appendChild\(button\)/);
+test('BetaCat bookmark star overlays the article instead of creating a toolbar',()=>{
+ assert.match(script,/article\.appendChild\(button\)/);
+ assert.match(script,/position:absolute!important;right:4px!important;bottom:4px!important/);
+ assert.match(script,/opacity:\.58!important/);
+ assert.doesNotMatch(script,/tm-betacat-article-tools|oldCollapseButton/);
 });
