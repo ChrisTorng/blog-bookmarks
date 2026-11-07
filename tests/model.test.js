@@ -30,10 +30,10 @@ test('missing secret never grants write',async ()=>{
 
 test('public RSS opens the local bookmark and shows original source, English title and description', () => {
  const id = 'f73fa443-c469-4e5b-8023-7f1bfb745ac4'
- const xml = rss([{id, title:'中文 <標題>', title_original:'English title',url:'https://example.org/?a=1&b=2',summary:'說明 <測試>',status_at:'2026-11-07'}], 'https://christorng.idv.tw')
+ const xml = rss([{id, slug:'english-title', title:'中文 <標題>', title_original:'English title',url:'https://example.org/?a=1&b=2',summary:'說明 <測試>',status_at:'2026-11-07'}], 'https://christorng.idv.tw')
  assert.ok(xml.includes('<title>所有書籤 RSS | ChrisTorng 學習天地</title>'))
- assert.ok(xml.includes('<link>https://christorng.idv.tw/bookmarks/view/?id='+id+'</link>'))
- assert.ok(xml.includes('<guid isPermaLink="false">https://christorng.idv.tw/bookmarks/'+id+'/</guid>'))
+ assert.ok(xml.includes('<link>https://christorng.idv.tw/bookmarks/english-title/</link>'))
+ assert.ok(xml.includes('<guid isPermaLink="true">https://christorng.idv.tw/bookmarks/english-title/</guid>'))
  assert.ok(xml.includes('English title'))
  assert.ok(xml.includes('example.org/?a=1&amp;amp;b=2'))
  assert.ok(xml.includes('說明 &amp;lt;測試&amp;gt;'))
