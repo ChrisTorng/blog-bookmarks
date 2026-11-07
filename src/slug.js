@@ -3,10 +3,6 @@ import { DICT1, DICT2, DICT3, DICT4, DICT5, TRADITIONAL } from './pinyin-dict.js
 // The first reading in the frequency-ordered dictionary is the deterministic
 // fallback. Phrase entries handle common polyphonic words when possible.
 const phrases = [null, null, DICT2, DICT3, DICT4, DICT5];
-const romanize = value => String(value).normalize('NFD')
-  .replace(/\u0308/g, '') // vowel ü has been decomposed; handle below first
-  .replace(/[\u0300-\u036f]/g, '')
-  .toLowerCase().replace(/[^a-z0-9]/g, '');
 const normalizeReading = value => String(value).replace(/ü/g, 'v').normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
@@ -56,6 +52,10 @@ export async function ensureSlug(db, table, id, title) {
   for (let n = 1; n <= 10000; n++) {
     const tail = n === 1 ? '' : '-' + n;
     const candidate = base.slice(0, 100 - tail.length).replace(/-+$/g, '') + tail;
+    const reserved = table === 'notes'
+      ? ['view','editor','admin','api','all','page','feed','sitemap']
+      : ['view','admin','api','feed','sitemap'];
+    if (reserved.includes(candidate) || (table === 'notes' && /^[0-9]{8}-[a-f0-9]{10}$/.test(candidate))) continue;
     try {
       const result = await db.prepare('UPDATE ' + table + ' SET slug=? WHERE id=? AND slug IS NULL')
         .bind(candidate, id).run();
