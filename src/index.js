@@ -1,4 +1,5 @@
-import { list, tagsList } from './data.js';
+import { list, tagsList, get, getBySlug } from './data.js';
+import { publicBookmarkPage } from './public-page.js';
 import { api, opts } from './api.js';
 import { rss } from './feeds.js';
 
@@ -35,7 +36,30 @@ const worker = {
     return reply(rss(items,env.SITE_URL||'https://christorng.idv.tw',tag,tagLabel),'application/rss+xml; charset=utf-8');
    }catch{return reply('RSS 暫時無法取得','text/plain; charset=utf-8',500);}
   }
-  return reply('Not Found','text/plain; charset=utf-8',404);
+  // The catch-all Worker route forwards existing static GitHub Pages content
+  // to the origin. Only single-segment public slugs are handled dynamically.
+  if (req.method === 'GET') {
+    const legacy = path === '/bookmarks/view/' || path === '/bookmarks/view';
+    const oldId = legacy ? url.searchParams.get('id') : null;
+    if (oldId && /^[0-9a-f-]{36}$/.test(oldId)) {
+      const published = await get(env.DB, oldId);
+      if (published?.slug)
+        return Response.redirect(url.origin + '/bookmarks/' + encodeURIComponent(published.slug) + '/', 308);
+    }
+    const match = path.match(/^\/bookmarks\/([a-z0-9-]{1,100})\/?$/);
+    if (match && !['view','admin','api'].includes(match[1])) {
+      const key = match[1];
+      const published = /^[0-9a-f-]{36}$/.test(key) ? await get(env.DB,key) : await getBySlug(env.DB,key);
+      if (published?.slug) {
+        const canonical = '/bookmarks/' + published.slug + '/';
+        if (url.pathname !== canonical)
+          return Response.redirect(url.origin + canonical,308);
+        return publicBookmarkPage(req,published);
+      }
+      return reply('找不到書籤','text/plain; charset=utf-8',404);
+    }
+  }
+  return fetch(req);
  }
 };
 export default worker;
