@@ -6,7 +6,7 @@ import {list,get,byUrl,create,patch,remove,tagsList,renameTag,reviewWindow} from
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
 export function opts(url,privateList=false){
  const filter=url.searchParams.get('filter')||(privateList?'pending':'published');
- const defaultSort=privateList&&['pending','unread','readPending'].includes(filter)?'old':'new';
+ const defaultSort=privateList&&['pending','unread','readPending','deferred'].includes(filter)?'old':'new';
  return {privateList,filter,tag:url.searchParams.get('tag')||'',page:url.searchParams.get('page')||1,sort:url.searchParams.get('sort')||defaultSort,q:url.searchParams.get('q')||'',from:url.searchParams.get('from')||'',to:url.searchParams.get('to')||''};
 }
 async function input(req){
