@@ -1,10 +1,58 @@
 import { esc } from './data.js';
-export function rss(items,siteUrl,tag='',tagLabel=''){
- const base=siteUrl.replace(/\/$/,'');
- const title=(tag ? (tagLabel||tag)+' · ' : '')+'書籤 RSS';
- const feedLink=base+'/bookmarks/'+(tag?'?tag='+encodeURIComponent(tag):'');
- return '<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>'+esc(title)+'</title><link>'+esc(feedLink)+'</link><description>ChrisTorng 分享的書籤</description><language>zh-TW</language>'+items.map(b=>'<item><title>'+esc(b.title)+'</title><link>'+esc(b.preferred_url||b.redirect_url||b.url)+'</link><guid isPermaLink="true">'+base+'/bookmarks/'+esc(b.id)+'/</guid><pubDate>'+new Date((b.status_at||b.published_at||b.created_at).slice(0,10)+'T00:00:00+08:00').toUTCString()+'</pubDate><description>'+esc(b.summary||'')+'</description></item>').join('')+'</channel></rss>';
+
+const siteTitle = 'ChrisTorng 學習天地';
+const publicBookmarkUrl = (base, id) => base + '/bookmarks/view/?id=' + encodeURIComponent(id);
+const publicDay = (item) => (item.status_at || item.published_at || item.created_at).slice(0, 10);
+
+// Public records deliberately contain only Taiwan-local calendar dates; precise reading/
+// publishing times are private. Give same-day entries monotonic synthetic seconds so
+// RSS clients can sort them without disclosing when the owner processed a bookmark.
+function publicationDates(items) {
+ const remaining = new Map();
+ for (const item of items) {
+  const day = publicDay(item);
+  remaining.set(day, (remaining.get(day) || 0) + 1);
+ }
+ return items.map((item) => {
+  const day = publicDay(item);
+  const rank = remaining.get(day);
+  remaining.set(day, rank - 1);
+  const baseline = Date.parse(day + 'T00:00:00+08:00');
+  return new Date(baseline + Math.min(rank, 86399) * 1000).toUTCString();
+ });
 }
+
+function bookmarkContent(item) {
+ const target = item.preferred_url || item.redirect_url || item.url;
+ const originalTitle = item.title_original && item.title_original !== item.title
+  ? '<p>' + esc(item.title_original) + '</p>' : '';
+ const summary = item.summary
+  ? '<p>' + esc(item.summary).replace(/\r?\n/g, '<br>') + '</p>' : '';
+ return '<p><a href="' + esc(target) + '">' + esc(item.title) + '</a></p>' + originalTitle + summary;
+}
+
+export function rss(items, siteUrl, tag = '', tagLabel = '') {
+ const base = siteUrl.replace(/\/$/, '');
+ const section = tag ? (tagLabel || tag) + ' · 書籤' : '所有書籤';
+ const title = section + ' RSS | ' + siteTitle;
+ const feedLink = base + '/bookmarks/' + (tag ? '?tag=' + encodeURIComponent(tag) : '');
+ const dates = publicationDates(items);
+ return '<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel>'
+  + '<title>' + esc(title) + '</title><link>' + esc(feedLink) + '</link>'
+  + '<description>ChrisTorng 分享的書籤</description><language>zh-TW</language>'
+  + items.map((item, index) => {
+   const url = publicBookmarkUrl(base, item.id);
+   const content = bookmarkContent(item);
+   // Retain the historical GUID text to avoid recreating unread items in RSS readers.
+   const guid = base + '/bookmarks/' + item.id + '/';
+   return '<item><title>' + esc(item.title) + '</title><link>' + esc(url) + '</link>'
+    + '<guid isPermaLink="false">' + esc(guid) + '</guid><pubDate>' + dates[index] + '</pubDate>'
+    + '<description>' + esc(content) + '</description>'
+    + '<content:encoded><![CDATA[' + content.replaceAll(']]>', ']]]]><![CDATA[>') + ']]></content:encoded>'
+    + '</item>';
+  }).join('') + '</channel></rss>';
+}
+
 export async function shellPage(response,env){
  if(!env.BLOG_SHELL_URL)return response;
  const original=await response.text(),main=original.match(/<main[^>]*>([\s\S]*?)<\/main>/)?.[1],head=original.match(/<head>([\s\S]*?)<\/head>/)?.[1];
