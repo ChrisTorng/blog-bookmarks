@@ -72,6 +72,8 @@ const worker = {
       return reply('找不到書籤','text/plain; charset=utf-8',404);
     }
   }
+  if (url.hostname === 'localhost' || url.hostname === '127.0.0.1')
+    return reply('Not Found','text/plain; charset=utf-8',404);
   return fetch(req);
  }
 };
