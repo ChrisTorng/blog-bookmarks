@@ -34,10 +34,30 @@ try{
  assert.equal(initialQuick.body.size,6);
  assert.equal(initialQuick.body.remaining,1);
  assert.equal(initialQuick.body.pending[0].id,created.body.item.id);
- const largerQuick=await req('/bookmarks/api/admin/quick?size=20','GET',undefined,true);
- assert.equal(largerQuick.body.size,20);
+ const largerQuick=await req('/bookmarks/api/admin/quick?size=10','GET',undefined,true);
+ assert.equal(largerQuick.body.size,10);
  const invalidSize=await req('/bookmarks/api/admin/quick?size=100','GET',undefined,true);
- assert.equal(invalidSize.body.size,6);
+ assert.equal(invalidSize.body.size,3);
+ // Deferred items are private and do not block the oldest pending queue.
+ const deferred=await req('/bookmarks/api/admin/','POST',{
+  url:'https://example.org/deferred-study',title:'Read this paper later'
+ },true);
+ assert.equal(deferred.status,201);
+ const deferredId=deferred.body.item.id;
+ const deferredResponse=await req('/bookmarks/api/admin/'+deferredId,'PATCH',{status:5},true);
+ assert.equal(deferredResponse.status,200,deferredResponse.text);
+ assert.equal(deferredResponse.body.status,5);
+ assert.equal((await req('/bookmarks/api/'+deferredId)).status,404);
+ assert.equal((await req('/bookmarks/api/admin/?filter=deferred','GET',undefined,true)).body.total,1);
+ assert.equal((await req('/bookmarks/api/admin/?filter=pending','GET',undefined,true)).body.total,1);
+ const deferredQuick=await req('/bookmarks/api/admin/quick?size=3','GET',undefined,true);
+ assert.equal(deferredQuick.body.deferredRemaining,1);
+ assert.equal(deferredQuick.body.deferred[0].id,deferredId);
+ assert.equal(deferredQuick.body.remaining,1);
+ const restored=await req('/bookmarks/api/admin/'+deferredId,'PATCH',{status:2},true);
+ assert.equal(restored.body.status,2);
+ assert.equal((await req('/bookmarks/api/admin/?filter=deferred','GET',undefined,true)).body.total,0);
+ assert.equal((await req('/bookmarks/api/admin/'+deferredId,'DELETE',undefined,true)).body.deleted,true);
  // A newer unread bookmark must not preempt older pending items.
  const newer=await req('/bookmarks/api/admin/','POST',{
   url:'https://example.org/newer-pending',title:'Newer undecided bookmark'
