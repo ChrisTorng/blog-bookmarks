@@ -19,7 +19,7 @@ test('oldest undecided items take priority in both admin APIs',()=>{
  assert.equal(opts(new URL('https://example.org/bookmarks/api/admin/?filter=readPending'),true).sort,'old');
  assert.equal(opts(new URL('https://example.org/bookmarks/api/admin/?filter=decided'),true).sort,'new');
  assert.equal(opts(new URL('https://example.org/bookmarks/api/admin/?filter=pending&sort=new'),true).sort,'new');
- assert.match(data,/WHERE b\.stage IN \(0,1\)\s+ORDER BY b\.created_at ASC,b\.id ASC LIMIT \?/);
+ assert.match(data,/WHERE b\.stage IN \(0,1\) AND b\.deferred=0\s+ORDER BY b\.created_at ASC,b\.id ASC LIMIT \?/);
  assert.match(data,/pending_order:'oldest'/);
 });
 
@@ -40,7 +40,7 @@ test('queue includes 3+3, 5+5, or 10+10 with a real pending count',()=>{
  assert.match(js,/focus\(\{preventScroll:true\}\)/);
  assert.match(api,/reviewWindow\(env\.DB/);
  assert.match(data,/b\.stage IN \(0,1\)/);
- assert.match(data,/SELECT COUNT\(\*\) n FROM bookmarks WHERE stage IN \(0,1\)/);
+ assert.match(data,/SELECT COUNT\(\*\) n FROM bookmarks WHERE stage IN \(0,1\) AND deferred=0/);
  assert.match(data,/Math\.max\(12,size\)/);
 });
 test('quick card shows Chinese heading, full summary, added time and vertical multi-select tags',()=>{
@@ -162,4 +162,18 @@ test('mobile card keeps exactly two footer action rows visible while long text s
  assert.match(css,/\.quick-actions \[data-delete\]\{grid-column:3;grid-row:2\}/);
  assert.match(js,/const contentScroll=item\.querySelector\('\.quick-content'\)\?\.scrollTop/);
  assert.doesNotMatch(js,/esc\(domain\)/);
+});
+
+test('deferred status is separated from public status and pending queue',()=>{
+ const migration=read('migrations/0006_deferred_review.sql');
+ assert.match(migration,/ADD COLUMN deferred INTEGER NOT NULL DEFAULT 0/);
+ assert.match(data,/CASE WHEN b\.stage=1 AND b\.deferred=1 THEN 5 ELSE b\.stage END AS status/);
+ assert.match(data,/b\.stage=1 AND b\.deferred=1/);
+ assert.match(data,/b\.stage IN \(0,1\) AND b\.deferred=0/);
+ assert.match(data,/b\.stage IN \(2,3,4\)/);
+ assert.match(data,/const stage=status===5\?1:status/);
+ assert.match(data,/status===5\?1:0/);
+ assert.match(data,/AND b\.stage>=3/);
+ assert.match(api,/\['pending','unread','readPending','deferred'\]/);
+ assert.equal(opts(new URL('https://example.org/bookmarks/api/admin/?filter=deferred'),true).sort,'old');
 });
