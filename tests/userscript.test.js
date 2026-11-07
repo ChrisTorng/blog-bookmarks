@@ -7,7 +7,7 @@ const source = readFileSync(new URL('../tampermonkey/BlogBookmarks.user.js', imp
 test('userscript installs from blog-bookmarks and parses', () => {
   assert.doesNotThrow(() => new Function(source));
   assert.match(source, /\/\/ @name\s+Blog Bookmarks\n/);
-  assert.match(source, /\/\/ @version\s+0\.5\.6\n/);
+  assert.match(source, /\/\/ @version\s+0\.5\.7\n/);
   assert.match(source, /raw\.githubusercontent\.com\/ChrisTorng\/blog-bookmarks\/main\/tampermonkey\/BlogBookmarks\.user\.js/);
   assert.match(source, /\/\/ @match\s+https:\/\/hackernews\.betacat\.io\/\*/);
   assert.doesNotMatch(source, /cloudmark-christorng|cloudmark\.site/);
@@ -26,12 +26,13 @@ test('single click toggles empty/full star without category modal', () => {
   assert.doesNotMatch(source, /openMenu/);
 });
 
-test('toolbar continues to share space with collapse control on mobile', () => {
-  assert.match(source, /tm-betacat-article-tools/);
-  assert.match(source, /oldCollapseButton/);
-  assert.match(source, /toolbar\.appendChild\(button\)/);
+test('bookmark star overlays each article bottom-right without a toolbar row', () => {
+  assert.match(source, /article\.post-item\{position:relative!important\}/);
+  assert.match(source, /article\.appendChild\(button\)/);
+  assert.match(source, /position:absolute!important;right:4px!important;bottom:4px!important/);
+  assert.match(source, /opacity:\.58!important/);
   assert.match(source, /touch-action:manipulation/);
-  assert.match(source, /flex:0 0 38px/);
+  assert.doesNotMatch(source, /tm-betacat-article-tools|oldCollapseButton/);
   assert.match(source, /GM_registerMenuCommand\('Blog Bookmarks 設定'/);
   assert.match(source, /attachShadow\(\{ mode: 'closed' \}\)/);
 });
