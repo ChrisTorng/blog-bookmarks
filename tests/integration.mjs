@@ -38,6 +38,18 @@ try{
  assert.equal(largerQuick.body.size,20);
  const invalidSize=await req('/bookmarks/api/admin/quick?size=100','GET',undefined,true);
  assert.equal(invalidSize.body.size,6);
+ // A newer unread bookmark must not preempt older pending items.
+ const newer=await req('/bookmarks/api/admin/','POST',{
+  url:'https://example.org/newer-pending',title:'Newer undecided bookmark'
+ },true);
+ assert.equal(newer.status,201);
+ const quickOldest=await req('/bookmarks/api/admin/quick?size=6','GET',undefined,true);
+ assert.deepEqual(quickOldest.body.pending.slice(0,2).map(x=>x.id),[created.body.item.id,newer.body.item.id]);
+ const fullOldest=await req('/bookmarks/api/admin/?filter=pending','GET',undefined,true);
+ assert.deepEqual(fullOldest.body.items.slice(0,2).map(x=>x.id),[created.body.item.id,newer.body.item.id]);
+ const explicitlyNewest=await req('/bookmarks/api/admin/?filter=pending&sort=new','GET',undefined,true);
+ assert.deepEqual(explicitlyNewest.body.items.slice(0,2).map(x=>x.id),[newer.body.item.id,created.body.item.id]);
+ assert.equal((await req('/bookmarks/api/admin/'+newer.body.item.id,'DELETE',undefined,true)).body.deleted,true);
  const untagged=await req('/bookmarks/api/admin/','POST',{
   url:'https://example.org/uncategorized',title:'Uncategorized'
  },true);
