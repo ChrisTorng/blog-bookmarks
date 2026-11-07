@@ -1,4 +1,4 @@
-import { list, tagsList, get, getBySlug } from './data.js';
+import { list, tagsList, get, getBySlug, esc } from './data.js';
 import { publicBookmarkPage } from './public-page.js';
 import { api, opts } from './api.js';
 import { rss } from './feeds.js';
@@ -35,6 +35,19 @@ const worker = {
     }
     return reply(rss(items,env.SITE_URL||'https://christorng.idv.tw',tag,tagLabel),'application/rss+xml; charset=utf-8');
    }catch{return reply('RSS 暫時無法取得','text/plain; charset=utf-8',500);}
+  }
+  if (path === '/bookmarks/sitemap.xml' && req.method === 'GET') {
+    const first = await list(env.DB, {filter:'published'});
+    const pages = [first];
+    for(let n=2;n<=first.pages;n++) pages.push(await list(env.DB,{filter:'published',page:n}));
+    const base = (env.SITE_URL || 'https://christorng.idv.tw').replace(/\/$/,'');
+    const records = pages.flatMap(p=>p.items).filter(b=>b.slug);
+    const xml = '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' +
+      records.map(b=>'<url><loc>'+esc(base+'/bookmarks/'+encodeURIComponent(b.slug)+'/')+
+        '</loc><lastmod>'+esc((b.status_at||b.published_at||b.created_at).slice(0,10))+
+        '</lastmod></url>').join('') + '</urlset>';
+    return reply(xml,'application/xml; charset=utf-8');
   }
   // The catch-all Worker route forwards existing static GitHub Pages content
   // to the origin. Only single-segment public slugs are handled dynamically.
