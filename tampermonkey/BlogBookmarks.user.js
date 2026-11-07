@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.6
-// @description  One-tap unread bookmark star; organize and publish from the bookmarks manager
+// @version      0.5.7
+// @description  One-tap semi-transparent bookmark stars in the bottom-right of BetaCat articles; manage bookmarks from the dedicated manager
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
 // @downloadURL  https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -21,7 +21,6 @@
     const ENDPOINT = 'https://christorng.idv.tw/bookmarks/api/ingest';
     const TOKEN_KEY = 'blog-bookmarks-ingest-token';
     const BUTTON_CLASS = 'tm-blog-bookmarks-save';
-    const TOOLBAR_CLASS = 'tm-betacat-article-tools';
     const controls = new Map();
     const saved = new Map();
     const checked = new Set();
@@ -417,16 +416,6 @@
             const article = link.closest('article.post-item');
             const title = link.closest('.post-title');
             if (!article || !title) continue;
-            let toolbar = article.querySelector(':scope > .' + TOOLBAR_CLASS);
-            if (!toolbar) {
-                toolbar = document.createElement('div');
-                toolbar.className = TOOLBAR_CLASS;
-                const anchor = article.querySelector(':scope > .post-title') ||
-                    [...article.children].find(child => child.contains(title)) || article.firstChild;
-                article.insertBefore(toolbar, anchor);
-            }
-            const oldCollapseButton = article.querySelector(':scope > .auto-open-new-articles-item-toggle');
-            if (oldCollapseButton) toolbar.prepend(oldCollapseButton);
             const button = document.createElement('button');
             button.type = 'button';
             button.className = BUTTON_CLASS;
@@ -436,7 +425,7 @@
                 event.stopImmediatePropagation();
                 void toggleArticle(link);
             });
-            toolbar.appendChild(button);
+            article.appendChild(button);
             controls.set(link, { button, url: sourceAndTarget(link.href).url });
             added++;
         }
@@ -447,13 +436,11 @@
     function start() {
         const style = document.createElement('style');
         style.textContent =
-            'article.post-item.auto-open-new-articles-managed{padding-left:0!important}' +
-            'article.post-item > .' + TOOLBAR_CLASS + '{display:flex!important;align-items:flex-start!important;justify-content:space-between!important;gap:8px!important;min-height:32px!important;min-width:0!important;width:100%!important;box-sizing:border-box!important;padding:0!important;margin:0 0 6px!important;clear:both!important}' +
-            'article.post-item > .' + TOOLBAR_CLASS + ' > .auto-open-new-articles-item-toggle{position:static!important;left:auto!important;top:auto!important;flex:0 0 28px!important;width:28px!important;height:28px!important;min-height:28px!important;line-height:26px!important}' +
-            '.' + BUTTON_CLASS + '{all:unset!important;display:block!important;box-sizing:border-box!important;flex:0 0 38px!important;width:38px!important;height:32px!important;margin:0 0 0 auto!important;padding:0!important;border:1px solid #87a6c2!important;border-radius:6px!important;font:600 24px/30px system-ui,sans-serif!important;color:#145486!important;background:#f1f7ff!important;text-align:center!important;cursor:pointer!important;touch-action:manipulation!important}' +
-            '.' + BUTTON_CLASS + ':hover,.' + BUTTON_CLASS + ':focus-visible{background:#dbeaff!important;outline:2px solid #3777b7!important}' +
-            '.' + BUTTON_CLASS + ':disabled{opacity:.75!important;cursor:default!important}' +
-            '.' + BUTTON_CLASS + '[aria-pressed="true"]{color:#d19a06!important;border-color:#d19a06!important;background:#fff9e8!important}';
+            'article.post-item{position:relative!important}' +
+            '.' + BUTTON_CLASS + '{all:unset!important;position:absolute!important;right:4px!important;bottom:4px!important;z-index:5!important;display:flex!important;align-items:center!important;justify-content:center!important;box-sizing:border-box!important;width:38px!important;height:34px!important;margin:0!important;padding:0!important;border:1px solid rgba(135,166,194,.7)!important;border-radius:6px!important;font:600 24px/1 system-ui,sans-serif!important;color:#145486!important;background:rgba(241,247,255,.7)!important;opacity:.58!important;text-align:center!important;cursor:pointer!important;touch-action:manipulation!important}' +
+            '.' + BUTTON_CLASS + ':hover,.' + BUTTON_CLASS + ':focus-visible{background:rgba(219,234,255,.9)!important;opacity:1!important;outline:2px solid #3777b7!important}' +
+            '.' + BUTTON_CLASS + ':disabled{opacity:.4!important;cursor:default!important}' +
+            '.' + BUTTON_CLASS + '[aria-pressed="true"]{color:#b67d00!important;border-color:rgba(209,154,6,.8)!important;background:rgba(255,249,232,.8)!important;opacity:.82!important}';
         document.head.appendChild(style);
         captureOriginalTitles();
         scan();
