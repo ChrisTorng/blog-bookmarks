@@ -29,7 +29,7 @@ For manual first-time setup: run `npm ci`, copy .dev.vars.example to .dev.vars, 
 - **Write note** opens the Notes editor with a bookmark reference. Notes must also be running.
 - The manager generates a separate Tampermonkey ingest token. The userscript is under tampermonkey/; this token is distinct from the local admin token.
 - **Tampermonkey 安裝與更新**：直接開啟 [Blog Bookmarks.user.js](https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js)，使用 Tampermonkey 安裝。腳本 metadata 的 `@updateURL` 與 `@downloadURL` 均指向這個 Raw URL。
-- 目前只在 `hackernews.betacat.io` 注入；名稱與資料結構均為通用設計，其他來源可逐步追加。
+- 目前只在 `hackernews.betacat.io` 注入；名稱與資料結構均為通用設計，其他來源可逐步追加。每篇文章右下角疊加半透明收藏星號，不佔額外高度；收合／展開按鈕由 `TampermonkeyScripts` 的 `AutoOpenNewArticles.user.js` 放在標題列，摘要及圖片不縮排。
 - **英文原始標題**：TM 於 `document-start` 即監聽文章 DOM、以 URL 暫存初始英文標題，並於頁面載入時向 BetaCat **僅請求一次**原始 HTML 作為備援。按星號時直接讀取記憶體，不會重新下載、等待或抓目標文章；其 `@connect` 僅允許 `christorng.idv.tw`。
 - 按星號儲存只使用已截取的文章標題與現有 DOM；Client 及 Worker 都不會在收藏後補抓 BetaCat 或目標文章。標題抓取失敗時使用目前顯示的標題備援，書籤仍可儲存；不會變更原始 URL、Redirect 規則或已存在書籤。不需要 D1 Migration。
 - 使用前於後台登入後按「產生 Tampermonkey Token」，複製一次性 Token，並在 BetaCat 頁面右下角的 **Bookmarks 設定** 貼入。
