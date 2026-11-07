@@ -1,7 +1,9 @@
 import { esc } from './data.js';
 
 const siteTitle = 'ChrisTorng 學習天地';
-const publicBookmarkUrl = (base, id) => base + '/bookmarks/view/?id=' + encodeURIComponent(id);
+const publicBookmarkUrl = (base, item) => item.slug
+ ? base + '/bookmarks/' + encodeURIComponent(item.slug) + '/'
+ : base + '/bookmarks/view/?id=' + encodeURIComponent(item.id);
 const publicDay = (item) => (item.status_at || item.published_at || item.created_at).slice(0, 10);
 
 // Public records deliberately contain only Taiwan-local calendar dates; precise reading/
@@ -41,12 +43,11 @@ export function rss(items, siteUrl, tag = '', tagLabel = '') {
   + '<title>' + esc(title) + '</title><link>' + esc(feedLink) + '</link>'
   + '<description>ChrisTorng 分享的書籤</description><language>zh-TW</language>'
   + items.map((item, index) => {
-   const url = publicBookmarkUrl(base, item.id);
+   const url = publicBookmarkUrl(base, item);
    const content = bookmarkContent(item);
-   // Retain the historical GUID text to avoid recreating unread items in RSS readers.
-   const guid = base + '/bookmarks/' + item.id + '/';
+   // New feed is not public yet: canonical permalink is the RSS GUID.
    return '<item><title>' + esc(item.title) + '</title><link>' + esc(url) + '</link>'
-    + '<guid isPermaLink="false">' + esc(guid) + '</guid><pubDate>' + dates[index] + '</pubDate>'
+    + '<guid isPermaLink="true">' + esc(url) + '</guid><pubDate>' + dates[index] + '</pubDate>'
     + '<description>' + esc(content) + '</description>'
     + '<content:encoded><![CDATA[' + content.replaceAll(']]>', ']]]]><![CDATA[>') + ']]></content:encoded>'
     + '</item>';
