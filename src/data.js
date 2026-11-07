@@ -1,5 +1,6 @@
 import { preferredRedirect, primaryUrl } from './redirect.js';
-const fields = "b.id,b.url,b.normalized_url,b.redirect_url,b.title,b.title_original,b.title_zh,b.summary,b.source,CASE WHEN b.stage=1 AND b.deferred=1 THEN 5 ELSE b.stage END AS status,b.created_at,b.updated_at,b.read_at,b.published_at,b.starred_at, CASE WHEN b.stage=4 THEN COALESCE(b.starred_at,b.published_at,b.created_at) WHEN b.stage=3 THEN COALESCE(b.published_at,b.created_at) ELSE b.created_at END AS status_at,COALESCE((SELECT json_group_array(t.name) FROM bookmark_tags bt JOIN tags t ON t.id=bt.tag_id WHERE bt.bookmark_id=b.id),'[]') AS tags";
+import { ensureSlug } from './slug.js';
+const fields = "b.id,b.slug,b.url,b.normalized_url,b.redirect_url,b.title,b.title_original,b.title_zh,b.summary,b.source,CASE WHEN b.stage=1 AND b.deferred=1 THEN 5 ELSE b.stage END AS status,b.created_at,b.updated_at,b.read_at,b.published_at,b.starred_at, CASE WHEN b.stage=4 THEN COALESCE(b.starred_at,b.published_at,b.created_at) WHEN b.stage=3 THEN COALESCE(b.published_at,b.created_at) ELSE b.created_at END AS status_at,COALESCE((SELECT json_group_array(t.name) FROM bookmark_tags bt JOIN tags t ON t.id=bt.tag_id WHERE bt.bookmark_id=b.id),'[]') AS tags";
 const decode = row => row && ({...row, preferred_url:primaryUrl(row), tags:JSON.parse(row.tags || '[]')});
 // Public feeds, markup and API must not expose the visitor's precise collection/reading times.
 const taipeiDay = date => date ? new Intl.DateTimeFormat('sv-SE',{
@@ -44,6 +45,10 @@ export function validate(raw) {
 export async function get(db,id,includePrivate=false) {
   const row=await db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.id=?${includePrivate?'':' AND b.stage>=3'}`).bind(id).first();
   return includePrivate?decode(row):publicEntry(decode(row));
+}
+export async function getBySlug(db,slug) {
+  const row=await db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.slug=? AND b.stage>=3 LIMIT 1`).bind(slug).first();
+  return publicEntry(decode(row));
 }
 export async function byUrl(db,url) {
   const row=await db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.normalized_url=? OR b.redirect_url=? LIMIT 1`).bind(normalUrl(url),normalUrl(url)).first();
@@ -152,7 +157,14 @@ export async function patch(db,id,raw) {
     await db.prepare('UPDATE bookmarks SET url=?,normalized_url=?,redirect_url=?,title=?,title_original=?,title_zh=?,summary=?,updated_at=? WHERE id=?').bind(x.url,x.normalized_url,x.redirect_url,x.title,x.title_original,x.title_zh,x.summary,new Date().toISOString(),id).run();
     if('tags' in raw)await replaceTags(db,id,x.tags);
   }
-  return get(db,id,true);
+  const result=await get(db,id,true);
+  // Allocate only on first publication, after the original title has been saved.
+  // Never change an established slug on edits, unpublication, or re-publication.
+  if((result.status===3 || result.status===4) && !result.slug){
+    await ensureSlug(db,'bookmarks',id,result.title_original||result.title);
+    return get(db,id,true);
+  }
+  return result;
 }
 export async function remove(db,id){
   const result=await db.prepare('DELETE FROM bookmarks WHERE id=?').bind(id).run();return Boolean(result.meta.changes);

@@ -114,6 +114,8 @@ try{
  assert.match((await req('/bookmarks/feed.xml?tag=ai')).text,/人工智慧 · 書籤 RSS/);
  const publicApi=(await req('/bookmarks/api/')).body;
  assert.equal(publicApi.items.length,1);
+ assert.equal(publicApi.items[0].slug,'sample-article');
+ assert.match((await req('/bookmarks/feed.xml')).text,/\/bookmarks\/sample-article\//);
  assert.match(publicApi.items[0].created_at,/^\d{4}-\d{2}-\d{2}$/);
  assert.equal(publicApi.items[0].read_at,null);
  assert.match(publicApi.items[0].status_at,/^\d{4}-\d{2}-\d{2}$/);

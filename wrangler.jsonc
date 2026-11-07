@@ -23,6 +23,8 @@
   },
   "routes": [
     {"pattern":"christorng.idv.tw/bookmarks/api*","zone_id":"c5475506538ba09563cacc12b8acb3d0"},
+    {"pattern":"christorng.idv.tw/bookmarks/*","zone_id":"c5475506538ba09563cacc12b8acb3d0"},
+    {"pattern":"christorng.idv.tw/bookmarks/sitemap.xml*","zone_id":"c5475506538ba09563cacc12b8acb3d0"},
     {"pattern":"christorng.idv.tw/bookmarks/feed.xml*","zone_id":"c5475506538ba09563cacc12b8acb3d0"}
   ]
 }

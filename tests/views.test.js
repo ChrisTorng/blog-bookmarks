@@ -4,7 +4,7 @@ import { listing, individual } from '../src/views.js';
 import { rss } from '../src/feeds.js';
 
 const item={
- id:'cfa92f03-a68a-4a3c-aee9-a8416ff75022',
+ id:'cfa92f03-a68a-4a3c-aee9-a8416ff75022',slug:'example-article',
  url:'https://example.org/article?x=1&y=2',
  title:'Example article',summary:'A short summary',tags:['AI'],status:4,
  created_at:'2026-09-01T12:00:00Z',
@@ -58,7 +58,7 @@ test('public list/detail/RSS prioritize redirect and retain source URL and bilin
  assert.match(detail,/Original English title/);
  assert.match(detail,/原始網址/);
  const feed=rss([dual],'https://christorng.idv.tw');
- assert.ok(feed.includes('<link>https://christorng.idv.tw/bookmarks/view/?id='+dual.id+'</link>'));
+ assert.ok(feed.includes('<link>https://christorng.idv.tw/bookmarks/example-article/</link>'));
  assert.ok(feed.includes('https://nitter.tiekoetter.com/user/status/123'));
  assert.ok(feed.includes('Original English title'));
 });
