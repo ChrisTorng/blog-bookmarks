@@ -4,7 +4,7 @@ import { slugify, ensureSlug } from '../src/slug.js';
 
 test('English article titles become short lowercase permanent URL slugs', () => {
   assert.equal(slugify('The Future of AI Agents'), 'the-future-of-ai-agents');
-  assert.equal(slugify('C# / .NET: What's New?'), 'c-net-what-s-new');
+  assert.equal(slugify("C# / .NET: What's New?"), 'c-net-what-s-new');
   assert.equal(slugify(' '), 'entry');
 });
 
