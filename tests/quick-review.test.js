@@ -20,6 +20,7 @@ test('oldest undecided items take priority in both admin APIs',()=>{
  assert.equal(opts(new URL('https://example.org/bookmarks/api/admin/?filter=decided'),true).sort,'new');
  assert.equal(opts(new URL('https://example.org/bookmarks/api/admin/?filter=pending&sort=new'),true).sort,'new');
  assert.match(data,/WHERE b\.stage IN \(0,1\)\s+ORDER BY b\.created_at ASC,b\.id ASC LIMIT \?/);
+ assert.match(data,/pending_order:'oldest'/);
 });
 
 test('quick admin UI assets are retained for Pages while Worker handles only API',()=>{
