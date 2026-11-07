@@ -160,7 +160,7 @@ export async function patch(db,id,raw) {
   const result=await get(db,id,true);
   // Allocate only on first publication, after the original title has been saved.
   // Never change an established slug on edits, unpublication, or re-publication.
-  if(result.status>=3 && !result.slug){
+  if((result.status===3 || result.status===4) && !result.slug){
     await ensureSlug(db,'bookmarks',id,result.title_original||result.title);
     return get(db,id,true);
   }
