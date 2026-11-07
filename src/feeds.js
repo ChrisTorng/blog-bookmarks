@@ -1,4 +1,5 @@
 import { esc } from './data.js';
+import { bookmarkArticleHtml, bookmarkTags } from './public-content.js';
 
 const siteTitle = 'ChrisTorng 學習天地';
 const publicBookmarkUrl = (base, item) => item.slug
@@ -24,16 +25,8 @@ function publicationDates(items) {
  });
 }
 
-function bookmarkContent(item) {
- const target = item.preferred_url || item.redirect_url || item.url;
- const originalTitle = item.title_original && item.title_original !== item.title
-  ? '<p>' + esc(item.title_original) + '</p>' : '';
- const summary = item.summary
-  ? '<p>' + esc(item.summary).replace(/\r?\n/g, '<br>') + '</p>' : '';
- return '<p><a href="' + esc(target) + '">' + esc(item.title) + '</a></p>' + originalTitle + summary;
-}
 
-export function rss(items, siteUrl, tag = '', tagLabel = '') {
+export function rss(items, siteUrl, tag = '', tagLabel = '', categories = []) {
  const base = siteUrl.replace(/\/$/, '');
  const section = tag ? (tagLabel || tag) + ' · 書籤' : '所有書籤';
  const title = section + ' RSS | ' + siteTitle;
@@ -44,10 +37,12 @@ export function rss(items, siteUrl, tag = '', tagLabel = '') {
   + '<description>ChrisTorng 分享的書籤</description><language>zh-TW</language>'
   + items.map((item, index) => {
    const url = publicBookmarkUrl(base, item);
-   const content = bookmarkContent(item);
+   const content = bookmarkArticleHtml(item, categories);
+   const labels = bookmarkTags(item, categories);
    // New feed is not public yet: canonical permalink is the RSS GUID.
    return '<item><title>' + esc(item.title) + '</title><link>' + esc(url) + '</link>'
     + '<guid isPermaLink="true">' + esc(url) + '</guid><pubDate>' + dates[index] + '</pubDate>'
+    + labels.map(t => '<category>' + esc(t.name) + '</category>').join('')
     + '<description>' + esc(content) + '</description>'
     + '<content:encoded><![CDATA[' + content.replaceAll(']]>', ']]]]><![CDATA[>') + ']]></content:encoded>'
     + '</item>';
