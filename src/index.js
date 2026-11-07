@@ -33,7 +33,7 @@ const worker = {
      const page=await list(env.DB,{tag,filter:'published',page:n});
      items.push(...page.items);
     }
-    return reply(rss(items,env.SITE_URL||'https://christorng.idv.tw',tag,tagLabel),'application/rss+xml; charset=utf-8');
+    return reply(rss(items,env.SITE_URL||'https://christorng.idv.tw',tag,tagLabel,tags),'application/rss+xml; charset=utf-8');
    }catch{return reply('RSS 暫時無法取得','text/plain; charset=utf-8',500);}
   }
   if (path === '/bookmarks/sitemap.xml' && req.method === 'GET') {
@@ -67,7 +67,7 @@ const worker = {
         const canonical = '/bookmarks/' + published.slug + '/';
         if (url.pathname !== canonical)
           return Response.redirect(url.origin + canonical,308);
-        return publicBookmarkPage(req,published);
+        return publicBookmarkPage(req,published,await tagsList(env.DB));
       }
       return reply('找不到書籤','text/plain; charset=utf-8',404);
     }

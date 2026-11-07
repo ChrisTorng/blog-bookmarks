@@ -10,7 +10,9 @@
     "deploy": "wrangler deploy",
     "test:integration": "node tests/integration.mjs"
   },
-  "dependencies": {},
+  "dependencies": {
+    "markdown-it": "^14.1.0"
+  },
   "devDependencies": {
     "wrangler": "^4.153.0"
   }
