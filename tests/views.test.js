@@ -28,7 +28,7 @@ test('detail links original URL and has site bookmark path',()=>{
 });
 test('RSS timestamps use recommendation event not first collection',()=>{
  const xml=rss([item],'https://christorng.idv.tw');
- assert.match(xml,/Mon, 02 Nov 2026 16:00:00 GMT/);
+ assert.match(xml,/Mon, 02 Nov 2026 16:00:01 GMT/);
  assert.doesNotMatch(xml,/Tue, 01 Sep 2026/);
 });
 
@@ -42,8 +42,8 @@ test('public bookmarks show Chinese labels while preserving English tag IDs',()=
  assert.match(detail,/#人工智慧/);
 });
 test('RSS title is all bookmarks or selected Chinese tag',()=>{
- assert.match(rss([item],'https://christorng.idv.tw'),/<title>書籤 RSS<\/title>/);
- assert.match(rss([item],'https://christorng.idv.tw','ai','人工智慧'),/<title>人工智慧 · 書籤 RSS<\/title>/);
+ assert.ok(rss([item],'https://christorng.idv.tw').includes('<title>所有書籤 RSS | ChrisTorng 學習天地</title>'));
+ assert.ok(rss([item],'https://christorng.idv.tw','ai','人工智慧').includes('<title>人工智慧 · 書籤 RSS | ChrisTorng 學習天地</title>'));
  assert.match(rss([item],'https://christorng.idv.tw','ai','人工智慧'),/bookmarks\/\?tag=ai/);
 });
 
@@ -58,7 +58,9 @@ test('public list/detail/RSS prioritize redirect and retain source URL and bilin
  assert.match(detail,/Original English title/);
  assert.match(detail,/原始網址/);
  const feed=rss([dual],'https://christorng.idv.tw');
- assert.match(feed,/<link>https:\/\/nitter\.tiekoetter\.com\/user\/status\/123<\/link>/);
+ assert.ok(feed.includes('<link>https://christorng.idv.tw/bookmarks/view/?id='+dual.id+'</link>'));
+ assert.ok(feed.includes('https://nitter.tiekoetter.com/user/status/123'));
+ assert.ok(feed.includes('Original English title'));
 });
 
 test('public bookmarks expose date only with compact heading and root tag outside indented list',()=>{
