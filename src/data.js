@@ -91,7 +91,7 @@ export async function reviewWindow(db,requested=6) {
     db.prepare('SELECT COUNT(*) n FROM bookmarks WHERE stage IN (0,1)').first()
   ]);
   return {recent:recent.results.map(decode).reverse(),pending:pending.results.map(decode),
-    remaining:Number(count.n),size};
+    remaining:Number(count.n),size,pending_order:'oldest'};
 }
 export async function tagsList(db,includePrivate=false) {
   const rows=await db.prepare(`SELECT t.id,t.name,t.name_zh,COUNT(*) count FROM tags t JOIN bookmark_tags bt ON bt.tag_id=t.id JOIN bookmarks b ON b.id=bt.bookmark_id ${includePrivate?'':"WHERE b.stage>=3"} GROUP BY t.id,t.name,t.name_zh ORDER BY count DESC,t.name`).all();
