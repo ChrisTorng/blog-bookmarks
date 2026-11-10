@@ -1,4 +1,5 @@
 import {isAdmin,safeOrigin,sameToken} from './auth.js';
+import {suggestBookmarkTags,mergeBookmarkTags} from './classify.js';
 import {bulkStatus,updateTags} from './ingest.js';
 import {review,invalidSummary} from './metadata.js';
 import {validIngestToken,rotateIngestToken} from './token.js';
@@ -15,6 +16,20 @@ async function input(req){
  const str=await req.text();if(str.length>100000)throw Error('資料過大');
  return JSON.parse(str);
 }
+async function createCategorized(env,raw) {
+  // Check duplicates before spending inference or altering an existing manual decision.
+  const exists=await byUrl(env.DB,raw.url);
+  if(exists)return {item:exists,alreadyExists:true};
+  let inferred=[];
+  try {
+    inferred=await suggestBookmarkTags(env,raw);
+  }catch(error){
+    console.warn('Bookmark auto-categorization failed',String(error));
+  }
+  // Preserve manual tags. The placeholder allows the user to revisit AI failures.
+  const tags=mergeBookmarkTags(raw.tags,inferred);
+  return create(env.DB,{...raw,tags:tags.length?tags:['default']});
+}
 export async function api(req,env,url){
  const p=url.pathname;
  const privateApi=p==='/bookmarks/api/admin'||p.startsWith('/bookmarks/api/admin/');
@@ -23,7 +38,7 @@ export async function api(req,env,url){
  try{
   if(p==='/bookmarks/api/admin'||p==='/bookmarks/api/admin/'){
    if(req.method==='GET')return json(await list(env.DB,opts(url,true)));
-   if(req.method==='POST')return json(await create(env.DB,await input(req)),201);
+   if(req.method==='POST')return json(await createCategorized(env,await input(req)),201);
   }
   if(p==='/bookmarks/api/admin/quick'&&req.method==='GET')
     return json(await reviewWindow(env.DB,url.searchParams.get('size')));
@@ -72,7 +87,7 @@ export async function api(req,env,url){
   if(p==='/bookmarks/api/ingest'&&req.method==='POST'){
    const token=req.headers.get('Authorization')?.replace(/^Bearer\s+/i,'');
    if(!await validIngestToken(req,env))return json({error:'無效的新增 Token'},401);
-   return json(await create(env.DB,{...await input(req),source:'tampermonkey'}),201);
+   return json(await createCategorized(env,{...await input(req),source:'tampermonkey'}),201);
   }
   const publicDetail=p.match(/^\/bookmarks\/api\/([0-9a-f-]{36})\/?$/);
   if(publicDetail && req.method==='GET'){
