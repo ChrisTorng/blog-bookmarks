@@ -59,3 +59,14 @@ Use the admin-only `POST /bookmarks/api/admin/enrich` endpoint with JSON `{ "id"
 - 待處理不分已讀／未讀，依加入時間由舊至新排序；僅在決定不公開、公開或推薦後才離開佇列。處理後焦點移至下一筆，預載待處理項目補位，固定顯示剩餘待決定筆數。
 - 快速處理只顯示中文標題、完整摘要與加入時間；點標題以新分頁開原文，既有搜尋、篩選、編輯仍在 `/bookmarks/admin/`。
 - 不新增 Migration；最近已處理依 `updated_at` 排序（包含決策更改與分類修改），確保回頭修正的書籤也會排在最近。
+
+
+## 自動分類（2026-11-11）
+
+新增書籤時，無論管理後台或 Tampermonkey ingest API，Worker 會根據原始標題、中文標題、摘要及網址路徑呼叫免費 Workers AI `@cf/google/gemma-4-26b-a4b-it`。
+- 只從 D1 `tags` 現有分類選擇最多三個標籤，採用穩定的 tag id 與版本化定義；不會自行產生分類。
+- 原有手動選的標籤保留，AI 建議採附加方式；非必要不加通用 Tech/World。
+- 不在收藏時重新抓取網頁，無效摘要（登入、驗證、封鎖等）不送給模型。
+- 若 Workers AI 暫時失敗，保留原手動標籤；沒有任何可用標籤時使用 `default` 佔位，供之後重新檢視。
+- 既有網址不再執行推論、不重設分類，後台手動覆寫標籤亦不會受到自動分類影響。
+- 需要 `wrangler.jsonc` 的 `ai.binding=AI` 隨 Worker 一起部署；`npm run check` 包含解析與合併分類的單元測試。
