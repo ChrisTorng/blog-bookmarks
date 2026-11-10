@@ -135,7 +135,7 @@ export async function patch(db,id,raw) {
   const finalTags='tags' in raw
     ?(Array.isArray(raw.tags)?raw.tags.map(t=>String(t).trim()).filter(Boolean):[])
     :current.tags;
-  if(desired>=3 && desired<=4 && finalTags.length===0)
+  if(desired>=3 && desired<=4 && !finalTags.some(tag=>String(tag).toLowerCase()!=='default'))
     throw new Error('公開或推薦必須先選擇至少一個分類');
   if('status' in raw){
     const status=Number(raw.status);
