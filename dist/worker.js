@@ -25569,7 +25569,7 @@ async function patch(db, id, raw) {
   if (!current) return null;
   const desired = "status" in raw ? Number(raw.status) : Number(current.status);
   const finalTags = "tags" in raw ? Array.isArray(raw.tags) ? raw.tags.map((t) => String(t).trim()).filter(Boolean) : [] : current.tags;
-  if (desired >= 3 && desired <= 4 && finalTags.length === 0)
+  if (desired >= 3 && desired <= 4 && !finalTags.some((tag) => String(tag).toLowerCase() !== "default"))
     throw new Error("\u516C\u958B\u6216\u63A8\u85A6\u5FC5\u9808\u5148\u9078\u64C7\u81F3\u5C11\u4E00\u500B\u5206\u985E");
   if ("status" in raw) {
     const status = Number(raw.status);
@@ -31553,60 +31553,6 @@ async function isAdmin(req, env) {
 }
 __name(isAdmin, "isAdmin");
 
-// src/token.js
-async function digest(value) {
-  const raw = new TextEncoder().encode(value);
-  const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", raw));
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-}
-__name(digest, "digest");
-async function validIngestToken(req, env) {
-  const token = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "") || "";
-  if (!token || token.length > 256) return false;
-  const row = await env.DB.prepare("SELECT value FROM bookmark_settings WHERE key=?").bind("ingest_sha256").first();
-  const matchesHash = row?.value && await sameToken(await digest(token), row.value);
-  const matchesSecret = env.INGEST_TOKEN && await sameToken(token, env.INGEST_TOKEN);
-  return Boolean(matchesHash || matchesSecret);
-}
-__name(validIngestToken, "validIngestToken");
-async function rotateIngestToken(db) {
-  const random = new Uint8Array(32);
-  crypto.getRandomValues(random);
-  const token = Array.from(random, (b) => b.toString(16).padStart(2, "0")).join("");
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  await db.prepare("INSERT INTO bookmark_settings(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at").bind("ingest_sha256", await digest(token), now).run();
-  return { token, created_at: now };
-}
-__name(rotateIngestToken, "rotateIngestToken");
-
-// src/ingest.js
-var json = /* @__PURE__ */ __name((x, status = 200) => new Response(JSON.stringify(x), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } }), "json");
-async function bulkStatus(req, env) {
-  if (!await validIngestToken(req, env)) return json({ error: "Token \u7121\u6548" }, 401);
-  const body = await req.json(), urls = Array.isArray(body.urls) ? body.urls : [];
-  if (urls.length > 100) return json({ error: "\u7DB2\u5740\u6578\u91CF\u904E\u591A" }, 400);
-  const normalized = [...new Set(urls.map(normalUrl))];
-  if (!normalized.length) return json([]);
-  const marks = normalized.map(() => "?").join(",");
-  const rows = await env.DB.prepare("SELECT id,normalized_url,CASE WHEN stage=1 AND deferred=1 THEN 5 ELSE stage END AS status FROM bookmarks WHERE normalized_url IN (" + marks + ")").bind(...normalized).all();
-  const result = [];
-  for (const item of rows.results) {
-    const complete = await get(env.DB, item.id, true);
-    result.push({ url: item.normalized_url, id: item.id, status: item.status, tags: complete.tags });
-  }
-  return json(result);
-}
-__name(bulkStatus, "bulkStatus");
-async function updateTags(req, env) {
-  if (!await validIngestToken(req, env)) return json({ error: "Token \u7121\u6548" }, 401);
-  const body = await req.json(), item = await byUrl(env.DB, body.url);
-  if (!item) return json({ error: "\u66F8\u7C64\u4E0D\u5B58\u5728" }, 404);
-  if (!Array.isArray(body.tags)) return json({ error: "\u7F3A\u5C11\u6A19\u7C64" }, 400);
-  const result = await patch(env.DB, item.id, { tags: body.tags });
-  return json(result);
-}
-__name(updateTags, "updateTags");
-
 // src/metadata.js
 function invalidSummary(s) {
   const text2 = String(s || "").trim();
@@ -31730,6 +31676,153 @@ async function betaCatExact(item, transport = fetch) {
 }
 __name(betaCatExact, "betaCatExact");
 
+// src/classify.js
+var CATEGORY_GUIDANCE = Object.freeze({
+  ai: "\u4EBA\u5DE5\u667A\u6167\u3001LLM\u3001\u6A5F\u5668\u5B78\u7FD2\u8207\u6838\u5FC3 AI \u61C9\u7528\uFF1B\u975E\u4EFB\u4F55\u63D0\u5230 AI \u7684\u65B0\u805E",
+  security: "\u8CC7\u5B89\u3001\u6F0F\u6D1E\u3001\u99ED\u4FB5\u3001\u60E1\u610F\u8EDF\u9AD4\u3001\u8A8D\u8B49\u6216\u9632\u8B77",
+  tech: "\u4E00\u822C\u79D1\u6280\u53CA\u79D1\u6280\u7522\u54C1\uFF1B\u5DF2\u7531\u8F03\u7CBE\u78BA\u7684\u6280\u8853\u5206\u985E\u6DB5\u84CB\u6642\u4E0D\u5FC5\u91CD\u8907",
+  programming: "\u7A0B\u5F0F\u8A9E\u8A00\u3001\u6846\u67B6\u3001\u8EDF\u9AD4\u5DE5\u7A0B\u3001\u7A0B\u5F0F\u958B\u767C\u5BE6\u4F5C\u53CA\u5DE5\u5177",
+  hardware: "\u6676\u7247\u3001\u96FB\u5B50\u96F6\u7D44\u4EF6\u3001\u96FB\u8166\u786C\u9AD4\u8207\u5BE6\u9AD4\u88DD\u7F6E",
+  science: "\u79D1\u5B78\u7814\u7A76\u3001\u767C\u73FE\u3001\u5BE6\u9A57\u53CA\u79D1\u5B78\u65B9\u6CD5",
+  past: "\u6B77\u53F2\u3001\u8003\u53E4\u3001\u6B77\u53F2\u6587\u737B\u8207\u904E\u53BB\u4E8B\u4EF6",
+  world: "\u653F\u6CBB\u3001\u516C\u5171\u653F\u7B56\u3001\u570B\u969B\u53CA\u793E\u6703\u8B70\u984C\uFF1B\u4E0D\u662F\u6240\u6709\u4F01\u696D\u6216\u79D1\u6280\u65B0\u805E",
+  future: "\u9577\u671F\u672A\u4F86\u8DA8\u52E2\u3001\u672A\u4F86\u9810\u6E2C\u3001\u9858\u666F\uFF1B\u4E0D\u53EF\u53EA\u56E0\u51FA\u73FE\u300C\u672A\u4F86\u300D\u800C\u9078",
+  art: "\u85DD\u8853\u4F5C\u54C1\u3001\u85DD\u8853\u5275\u4F5C\u8207\u7F8E\u5B78",
+  law: "\u6CD5\u5F8B\u3001\u8A34\u8A1F\u3001\u53F8\u6CD5\u3001\u6CD5\u5F8B\u898F\u7BC4\u53CA\u5236\u5EA6",
+  math: "\u6578\u5B78\u3001\u7D71\u8A08\u3001\u5B9A\u7406\u8207\u5F62\u5F0F\u6578\u5B78",
+  nature: "\u52D5\u690D\u7269\u3001\u751F\u614B\u8207\u81EA\u7136\u74B0\u5883",
+  design: "\u8996\u89BA\u8A2D\u8A08\u3001\u5B57\u578B\u3001\u4E92\u52D5\u8A2D\u8A08\u3001\u4F7F\u7528\u8005\u4ECB\u9762",
+  thinking: "\u54F2\u5B78\u3001\u601D\u60F3\u3001\u8A8D\u77E5\u3001\u601D\u8003\u65B9\u6CD5\u8207\u50F9\u503C\u53CD\u7701",
+  believing: "\u4FE1\u4EF0\u3001\u5B97\u6559\u8207\u8D85\u81EA\u7136\u4FE1\u5FF5",
+  gaming: "\u96FB\u73A9\u904A\u6232\u8207\u904A\u6232\u7522\u696D\uFF1BAI \u53EA\u7528\u904A\u6232\u505A\u6E2C\u8A66\u4E0D\u4E00\u5B9A\u5C6C\u65BC\u904A\u6232",
+  management: "\u7D44\u7E54\u7BA1\u7406\u3001\u9818\u5C0E\u529B\u3001\u5DE5\u4F5C\u6D41\u7A0B\u53CA\u4F01\u696D\u7BA1\u7406",
+  music: "\u97F3\u6A02\u3001\u6A02\u5668\u3001\u4F5C\u66F2\u8207\u6F14\u594F\uFF1B\u7D14\u97F3\u8A0A\u7DE8\u78BC\u5DE5\u7A0B\u4E0D\u7B97",
+  space: "\u592A\u7A7A\u3001\u822A\u592A\u3001\u885B\u661F\u3001\u5929\u6587\u8207\u5B87\u5B99\u7814\u7A76"
+});
+var CLASSIFIER_MODEL = "@cf/google/gemma-4-26b-a4b-it";
+function parseSuggestedTags(output, categories) {
+  const response = output?.choices?.[0]?.message?.content ?? output?.response ?? "";
+  const raw = typeof response === "string" ? JSON.parse(response) : response;
+  if (!Array.isArray(raw?.tags)) throw new Error("AI \u672A\u56DE\u50B3\u6A19\u7C64\u6E05\u55AE");
+  const available = /* @__PURE__ */ new Map();
+  for (const tag of categories) {
+    available.set(String(tag.id).toLowerCase(), tag.name);
+    available.set(String(tag.name).toLowerCase(), tag.name);
+  }
+  const result = [], seen = /* @__PURE__ */ new Set();
+  for (const value of raw.tags) {
+    const name = available.get(String(value).trim().toLowerCase());
+    if (name && !seen.has(name.toLowerCase())) {
+      seen.add(name.toLowerCase());
+      result.push(name);
+    }
+    if (result.length >= 3) break;
+  }
+  return result;
+}
+__name(parseSuggestedTags, "parseSuggestedTags");
+async function suggestBookmarkTags(env, raw) {
+  if (!env.AI) throw new Error("Workers AI binding missing");
+  const result = await env.DB.prepare("SELECT id,name,name_zh FROM tags WHERE id<>'default' ORDER BY id").all();
+  const catalog = result.results || [];
+  if (!catalog.length) return [];
+  const available = catalog.map((t) => ({ id: t.id, name: t.name, name_zh: t.name_zh || "", scope: CATEGORY_GUIDANCE[t.id] || "" }));
+  const cleanedSummary = invalidSummary(raw.summary) ? "" : String(raw.summary || "").slice(0, 1800);
+  const information = {
+    title_original: String(raw.title_original || "").slice(0, 500),
+    title_zh: String(raw.title_zh || raw.title || "").slice(0, 500),
+    summary: cleanedSummary,
+    source: String(raw.source || "").slice(0, 80),
+    url_path: (() => {
+      try {
+        const x = new URL(raw.redirect_url || raw.url);
+        return x.hostname + x.pathname.slice(0, 180);
+      } catch {
+        return "";
+      }
+    })()
+  };
+  const out = await env.AI.run(CLASSIFIER_MODEL, {
+    messages: [
+      {
+        role: "system",
+        content: "\u4F60\u6B63\u5728\u70BA\u500B\u4EBA\u66F8\u7C64\u6C7A\u5B9A\u4E3B\u984C\u6A19\u7C64\u3002\u53EA\u9078\u53D6\u771F\u6B63\u7684\u4E3B\u984C\uFF0C\u9078 1 \u5230 3 \u500B\u6700\u9069\u5408\u7684\u65E2\u6709 id\uFF0C\u4E0D\u9700\u8981\u586B\u6EFF\u4E09\u500B\u3002\u4E0D\u5F97\u56E0\u70BA\u6587\u7AE0\u9806\u5E36\u63D0\u53CA\u4E00\u9805\u6280\u8853\u5C31\u9078\u53D6\u8A72\u6A19\u7C64\u3002\u4E0D\u53EF\u65B0\u9020\u6A19\u7C64\u3001\u4E0D\u53EF\u4F7F\u7528 default\u3002\u6A19\u7C64\u53CA\u610F\u7FA9\uFF1A" + JSON.stringify(available) + '\u3002\u53EA\u8F38\u51FA\u5408\u6CD5 JSON\uFF1A{"tags":["id1","id2"]}\u3002\u4E0D\u8981\u89E3\u91CB\u3002'
+      },
+      { role: "user", content: JSON.stringify(information) }
+    ],
+    response_format: { type: "json_object" },
+    chat_template_kwargs: { enable_thinking: false },
+    temperature: 0,
+    max_tokens: 160
+  });
+  return parseSuggestedTags(out, catalog);
+}
+__name(suggestBookmarkTags, "suggestBookmarkTags");
+function mergeBookmarkTags(manual, inferred) {
+  const names = /* @__PURE__ */ new Map();
+  for (const raw of [...Array.isArray(manual) ? manual : [], ...Array.isArray(inferred) ? inferred : []]) {
+    const name = String(raw || "").trim();
+    if (name && !names.has(name.toLowerCase())) names.set(name.toLowerCase(), name);
+  }
+  if (names.size > 1) names.delete("default");
+  return [...names.values()].slice(0, 30);
+}
+__name(mergeBookmarkTags, "mergeBookmarkTags");
+
+// src/token.js
+async function digest(value) {
+  const raw = new TextEncoder().encode(value);
+  const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", raw));
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+__name(digest, "digest");
+async function validIngestToken(req, env) {
+  const token = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "") || "";
+  if (!token || token.length > 256) return false;
+  const row = await env.DB.prepare("SELECT value FROM bookmark_settings WHERE key=?").bind("ingest_sha256").first();
+  const matchesHash = row?.value && await sameToken(await digest(token), row.value);
+  const matchesSecret = env.INGEST_TOKEN && await sameToken(token, env.INGEST_TOKEN);
+  return Boolean(matchesHash || matchesSecret);
+}
+__name(validIngestToken, "validIngestToken");
+async function rotateIngestToken(db) {
+  const random = new Uint8Array(32);
+  crypto.getRandomValues(random);
+  const token = Array.from(random, (b) => b.toString(16).padStart(2, "0")).join("");
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  await db.prepare("INSERT INTO bookmark_settings(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at").bind("ingest_sha256", await digest(token), now).run();
+  return { token, created_at: now };
+}
+__name(rotateIngestToken, "rotateIngestToken");
+
+// src/ingest.js
+var json = /* @__PURE__ */ __name((x, status = 200) => new Response(JSON.stringify(x), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } }), "json");
+async function bulkStatus(req, env) {
+  if (!await validIngestToken(req, env)) return json({ error: "Token \u7121\u6548" }, 401);
+  const body = await req.json(), urls = Array.isArray(body.urls) ? body.urls : [];
+  if (urls.length > 100) return json({ error: "\u7DB2\u5740\u6578\u91CF\u904E\u591A" }, 400);
+  const normalized = [...new Set(urls.map(normalUrl))];
+  if (!normalized.length) return json([]);
+  const marks = normalized.map(() => "?").join(",");
+  const rows = await env.DB.prepare("SELECT id,normalized_url,CASE WHEN stage=1 AND deferred=1 THEN 5 ELSE stage END AS status FROM bookmarks WHERE normalized_url IN (" + marks + ")").bind(...normalized).all();
+  const result = [];
+  for (const item of rows.results) {
+    const complete = await get(env.DB, item.id, true);
+    result.push({ url: item.normalized_url, id: item.id, status: item.status, tags: complete.tags });
+  }
+  return json(result);
+}
+__name(bulkStatus, "bulkStatus");
+async function updateTags(req, env) {
+  if (!await validIngestToken(req, env)) return json({ error: "Token \u7121\u6548" }, 401);
+  const body = await req.json(), item = await byUrl(env.DB, body.url);
+  if (!item) return json({ error: "\u66F8\u7C64\u4E0D\u5B58\u5728" }, 404);
+  if (!Array.isArray(body.tags)) return json({ error: "\u7F3A\u5C11\u6A19\u7C64" }, 400);
+  const result = await patch(env.DB, item.id, { tags: body.tags });
+  return json(result);
+}
+__name(updateTags, "updateTags");
+
 // src/api.js
 var json2 = /* @__PURE__ */ __name((value, status = 200) => new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } }), "json");
 function opts(url, privateList = false) {
@@ -31747,6 +31840,19 @@ async function input(req) {
   return JSON.parse(str);
 }
 __name(input, "input");
+async function createCategorized(env, raw) {
+  const exists = await byUrl(env.DB, raw.url);
+  if (exists) return { item: exists, alreadyExists: true };
+  let inferred = [];
+  try {
+    inferred = await suggestBookmarkTags(env, raw);
+  } catch (error2) {
+    console.warn("Bookmark auto-categorization failed", String(error2));
+  }
+  const tags = mergeBookmarkTags(raw.tags, inferred);
+  return create(env.DB, { ...raw, tags: tags.length ? tags : ["default"] });
+}
+__name(createCategorized, "createCategorized");
 async function api(req, env, url) {
   const p = url.pathname;
   const privateApi = p === "/bookmarks/api/admin" || p.startsWith("/bookmarks/api/admin/");
@@ -31755,7 +31861,7 @@ async function api(req, env, url) {
   try {
     if (p === "/bookmarks/api/admin" || p === "/bookmarks/api/admin/") {
       if (req.method === "GET") return json2(await list(env.DB, opts(url, true)));
-      if (req.method === "POST") return json2(await create(env.DB, await input(req)), 201);
+      if (req.method === "POST") return json2(await createCategorized(env, await input(req)), 201);
     }
     if (p === "/bookmarks/api/admin/quick" && req.method === "GET")
       return json2(await reviewWindow(env.DB, url.searchParams.get("size")));
@@ -31804,7 +31910,7 @@ async function api(req, env, url) {
     if (p === "/bookmarks/api/ingest" && req.method === "POST") {
       const token = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "");
       if (!await validIngestToken(req, env)) return json2({ error: "\u7121\u6548\u7684\u65B0\u589E Token" }, 401);
-      return json2(await create(env.DB, { ...await input(req), source: "tampermonkey" }), 201);
+      return json2(await createCategorized(env, { ...await input(req), source: "tampermonkey" }), 201);
     }
     const publicDetail = p.match(/^\/bookmarks\/api\/([0-9a-f-]{36})\/?$/);
     if (publicDetail && req.method === "GET") {
