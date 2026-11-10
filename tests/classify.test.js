@@ -38,7 +38,7 @@ test('the classifier reads the current category catalog, omits bad summaries, an
   const tags=await suggestBookmarkTags(env,{url:'https://example.org/story?id=7',title_original:'New AI compiler',summary:'請啟用 JavaScript 並允許 Cookie'});
   assert.deepEqual(tags,['Programming','AI']);
   assert.equal(sent.params.chat_template_kwargs.enable_thinking,false);
-  assert.ok(sent.params.messages[0].content.includes('分類'));
+  assert.ok(sent.params.messages[0].content.includes('標籤'));
   const metadata=JSON.parse(sent.params.messages[1].content);
   assert.equal(metadata.summary,'');
   assert.equal(metadata.url_path,'example.org/story');
