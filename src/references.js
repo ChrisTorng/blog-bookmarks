@@ -56,7 +56,8 @@ export async function lookupReference(raw,transport=fetch) {
   }
   // inspect() only fetches publicly addressable HTTPS hosts, without following
   // redirects or trusting mismatched canonical URLs.
-  const info=await inspect(url,transport);
+  let info=null;
+  try{info=await inspect(url,transport);}catch{}
   const title=info?.title||u.hostname;
   return {found:!!info,reference:{url,title,kind:'link'}};
 }
