@@ -29,6 +29,23 @@ export function bookmarkSource(url) {
       '<span class="min-w-0 truncate">'+esc(label)+'</span></span>';
   }catch{return ''}
 }
+export function bookmarkReferences(item) {
+  const links=(item.references||[]).filter(ref=>{
+    try{return ['http:','https:'].includes(new URL(ref.url).protocol)}catch{return false}
+  });
+  if(!links.length)return '';
+  return '<div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm" aria-label="延伸參考網址">'+
+    links.map(ref=>{
+      const hn=ref.kind==='hacker-news';
+      const label=hn?'Hacker News 留言':ref.title||new URL(ref.url).hostname;
+      const icon=hn
+        ?'<img src="https://news.ycombinator.com/favicon.ico" width="16" height="16" alt="" loading="lazy" class="h-4 w-4 shrink-0">'
+        :'<span aria-hidden="true">↗</span>';
+      return '<a href="'+esc(ref.url)+'" target="_blank" rel="noopener noreferrer" title="'+esc(hn?ref.title||label:label)+
+        '" class="inline-flex max-w-full min-w-0 items-center gap-1.5 text-primary-500 hover:text-primary-600">'+
+        icon+'<span class="min-w-0 break-words">'+esc(label)+'</span></a>';
+    }).join('')+'</div>';
+}
 export function renderSummary(markdown,baseUrl) {
   return md.render(String(markdown||'')).replace(/\b(href|src)="([^"]*)"/gi,(full,attr,encoded)=>{
     const value=encoded.replaceAll('&amp;','&');
@@ -60,6 +77,6 @@ export function bookmarkArticleHtml(item,categories=[]) {
     esc(target)+'" target="_blank" rel="noopener noreferrer">'+esc(item.title)+'</a></h1>'+
     english+summary+
     '<div class="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600 dark:text-gray-300">'+
-    bookmarkSource(item.url)+original+'</div>'+
+    bookmarkSource(item.url)+original+'</div>'+bookmarkReferences(item)+
     '<div class="mt-2 flex flex-wrap items-center gap-3 text-sm">'+tags+'</div></article>';
 }
