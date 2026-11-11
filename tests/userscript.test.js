@@ -35,7 +35,7 @@ test('bookmark star overlays image bottom-right and falls back to title without 
   assert.match(source, /positionControl\(control\)/);
   assert.match(source, /new ResizeObserver\(schedulePositions\)/);
   assert.match(source, /opacity: \.58 !important/);
-  assert.match(source, /touch-action:manipulation/);
+  assert.match(source, /touch-action: manipulation !important/);
   assert.doesNotMatch(source, /tm-betacat-article-tools|oldCollapseButton/);
   assert.match(source, /GM_registerMenuCommand\('Blog Bookmarks 設定'/);
   assert.match(source, /attachShadow\(\{ mode: 'closed' \}\)/);
