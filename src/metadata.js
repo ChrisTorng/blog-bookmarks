@@ -2,7 +2,7 @@
 export function invalidSummary(s) {
   const text=String(s||'').trim();
   return !text||text.length<15||/^(?:抱歉|sorry)$/i.test(text)||
-    /(?:請確保.{0,20}瀏覽器|啟用.{0,15}JavaScript|沒有權限存取|請登入.{0,20}帳號|協助.{0,20}help\.ft\.com|access denied|verify you are human|captcha|rate limit exceeded)/i.test(text);
+    /(?:請確保.{0,30}瀏覽器|啟用.{0,15}JavaScript|請啟用\s*JS|沒有權限存取|請登入.{0,30}帳號|繼續操作，請登入|協助.{0,20}help\.ft\.com|Google 系統偵測到|解開 CAPTCHA 後|access denied|verify you are human|解開 CAPTCHA|請完成 CAPTCHA|captcha required|captcha challenge|rate limit exceeded)/i.test(text);
 }
 const clean=s=>String(s||'').replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/<[^>]*>/g,'').replace(/\s+/g,' ').trim();
 export function metadata(html) {
