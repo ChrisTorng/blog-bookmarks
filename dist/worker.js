@@ -25418,8 +25418,17 @@ async function ensureSlug(db, table2, id, title) {
 __name(ensureSlug, "ensureSlug");
 
 // src/data.js
-var fields = "b.id,b.slug,b.url,b.normalized_url,b.redirect_url,b.title,b.title_original,b.title_zh,b.summary,b.source,CASE WHEN b.stage=1 AND b.deferred=1 THEN 5 ELSE b.stage END AS status,b.created_at,b.updated_at,b.read_at,b.published_at,b.starred_at, CASE WHEN b.stage=4 THEN COALESCE(b.starred_at,b.published_at,b.created_at) WHEN b.stage=3 THEN COALESCE(b.published_at,b.created_at) ELSE b.created_at END AS status_at,COALESCE((SELECT json_group_array(t.name) FROM bookmark_tags bt JOIN tags t ON t.id=bt.tag_id WHERE bt.bookmark_id=b.id),'[]') AS tags";
-var decode = /* @__PURE__ */ __name((row) => row && { ...row, preferred_url: primaryUrl(row), tags: JSON.parse(row.tags || "[]") }, "decode");
+var fields = "b.id,b.slug,b.url,b.normalized_url,b.redirect_url,b.title,b.title_original,b.title_zh,b.summary,b.source,b.reference_links,CASE WHEN b.stage=1 AND b.deferred=1 THEN 5 ELSE b.stage END AS status,b.created_at,b.updated_at,b.read_at,b.published_at,b.starred_at, CASE WHEN b.stage=4 THEN COALESCE(b.starred_at,b.published_at,b.created_at) WHEN b.stage=3 THEN COALESCE(b.published_at,b.created_at) ELSE b.created_at END AS status_at,COALESCE((SELECT json_group_array(t.name) FROM bookmark_tags bt JOIN tags t ON t.id=bt.tag_id WHERE bt.bookmark_id=b.id),'[]') AS tags";
+var decode = /* @__PURE__ */ __name((row) => {
+  if (!row) return row;
+  const { reference_links, ...rest } = row;
+  return {
+    ...rest,
+    preferred_url: primaryUrl(row),
+    tags: JSON.parse(row.tags || "[]"),
+    references: JSON.parse(reference_links || "[]")
+  };
+}, "decode");
 var taipeiDay = /* @__PURE__ */ __name((date) => date ? new Intl.DateTimeFormat("sv-SE", {
   timeZone: "Asia/Taipei",
   year: "numeric",
@@ -25439,6 +25448,26 @@ function normalUrl(input2) {
   return u.href;
 }
 __name(normalUrl, "normalUrl");
+function normalizeReferences(input2) {
+  if (!Array.isArray(input2)) throw new Error("\u53C3\u8003\u7DB2\u5740\u683C\u5F0F\u7121\u6548");
+  if (input2.length > 12) throw new Error("\u53C3\u8003\u7DB2\u5740\u6700\u591A 12 \u7B46");
+  const seen = /* @__PURE__ */ new Set(), result = [];
+  for (const item of input2) {
+    if (!item || typeof item !== "object") throw new Error("\u53C3\u8003\u7DB2\u5740\u683C\u5F0F\u7121\u6548");
+    const url = normalUrl(String(item.url || "").trim());
+    if (url.length > 4096) throw new Error("\u53C3\u8003\u7DB2\u5740\u904E\u9577");
+    if (seen.has(url)) continue;
+    seen.add(url);
+    const parsed = new URL(url);
+    const isHn = parsed.hostname === "news.ycombinator.com" && parsed.pathname === "/item" && /^[0-9]+$/.test(parsed.searchParams.get("id") || "");
+    const kind = item.kind === "hacker-news" && isHn ? "hacker-news" : "link";
+    const title = String(item.title || "").trim() || parsed.hostname;
+    if (title.length > 500) throw new Error("\u53C3\u8003\u6A19\u984C\u904E\u9577");
+    result.push({ url, title, kind });
+  }
+  return result;
+}
+__name(normalizeReferences, "normalizeReferences");
 function validate(raw) {
   if (!raw || typeof raw !== "object") throw new Error("\u66F8\u7C64\u683C\u5F0F\u7121\u6548");
   const url = String(raw.url || "").trim(), normalized_url = normalUrl(url);
@@ -25459,7 +25488,7 @@ function validate(raw) {
   for (const name of tagNames) if (!tagMap.has(name.toLowerCase())) tagMap.set(name.toLowerCase(), name);
   const tags = [...tagMap.values()];
   if (tags.length > 30 || tags.some((x) => x.length > 80)) throw new Error("\u6A19\u7C64\u904E\u591A\u6216\u904E\u9577");
-  return { url, normalized_url, redirect_url: normalizedRedirect, title, title_original: title_original || null, title_zh: title_zh || null, summary, tags };
+  return { url, normalized_url, redirect_url: normalizedRedirect, title, title_original: title_original || null, title_zh: title_zh || null, summary, tags, references: normalizeReferences(raw.references || []) };
 }
 __name(validate, "validate");
 async function get(db, id, includePrivate = false) {
@@ -25559,7 +25588,7 @@ async function create(db, raw) {
   if (exists) return { item: exists, alreadyExists: true };
   const now = (/* @__PURE__ */ new Date()).toISOString(), id = crypto.randomUUID();
   const source = String(raw.source || "manual").slice(0, 80);
-  await db.prepare("INSERT INTO bookmarks(id,url,normalized_url,redirect_url,title,title_original,title_zh,summary,source,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,0,?,?)").bind(id, x.url, x.normalized_url, x.redirect_url, x.title, x.title_original, x.title_zh, x.summary, source, now, now).run();
+  await db.prepare("INSERT INTO bookmarks(id,url,normalized_url,redirect_url,title,title_original,title_zh,summary,source,reference_links,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,0,?,?)").bind(id, x.url, x.normalized_url, x.redirect_url, x.title, x.title_original, x.title_zh, x.summary, source, JSON.stringify(x.references), now, now).run();
   await replaceTags(db, id, x.tags);
   return { item: await get(db, id, true), alreadyExists: false };
 }
@@ -25584,11 +25613,11 @@ async function patch(db, id, raw) {
       await db.prepare("UPDATE bookmarks SET stage=?,deferred=?,status=?,read_at=?,published_at=?,starred_at=?,updated_at=? WHERE id=?").bind(stage, status === 5 ? 1 : 0, legacyStatus, readAt, publishAt, starredAt, now, id).run();
     }
   }
-  if (["url", "redirect_url", "title", "title_original", "title_zh", "summary", "tags"].some((x) => x in raw)) {
+  if (["url", "redirect_url", "title", "title_original", "title_zh", "summary", "tags", "references"].some((x) => x in raw)) {
     const x = validate({ ...current, ...raw });
     const conflict = await db.prepare("SELECT id FROM bookmarks WHERE (normalized_url=? OR redirect_url=?) AND id<>? LIMIT 1").bind(x.normalized_url, x.normalized_url, id).first();
     if (conflict) throw new Error("\u7DB2\u5740\u5DF2\u88AB\u5176\u4ED6\u66F8\u7C64\u6536\u85CF");
-    await db.prepare("UPDATE bookmarks SET url=?,normalized_url=?,redirect_url=?,title=?,title_original=?,title_zh=?,summary=?,updated_at=? WHERE id=?").bind(x.url, x.normalized_url, x.redirect_url, x.title, x.title_original, x.title_zh, x.summary, (/* @__PURE__ */ new Date()).toISOString(), id).run();
+    await db.prepare("UPDATE bookmarks SET url=?,normalized_url=?,redirect_url=?,title=?,title_original=?,title_zh=?,summary=?,reference_links=?,updated_at=? WHERE id=?").bind(x.url, x.normalized_url, x.redirect_url, x.title, x.title_original, x.title_zh, x.summary, JSON.stringify(x.references), (/* @__PURE__ */ new Date()).toISOString(), id).run();
     if ("tags" in raw) await replaceTags(db, id, x.tags);
   }
   const result = await get(db, id, true);
@@ -31411,6 +31440,23 @@ function bookmarkSource(url) {
   }
 }
 __name(bookmarkSource, "bookmarkSource");
+function bookmarkReferences(item) {
+  const links = (item.references || []).filter((ref) => {
+    try {
+      return ["http:", "https:"].includes(new URL(ref.url).protocol);
+    } catch {
+      return false;
+    }
+  });
+  if (!links.length) return "";
+  return '<div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm" aria-label="\u5EF6\u4F38\u53C3\u8003\u7DB2\u5740">' + links.map((ref) => {
+    const hn = ref.kind === "hacker-news";
+    const label = hn ? "Hacker News \u7559\u8A00" : ref.title || new URL(ref.url).hostname;
+    const icon = hn ? '<img src="https://news.ycombinator.com/favicon.ico" width="16" height="16" alt="" loading="lazy" class="h-4 w-4 shrink-0">' : '<span aria-hidden="true">\u2197</span>';
+    return '<a href="' + esc(ref.url) + '" target="_blank" rel="noopener noreferrer" title="' + esc(hn ? ref.title || label : label) + '" class="inline-flex max-w-full min-w-0 items-center gap-1.5 text-primary-500 hover:text-primary-600">' + icon + '<span class="min-w-0 break-words">' + esc(label) + "</span></a>";
+  }).join("") + "</div>";
+}
+__name(bookmarkReferences, "bookmarkReferences");
 function renderSummary(markdown, baseUrl) {
   return md.render(String(markdown || "")).replace(/\b(href|src)="([^"]*)"/gi, (full, attr, encoded) => {
     const value = encoded.replaceAll("&amp;", "&");
@@ -31431,7 +31477,7 @@ function bookmarkArticleHtml(item, categories = []) {
   const original = target !== item.url ? '<a href="' + esc(item.url) + '" target="_blank" rel="noopener noreferrer" class="hidden max-w-full truncate underline md:inline">\u539F\u59CB\u7DB2\u5740\uFF1A' + esc(item.url) + "</a>" : "";
   const tags = bookmarkTags(item, categories).map((t) => '<a class="text-primary-500" href="/bookmarks/?tag=' + encodeURIComponent(t.id) + '">#' + esc(t.name) + "</a>").join("");
   const status = item.status === 4 ? '<span class="text-primary-500">\u2606 \u63A8\u85A6</span>' : "";
-  return '<article class="border-b border-gray-300/40 py-4 dark:border-gray-700"><div class="mb-2 flex items-center justify-between gap-3 text-xs"><time class="text-gray-500" datetime="' + esc(date) + '">' + esc(date) + "</time>" + status + '</div><h1 class="text-xl leading-snug font-bold"><a class="text-primary-500 hover:text-primary-600 dark:hover:text-primary-400" href="' + esc(target) + '" target="_blank" rel="noopener noreferrer">' + esc(item.title) + "</a></h1>" + english + summary + '<div class="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600 dark:text-gray-300">' + bookmarkSource(item.url) + original + '</div><div class="mt-2 flex flex-wrap items-center gap-3 text-sm">' + tags + "</div></article>";
+  return '<article class="border-b border-gray-300/40 py-4 dark:border-gray-700"><div class="mb-2 flex items-center justify-between gap-3 text-xs"><time class="text-gray-500" datetime="' + esc(date) + '">' + esc(date) + "</time>" + status + '</div><h1 class="text-xl leading-snug font-bold"><a class="text-primary-500 hover:text-primary-600 dark:hover:text-primary-400" href="' + esc(target) + '" target="_blank" rel="noopener noreferrer">' + esc(item.title) + "</a></h1>" + english + summary + '<div class="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600 dark:text-gray-300">' + bookmarkSource(item.url) + original + "</div>" + bookmarkReferences(item) + '<div class="mt-2 flex flex-wrap items-center gap-3 text-sm">' + tags + "</div></article>";
 }
 __name(bookmarkArticleHtml, "bookmarkArticleHtml");
 
@@ -31823,6 +31869,76 @@ async function updateTags(req, env) {
 }
 __name(updateTags, "updateTags");
 
+// src/references.js
+async function findHnDiscussion(urls, transport = fetch) {
+  const sources = [...new Set(urls.filter(Boolean).map((value) => normalUrl(value)))];
+  let best = null;
+  for (const source of sources) {
+    const u = new URL(source);
+    if (u.hostname === "news.ycombinator.com" && u.pathname === "/item" && /^[0-9]+$/.test(u.searchParams.get("id") || "")) {
+      const id = u.searchParams.get("id");
+      const response2 = await transport("https://hacker-news.firebaseio.com/v0/item/" + id + ".json");
+      const item = response2.ok ? await response2.json() : null;
+      if (item?.id === Number(id) && item.type === "story")
+        return {
+          url: "https://news.ycombinator.com/item?id=" + id,
+          title: String(item.title || "Hacker News \u7559\u8A00").slice(0, 500),
+          kind: "hacker-news"
+        };
+      continue;
+    }
+    const query = new URL("https://hn.algolia.com/api/v1/search");
+    query.searchParams.set("query", u.hostname + u.pathname);
+    query.searchParams.set("tags", "story");
+    query.searchParams.set("hitsPerPage", "100");
+    const response = await transport(query.href);
+    if (!response.ok) continue;
+    const hits = (await response.json()).hits || [];
+    for (const hit of hits) {
+      if (!hit.url || !sameArticle(source, hit.url) || !/^[0-9]+$/.test(String(hit.objectID || ""))) continue;
+      const comments = Number(hit.num_comments) || 0, points = Number(hit.points) || 0;
+      if (!best || comments > best.comments || comments === best.comments && points > best.points)
+        best = { id: String(hit.objectID), title: hit.title, comments, points };
+    }
+  }
+  return best ? {
+    url: "https://news.ycombinator.com/item?id=" + best.id,
+    title: trustedTitle(String(best.title || "")) ? best.title : "Hacker News \u7559\u8A00",
+    kind: "hacker-news"
+  } : null;
+}
+__name(findHnDiscussion, "findHnDiscussion");
+async function lookupReference(raw, transport = fetch) {
+  if (!raw || typeof raw !== "object") throw Error("\u53C3\u8003\u7DB2\u5740\u683C\u5F0F\u7121\u6548");
+  const url = normalUrl(String(raw.url || "").trim());
+  if (url.length > 4096) throw Error("\u53C3\u8003\u7DB2\u5740\u904E\u9577");
+  if (raw.type === "hn") {
+    const candidates = [url];
+    if (raw.redirect_url) {
+      try {
+        candidates.push(normalUrl(raw.redirect_url));
+      } catch {
+      }
+    }
+    const found = await findHnDiscussion(candidates, transport);
+    return { found: !!found, reference: found };
+  }
+  if (raw.type !== "title") throw Error("\u53C3\u8003\u7DB2\u5740\u67E5\u8A62\u985E\u578B\u7121\u6548");
+  const u = new URL(url);
+  if (u.hostname === "news.ycombinator.com" && u.pathname === "/item") {
+    const hn = await findHnDiscussion([url], transport);
+    if (hn) return { found: true, reference: hn };
+  }
+  let info = null;
+  try {
+    info = await inspect(url, transport);
+  } catch {
+  }
+  const title = info?.title || u.hostname;
+  return { found: !!info, reference: { url, title, kind: "link" } };
+}
+__name(lookupReference, "lookupReference");
+
 // src/summary-repair.js
 function needsSummaryRepair(summary) {
   const s = String(summary || "").trim();
@@ -31984,6 +32100,9 @@ async function api(req, env, url) {
         return json2(await commitArticleSummary(env, body.id, body.content));
       }
     }
+    if (p === "/bookmarks/api/admin/reference/lookup" && req.method === "POST") {
+      return json2(await lookupReference(await input(req)));
+    }
     if (p === "/bookmarks/api/admin/enrich" && req.method === "POST") {
       const body = await input(req);
       if (!/^[0-9a-f-]{36}$/.test(String(body.id || ""))) return json2({ error: "\u66F8\u7C64 ID \u7121\u6548" }, 400);
@@ -32040,7 +32159,7 @@ async function api(req, env, url) {
     if (p === "/bookmarks/api/tags" && req.method === "GET") return json2(await tagsList(env.DB));
     return json2({ error: "\u4E0D\u5B58\u5728\u7684 API" }, 404);
   } catch (e) {
-    const bad = e instanceof TypeError || e instanceof SyntaxError || /網址|標題|摘要|標籤|分類|JSON|狀態|資料過大|格式|HTTP|原文|文章|書籤 ID|已被|模型|片段|Workers AI/.test(String(e.message));
+    const bad = e instanceof TypeError || e instanceof SyntaxError || /網址|標題|摘要|標籤|分類|JSON|狀態|資料過大|格式|HTTP|原文|文章|書籤 ID|已被|模型|片段|Workers AI|參考/.test(String(e.message));
     return json2({ error: bad ? e.message : "\u4F3A\u670D\u5668\u932F\u8AA4" }, bad ? 400 : 500);
   }
 }
