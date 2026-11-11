@@ -31556,7 +31556,7 @@ __name(isAdmin, "isAdmin");
 // src/metadata.js
 function invalidSummary(s) {
   const text2 = String(s || "").trim();
-  return !text2 || text2.length < 15 || /^(?:抱歉|sorry)$/i.test(text2) || /(?:請確保.{0,20}瀏覽器|啟用.{0,15}JavaScript|沒有權限存取|請登入.{0,20}帳號|協助.{0,20}help\.ft\.com|access denied|verify you are human|captcha|rate limit exceeded)/i.test(text2);
+  return !text2 || text2.length < 15 || /^(?:抱歉|sorry)$/i.test(text2) || /(?:請確保.{0,30}瀏覽器|啟用.{0,15}JavaScript|請啟用\s*JS|沒有權限存取|請登入.{0,30}帳號|繼續操作，請登入|協助.{0,20}help\.ft\.com|Google 系統偵測到|解開 CAPTCHA 後|access denied|verify you are human|解開 CAPTCHA|請完成 CAPTCHA|captcha required|captcha challenge|rate limit exceeded)/i.test(text2);
 }
 __name(invalidSummary, "invalidSummary");
 var clean = /* @__PURE__ */ __name((s) => String(s || "").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim(), "clean");
@@ -31823,6 +31823,118 @@ async function updateTags(req, env) {
 }
 __name(updateTags, "updateTags");
 
+// src/summary-repair.js
+function needsSummaryRepair(summary) {
+  const s = String(summary || "").trim();
+  return invalidSummary(s) || /^(?:常見漏洞與暴露(?:（CVE）)?|no description|not found)$/i.test(s) || /(?:Google 系統偵測到來自|解開 CAPTCHA 後|請啟用 JS 並關閉|繼續操作，請登入你的 Reddit 帳號|你沒有權限存取這個伺服器|如需協助，請造訪 help\.ft\.com|請確保您的瀏覽器支援 JavaScript 和 Cookies)/i.test(s);
+}
+__name(needsSummaryRepair, "needsSummaryRepair");
+async function repairCandidates(db) {
+  const result = await db.prepare("SELECT id,stage,title,title_original,title_zh,url,redirect_url,summary,created_at FROM bookmarks ORDER BY created_at ASC,id ASC").all();
+  const items = result.results.filter((x) => needsSummaryRepair(x.summary));
+  return { total: items.length, items };
+}
+__name(repairCandidates, "repairCandidates");
+function aiText(value) {
+  const v = value?.choices?.[0]?.message?.content ?? value?.response;
+  return typeof v === "string" ? v : JSON.stringify(v ?? "");
+}
+__name(aiText, "aiText");
+async function infer(env, system, user, max_tokens = 520) {
+  const result = await env.AI.run(CLASSIFIER_MODEL, {
+    messages: [{ role: "system", content: system }, { role: "user", content: user }],
+    response_format: { type: "json_object" },
+    chat_template_kwargs: { enable_thinking: false },
+    temperature: 0,
+    max_tokens
+  });
+  let response;
+  try {
+    response = JSON.parse(aiText(result));
+  } catch {
+    throw Error("\u6458\u8981\u6A21\u578B\u56DE\u50B3\u7684\u683C\u5F0F\u7121\u6548\uFF0C\u539F\u6587\u4ECD\u4FDD\u7559\u5728\u672C\u6A5F\u8349\u7A3F");
+  }
+  return response;
+}
+__name(infer, "infer");
+function splitByLength(value, max = 11e3) {
+  const segments = [];
+  let rest = value;
+  while (rest.length > max) {
+    let cut = rest.lastIndexOf("\n", max);
+    if (cut < max / 2) cut = rest.lastIndexOf(" ", max);
+    if (cut < max / 2) cut = max;
+    segments.push(rest.slice(0, cut).trim());
+    rest = rest.slice(cut).trimStart();
+  }
+  if (rest) segments.push(rest);
+  return segments;
+}
+__name(splitByLength, "splitByLength");
+async function summarizeSubmittedArticle(env, item, text2) {
+  if (!env.AI) throw Error("Workers AI \u5C1A\u672A\u8A2D\u5B9A");
+  const source = String(text2 || "").replace(/\r\n?/g, "\n").trim();
+  if (source.length < 60) throw Error("\u539F\u6587\u4E0D\u8DB3 60 \u5B57\uFF0C\u8ACB\u8CBC\u5165\u6587\u7AE0\u4E3B\u8981\u5167\u6587");
+  if (source.length > 15e4) throw Error("\u539F\u6587\u8D85\u904E 15 \u842C\u5B57\u5143\uFF0C\u8ACB\u5206\u6BB5\u7CBE\u7C21\u5F8C\u518D\u8CBC\u5165");
+  if (needsSummaryRepair(source) && source.length < 300) throw Error("\u8CBC\u5165\u7684\u5167\u5BB9\u7591\u4F3C\u4ECD\u70BA\u5C01\u9396\u6216\u9A57\u8B49\u756B\u9762");
+  const title = item.title_original || item.title;
+  const parts = splitByLength(source);
+  let material = source;
+  if (parts.length > 1) {
+    const extracted = new Array(parts.length);
+    for (let i = 0; i < parts.length; i += 3) {
+      const slice = parts.slice(i, i + 3);
+      const values = await Promise.all(slice.map((part, j) => infer(
+        env,
+        '\u4F60\u662F\u7E41\u9AD4\u4E2D\u6587\u6587\u7AE0\u7B46\u8A18\u54E1\u3002\u50C5\u6839\u64DA\u63D0\u4F9B\u7684\u539F\u6587\u7247\u6BB5\uFF0C\u6574\u7406\u5177\u9AD4\u8981\u9EDE\uFF0C\u52FF\u6DFB\u52A0\u539F\u6587\u6C92\u6709\u7684\u4E8B\u5BE6\u3002\u50C5\u56DE\u50B3 JSON\uFF1A{"points":"..."}\u3002',
+        JSON.stringify({ title, part: i + j + 1, total: parts.length, text: part }),
+        380
+      )));
+      values.forEach((value, j) => {
+        extracted[i + j] = String(value.points || "").trim();
+      });
+    }
+    if (extracted.some((x) => !x)) throw Error("\u6709\u539F\u6587\u7247\u6BB5\u672A\u80FD\u6B63\u78BA\u6574\u7406\uFF0C\u8ACB\u7A0D\u5F8C\u91CD\u8A66");
+    material = extracted.map((x, i) => "\u6BB5\u843D " + (i + 1) + "\uFF1A" + x).join("\n");
+  }
+  const answer = await infer(
+    env,
+    '\u8ACB\u4EE5\u53F0\u7063\u7E41\u9AD4\u4E2D\u6587\u70BA\u6587\u7AE0\u64B0\u5BEB\u5FE0\u5BE6\u6458\u8981\uFF0C\u7D04 100 \u81F3 220 \u500B\u4E2D\u6587\u5B57\u3002\u6DB5\u84CB\u6587\u7AE0\u771F\u6B63\u7684\u4E3B\u5F35\u3001\u91CD\u8981\u7D30\u7BC0\u8207\u7D50\u8AD6\uFF1B\u9069\u5EA6\u4FDD\u7559\u7CBE\u78BA\u6578\u5B57\u3001\u6280\u8853\u540D\u7A31\u53CA\u9650\u5236\u3002\u4E0D\u8981\u5957\u8A71\u3001\u4E0D\u8981\u865B\u69CB\u4E8B\u5BE6\u3001\u4E0D\u8981\u5F15\u7528\u7121\u95DC\u7DB2\u9801\u5C0E\u822A\u6216\u5EE3\u544A\u3002\u50C5\u56DE\u50B3 JSON\uFF1A{"summary":"..."}\u3002',
+    JSON.stringify({ title, url: item.url, article: material }),
+    600
+  );
+  const summary = String(answer.summary || "").trim();
+  if (summary.length < 30 || summary.length > 1500 || needsSummaryRepair(summary))
+    throw Error("\u751F\u6210\u7684\u6458\u8981\u672A\u901A\u904E\u54C1\u8CEA\u6AA2\u67E5\uFF0C\u539F\u6587\u4ECD\u4FDD\u7559\u5728\u672C\u6A5F\u8349\u7A3F");
+  return summary;
+}
+__name(summarizeSubmittedArticle, "summarizeSubmittedArticle");
+async function commitArticleSummary(env, id, text2) {
+  const item = await get(env.DB, id, true);
+  if (!item) throw Error("\u66F8\u7C64\u4E0D\u5B58\u5728");
+  if (!needsSummaryRepair(item.summary)) throw Error("\u6458\u8981\u5DF2\u88AB\u66F4\u65B0\uFF0C\u70BA\u907F\u514D\u8986\u5BEB\u8ACB\u91CD\u65B0\u6574\u7406\u6E05\u55AE");
+  const summary = await summarizeSubmittedArticle(env, item, text2);
+  const old = item.summary ?? null;
+  const update = await env.DB.prepare(
+    "UPDATE bookmarks SET summary=?,updated_at=? WHERE id=? AND ((summary IS NULL AND ? IS NULL) OR summary=?)"
+  ).bind(summary, (/* @__PURE__ */ new Date()).toISOString(), id, old, old).run();
+  if (!update.meta.changes) throw Error("\u6458\u8981\u5DF2\u88AB\u5176\u4ED6\u64CD\u4F5C\u66F4\u65B0\uFF0C\u8ACB\u91CD\u65B0\u6574\u7406");
+  return { id, summary, saved: true };
+}
+__name(commitArticleSummary, "commitArticleSummary");
+async function readSubmittedContent(req) {
+  if (!req.headers.get("Content-Type")?.startsWith("application/json")) throw Error("\u9700\u8981 JSON \u683C\u5F0F");
+  const declared = Number(req.headers.get("Content-Length") || 0);
+  if (declared > 5e5) throw Error("\u6587\u7AE0\u8CC7\u6599\u904E\u5927");
+  const text2 = await req.text();
+  if (text2.length > 3e5) throw Error("\u6587\u7AE0\u8CC7\u6599\u904E\u5927");
+  const json3 = JSON.parse(text2);
+  if (!/^[0-9a-f-]{36}$/i.test(String(json3?.id || ""))) throw Error("\u66F8\u7C64 ID \u7121\u6548");
+  if (typeof json3.content !== "string") throw Error("\u8ACB\u5148\u8CBC\u5165\u539F\u6587\u5167\u5BB9");
+  return json3;
+}
+__name(readSubmittedContent, "readSubmittedContent");
+
 // src/api.js
 var json2 = /* @__PURE__ */ __name((value, status = 200) => new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } }), "json");
 function opts(url, privateList = false) {
@@ -31865,6 +31977,13 @@ async function api(req, env, url) {
     }
     if (p === "/bookmarks/api/admin/quick" && req.method === "GET")
       return json2(await reviewWindow(env.DB, url.searchParams.get("size")));
+    if (p === "/bookmarks/api/admin/summary-repair") {
+      if (req.method === "GET") return json2(await repairCandidates(env.DB));
+      if (req.method === "POST") {
+        const body = await readSubmittedContent(req);
+        return json2(await commitArticleSummary(env, body.id, body.content));
+      }
+    }
     if (p === "/bookmarks/api/admin/enrich" && req.method === "POST") {
       const body = await input(req);
       if (!/^[0-9a-f-]{36}$/.test(String(body.id || ""))) return json2({ error: "\u66F8\u7C64 ID \u7121\u6548" }, 400);
@@ -31921,7 +32040,7 @@ async function api(req, env, url) {
     if (p === "/bookmarks/api/tags" && req.method === "GET") return json2(await tagsList(env.DB));
     return json2({ error: "\u4E0D\u5B58\u5728\u7684 API" }, 404);
   } catch (e) {
-    const bad = e instanceof TypeError || e instanceof SyntaxError || /網址|標題|摘要|標籤|分類|JSON|狀態|資料過大|格式|HTTP/.test(String(e.message));
+    const bad = e instanceof TypeError || e instanceof SyntaxError || /網址|標題|摘要|標籤|分類|JSON|狀態|資料過大|格式|HTTP|原文|文章|書籤 ID|已被|模型|片段|Workers AI/.test(String(e.message));
     return json2({ error: bad ? e.message : "\u4F3A\u670D\u5668\u932F\u8AA4" }, bad ? 400 : 500);
   }
 }
