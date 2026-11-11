@@ -7,7 +7,7 @@ const source = readFileSync(new URL('../tampermonkey/BlogBookmarks.user.js', imp
 test('userscript installs from blog-bookmarks and parses', () => {
   assert.doesNotThrow(() => new Function(source));
   assert.match(source, /\/\/ @name\s+Blog Bookmarks\n/);
-  assert.match(source, /\/\/ @version\s+0\.5\.7\n/);
+  assert.match(source, /\/\/ @version\s+0\.5\.8\n/);
   assert.match(source, /raw\.githubusercontent\.com\/ChrisTorng\/blog-bookmarks\/main\/tampermonkey\/BlogBookmarks\.user\.js/);
   assert.match(source, /\/\/ @match\s+https:\/\/hackernews\.betacat\.io\/\*/);
   assert.doesNotMatch(source, /cloudmark-christorng|cloudmark\.site/);
@@ -26,12 +26,16 @@ test('single click toggles empty/full star without category modal', () => {
   assert.doesNotMatch(source, /openMenu/);
 });
 
-test('bookmark star overlays each article bottom-right without a toolbar row', () => {
-  assert.match(source, /article\.post-item\{position:relative!important\}/);
+test('bookmark star overlays image bottom-right and falls back to title without a toolbar row', () => {
+  assert.match(source, /article\.post-item \{ position: relative !important; \}/);
   assert.match(source, /article\.appendChild\(button\)/);
-  assert.match(source, /position:absolute!important;right:4px!important;bottom:4px!important/);
-  assert.match(source, /opacity:\.58!important/);
-  assert.match(source, /touch-action:manipulation/);
+  assert.match(source, /querySelector\('\.post-summary a\.feature-image img'\)/);
+  assert.match(source, /hasImage \? image : article\.querySelector\('\.post-title'\)/);
+  assert.match(source, /position: absolute !important/);
+  assert.match(source, /positionControl\(control\)/);
+  assert.match(source, /new ResizeObserver\(schedulePositions\)/);
+  assert.match(source, /opacity: \.58 !important/);
+  assert.match(source, /touch-action: manipulation !important/);
   assert.doesNotMatch(source, /tm-betacat-article-tools|oldCollapseButton/);
   assert.match(source, /GM_registerMenuCommand\('Blog Bookmarks 設定'/);
   assert.match(source, /attachShadow\(\{ mode: 'closed' \}\)/);
@@ -81,4 +85,27 @@ test('Archive Today uses generic submit URLs and contains no hardcoded snapshots
  assert.doesNotMatch(source,/const KNOWN_ARCHIVE_SNAPSHOTS|const ORIGINAL_BY_SNAPSHOT/);
  assert.ok(source.includes('encodeURIComponent(url.href)'));
  assert.ok(source.includes('https://archive.is/submit/?url='));
+});
+
+test('per-URL failures persist with scroll-aware top/bottom messages and red stars', () => {
+  assert.match(source, /const errors = new Map\(\)/);
+  assert.match(source, /data-bookmarks-error/);
+  assert.match(source, /function layoutErrors\(\)/);
+  assert.match(source, /rect\.bottom <= 0\) above\.push\(entry\)/);
+  assert.match(source, /rect\.top >= viewportHeight\) below\.push\(entry\)/);
+  assert.match(source, /bottomErrorStack\.appendChild\(entry\.notice\)/);
+  assert.match(source, /topErrorStack\.appendChild\(entry\.notice\)/);
+  assert.match(source, /window\.addEventListener\('scroll', scheduleErrorLayout/);
+  assert.match(source, /entry\.notice\.textContent = 'Bookmarks｜' \+ entry\.title/);
+  assert.match(source, /clearError\(key\)/);
+  assert.doesNotMatch(source, /tm-bookmarks-error';/);
+});
+
+test('failed removal restores known server state and success clears only its own error', () => {
+  assert.match(source, /let serverEntry = previous/);
+  assert.match(source, /serverEntry = matches\.find\(row => row\.url === key\) \|\| null/);
+  assert.match(source, /if \(serverEntry\) saved\.set\(key, serverEntry\)/);
+  assert.match(source, /showError\(key, link, error\.message\)/);
+  assert.match(source, /errors\.delete\(url\)/);
+  assert.match(source, /if \(!statusKnown\) checked\.delete\(key\)/);
 });

@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.7
-// @description  One-tap semi-transparent bookmark stars in the bottom-right of BetaCat articles; manage bookmarks from the dedicated manager
+// @version      0.5.8
+// @description  Overlay bookmark stars on BetaCat images or titles with persistent per-article error indicators
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
 // @downloadURL  https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -21,11 +21,13 @@
     const ENDPOINT = 'https://christorng.idv.tw/bookmarks/api/ingest';
     const TOKEN_KEY = 'blog-bookmarks-ingest-token';
     const BUTTON_CLASS = 'tm-blog-bookmarks-save';
+    const ERROR_CLASS = 'tm-bookmarks-error-notice';
     const controls = new Map();
     const saved = new Map();
     const checked = new Set();
     const pending = new Set();
     const revisions = new Map();
+    const errors = new Map();
     const originalTitles = new Map();
     let token = GM_getValue(TOKEN_KEY, '');
     let originalTitleTask;
@@ -33,6 +35,11 @@
     let preloadTimer;
     let settingsHost;
     let scanScheduled = false;
+    let positionScheduled = false;
+    let errorLayoutScheduled = false;
+    let positionObserver;
+    let topErrorStack;
+    let bottomErrorStack;
 
     function normalize(value) {
         const url = new URL(value, location.href);
@@ -251,23 +258,138 @@
             button.disabled = pending.has(url);
             button.setAttribute('aria-pressed', String(exists));
             button.setAttribute('aria-busy', String(pending.has(url)));
+            if (errors.has(url)) {
+                button.setAttribute('data-bookmarks-error', 'true');
+                button.setAttribute('aria-invalid', 'true');
+            } else {
+                button.removeAttribute('data-bookmarks-error');
+                button.removeAttribute('aria-invalid');
+            }
             const hint = exists ? '取消收藏' : '加入未讀收藏';
             button.title = hint;
             button.setAttribute('aria-label', hint);
         }
     }
 
-    function showError(message) {
-        let notice = document.getElementById('tm-bookmarks-error');
-        if (!notice) {
-            notice = document.createElement('div');
-            notice.id = 'tm-bookmarks-error';
-            notice.style.cssText = 'position:fixed;z-index:2147483647;bottom:12px;left:12px;right:12px;max-width:480px;margin:auto;padding:12px 16px;border-radius:8px;background:#fff;color:#9b1c1c;border:1px solid #c44;box-shadow:0 4px 20px #0003;font:14px/1.5 system-ui,sans-serif;cursor:pointer';
-            notice.title = '點擊關閉';
-            notice.onclick = () => notice.remove();
-            document.body.appendChild(notice);
+    // The button remains a direct child of the article, not inside an image link.
+    // Absolute positioning avoids adding any height or an extra toolbar row.
+    function positionControl(control) {
+        const article = control.link.closest('article.post-item');
+        if (!article || !article.isConnected) return;
+        const image = article.querySelector('.post-summary a.feature-image img');
+        const imageRect = image?.getBoundingClientRect();
+        const hasImage = imageRect && imageRect.width >= 24 && imageRect.height >= 24 &&
+            !(image.complete && image.naturalWidth === 0);
+        const anchor = hasImage ? image : article.querySelector('.post-title') || control.link;
+        const rect = anchor.getBoundingClientRect();
+        const articleRect = article.getBoundingClientRect();
+        const width = control.button.offsetWidth || 38;
+        const height = control.button.offsetHeight || 34;
+        const left = Math.max(0, Math.min(rect.right - articleRect.left - width - 4,
+            (article.clientWidth || articleRect.width) - width));
+        const top = Math.max(0, rect.bottom - articleRect.top - height - 4);
+        control.button.style.setProperty('left', Math.round(left) + 'px', 'important');
+        control.button.style.setProperty('top', Math.round(top) + 'px', 'important');
+    }
+
+    function schedulePositions() {
+        if (positionScheduled) return;
+        positionScheduled = true;
+        requestAnimationFrame(() => {
+            positionScheduled = false;
+            for (const control of controls.values()) positionControl(control);
+            scheduleErrorLayout();
+        });
+    }
+
+    function ensureErrorStacks() {
+        if (topErrorStack) return;
+        topErrorStack = document.createElement('div');
+        topErrorStack.id = 'tm-bookmarks-errors-top';
+        bottomErrorStack = document.createElement('div');
+        bottomErrorStack.id = 'tm-bookmarks-errors-bottom';
+        document.body.append(topErrorStack, bottomErrorStack);
+    }
+
+    // Every failed URL owns a message. Offscreen failures are kept in
+    // independently scrollable top/bottom stacks, never dismissed on a timer.
+    function layoutErrors() {
+        if (!errors.size) return;
+        ensureErrorStacks();
+        const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+        const above = [], below = [], visible = [];
+        for (const [url, entry] of errors) {
+            const matching = [...controls.values()].filter(control =>
+                control.url === url && control.button.isConnected);
+            const control = matching.find(({ button }) => {
+                const rect = button.getBoundingClientRect();
+                return rect.bottom > 0 && rect.top < viewportHeight;
+            }) || matching[0];
+            const rect = control?.button.getBoundingClientRect();
+            if (!rect || rect.bottom <= 0) above.push(entry);
+            else if (rect.top >= viewportHeight) below.push(entry);
+            else visible.push({ entry, rect });
         }
-        notice.textContent = 'Bookmarks：' + message + '。請再按星號重試。';
+        for (const entry of above) topErrorStack.appendChild(entry.notice);
+        for (const entry of below) bottomErrorStack.appendChild(entry.notice);
+        for (const { entry, rect } of visible) {
+            if (entry.notice.parentNode !== document.body) document.body.appendChild(entry.notice);
+            const noticeWidth = entry.notice.offsetWidth || 300;
+            const noticeHeight = entry.notice.offsetHeight || 60;
+            const left = Math.max(8, Math.min(rect.left, viewportWidth - noticeWidth - 8));
+            // Prefer below the star; place above only if the message would be clipped.
+            const lowerEdge = rect.bottom + 6;
+            const top = lowerEdge + noticeHeight <= viewportHeight - 8
+                ? lowerEdge : Math.max(8, rect.top - noticeHeight - 6);
+            entry.notice.style.setProperty('left', Math.round(left) + 'px', 'important');
+            entry.notice.style.setProperty('top', Math.round(top) + 'px', 'important');
+        }
+    }
+
+    function scheduleErrorLayout() {
+        if (errorLayoutScheduled) return;
+        errorLayoutScheduled = true;
+        requestAnimationFrame(() => {
+            errorLayoutScheduled = false;
+            layoutErrors();
+        });
+    }
+
+    function showError(url, link, message) {
+        ensureErrorStacks();
+        let entry = errors.get(url);
+        if (!entry) {
+            const notice = document.createElement('div');
+            notice.className = ERROR_CLASS;
+            notice.setAttribute('role', 'alert');
+            notice.tabIndex = 0;
+            notice.addEventListener('click', () => {
+                const control = [...controls.values()].find(item =>
+                    item.url === url && item.button.isConnected);
+                control?.button.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            });
+            notice.addEventListener('keydown', event => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    notice.click();
+                }
+            });
+            entry = { notice, title: '' };
+            errors.set(url, entry);
+        }
+        entry.title = (link.textContent || entry.title || url).replace(/\s+/g, ' ').trim().slice(0, 70);
+        entry.notice.textContent = 'Bookmarks｜' + entry.title + '：' +
+            (message || '操作失敗') + '。點此返回星號重試。';
+        scheduleErrorLayout();
+    }
+
+    function clearError(url) {
+        const entry = errors.get(url);
+        if (!entry) return;
+        entry.notice.remove();
+        errors.delete(url);
+        scheduleErrorLayout();
     }
 
     async function toggleArticle(link) {
@@ -285,11 +407,13 @@
         if (previous) saved.delete(key);
         else saved.set(key, { id: null, status: 0, tags: [] });
         render();
+        let serverEntry = previous;
+        let statusKnown = previouslyChecked;
         try {
-            let serverEntry = previous;
             if (!previouslyChecked) {
                 const matches = await request('/status', 'POST', { urls: [key] });
                 serverEntry = matches.find(row => row.url === key) || null;
+                statusKnown = true;
             }
             if (serverEntry) {
                 await request('/remove', 'POST', { url: key });
@@ -302,11 +426,14 @@
                 const item = result.item || result;
                 saved.set(key, { id: item.id, status: item.status, tags: item.tags || [] });
             }
+            clearError(key);
         } catch (error) {
-            if (previous) saved.set(key, previous);
+            // A first status check might reveal an existing server-side bookmark.
+            // Restore that authoritative state when the subsequent removal fails.
+            if (serverEntry) saved.set(key, serverEntry);
             else saved.delete(key);
-            if (!previouslyChecked) checked.delete(key);
-            showError(error.message);
+            if (!statusKnown) checked.delete(key);
+            showError(key, link, error.message);
         } finally {
             pending.delete(key);
             render();
@@ -426,22 +553,89 @@
                 void toggleArticle(link);
             });
             article.appendChild(button);
-            controls.set(link, { button, url: sourceAndTarget(link.href).url });
+            const control = { link, button, url: sourceAndTarget(link.href).url };
+            controls.set(link, control);
+            positionControl(control);
+            positionObserver?.observe(article);
+            positionObserver?.observe(title);
+            const image = article.querySelector('.post-summary a.feature-image img');
+            if (image) {
+                positionObserver?.observe(image);
+                image.addEventListener('load', schedulePositions, { once: true });
+                image.addEventListener('error', schedulePositions, { once: true });
+            }
             added++;
         }
         render();
-        if (added) schedulePreload();
+        if (added) {
+            schedulePositions();
+            schedulePreload();
+        }
     }
 
     function start() {
         const style = document.createElement('style');
-        style.textContent =
-            'article.post-item{position:relative!important}' +
-            '.' + BUTTON_CLASS + '{all:unset!important;position:absolute!important;right:4px!important;bottom:4px!important;z-index:5!important;display:flex!important;align-items:center!important;justify-content:center!important;box-sizing:border-box!important;width:38px!important;height:34px!important;margin:0!important;padding:0!important;border:1px solid rgba(135,166,194,.7)!important;border-radius:6px!important;font:600 24px/1 system-ui,sans-serif!important;color:#145486!important;background:rgba(241,247,255,.7)!important;opacity:.58!important;text-align:center!important;cursor:pointer!important;touch-action:manipulation!important}' +
-            '.' + BUTTON_CLASS + ':hover,.' + BUTTON_CLASS + ':focus-visible{background:rgba(219,234,255,.9)!important;opacity:1!important;outline:2px solid #3777b7!important}' +
-            '.' + BUTTON_CLASS + ':disabled{opacity:.4!important;cursor:default!important}' +
-            '.' + BUTTON_CLASS + '[aria-pressed="true"]{color:#b67d00!important;border-color:rgba(209,154,6,.8)!important;background:rgba(255,249,232,.8)!important;opacity:.82!important}';
+        style.textContent = `
+            article.post-item { position: relative !important; }
+            .${BUTTON_CLASS} {
+                all: unset !important; position: absolute !important;
+                left: 0 !important; top: 0 !important; right: auto !important; bottom: auto !important;
+                z-index: 2147483646 !important;
+                display: flex !important; align-items: center !important; justify-content: center !important;
+                box-sizing: border-box !important; width: 38px !important; height: 34px !important;
+                margin: 0 !important; padding: 0 !important;
+                border: 1px solid rgba(135,166,194,.7) !important; border-radius: 6px !important;
+                font: 600 24px/1 system-ui,sans-serif !important; color: #145486 !important;
+                background: rgba(241,247,255,.7) !important; opacity: .58 !important;
+                text-align: center !important; cursor: pointer !important; touch-action: manipulation !important;
+            }
+            .${BUTTON_CLASS}:hover, .${BUTTON_CLASS}:focus-visible {
+                background: rgba(219,234,255,.9) !important; opacity: 1 !important;
+                outline: 2px solid #3777b7 !important;
+            }
+            .${BUTTON_CLASS}:disabled { opacity: .4 !important; cursor: default !important; }
+            .${BUTTON_CLASS}[aria-pressed="true"] {
+                color: #b67d00 !important; border-color: rgba(209,154,6,.8) !important;
+                background: rgba(255,249,232,.8) !important; opacity: .82 !important;
+            }
+            .${BUTTON_CLASS}[data-bookmarks-error="true"] {
+                border: 2px solid #d21d2b !important; outline: 2px solid #d21d2b !important;
+                outline-offset: 0 !important; box-shadow: 0 0 0 1px #fff !important;
+                opacity: 1 !important;
+            }
+            #tm-bookmarks-errors-top, #tm-bookmarks-errors-bottom {
+                position: fixed !important; right: 8px !important;
+                z-index: 2147483647 !important; width: min(320px, calc(100vw - 16px)) !important;
+                max-height: calc(45vh - 12px) !important; overflow-y: auto !important;
+                display: flex !important; flex-direction: column !important; gap: 6px !important;
+                pointer-events: none !important;
+            }
+            #tm-bookmarks-errors-top { top: 8px !important; }
+            #tm-bookmarks-errors-bottom { bottom: 8px !important; flex-direction: column-reverse !important; }
+            .${ERROR_CLASS} {
+                all: unset !important; position: fixed !important;
+                z-index: 2147483647 !important; box-sizing: border-box !important;
+                width: min(320px, calc(100vw - 16px)) !important; max-height: 150px !important;
+                overflow-y: auto !important; padding: 8px 10px !important;
+                border: 2px solid #b91c1c !important; border-radius: 7px !important;
+                background: #fff !important; color: #8f1616 !important;
+                box-shadow: 0 3px 12px #0005 !important;
+                font: 13px/1.4 system-ui,sans-serif !important;
+                pointer-events: auto !important; cursor: pointer !important;
+                overflow-wrap: anywhere !important;
+            }
+            #tm-bookmarks-errors-top > .${ERROR_CLASS},
+            #tm-bookmarks-errors-bottom > .${ERROR_CLASS} {
+                position: relative !important; top: auto !important; left: auto !important;
+                flex: 0 0 auto !important;
+            }
+        `;
         document.head.appendChild(style);
+        ensureErrorStacks();
+        positionObserver = typeof ResizeObserver === 'function'
+            ? new ResizeObserver(schedulePositions) : null;
+        window.addEventListener('resize', schedulePositions, { passive: true });
+        window.addEventListener('scroll', scheduleErrorLayout, { passive: true, capture: true });
         captureOriginalTitles();
         scan();
         const observer = new MutationObserver(() => {

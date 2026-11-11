@@ -42,7 +42,9 @@ test('source and redirected URL plus original title are editable and visible',()
 
 test('BetaCat bookmark star overlays the article instead of creating a toolbar',()=>{
  assert.match(script,/article\.appendChild\(button\)/);
- assert.match(script,/position:absolute!important;right:4px!important;bottom:4px!important/);
- assert.match(script,/opacity:\.58!important/);
+ assert.match(script,/position: absolute !important/);
+ assert.match(script,/querySelector\('\.post-summary a\.feature-image img'\)/);
+ assert.match(script,/hasImage \? image : article\.querySelector\('\.post-title'\)/);
+ assert.match(script,/opacity: \.58 !important/);
  assert.doesNotMatch(script,/tm-betacat-article-tools|oldCollapseButton/);
 });
