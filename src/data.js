@@ -1,7 +1,8 @@
 import { preferredRedirect, primaryUrl } from './redirect.js';
 import { ensureSlug } from './slug.js';
-const fields = "b.id,b.slug,b.url,b.normalized_url,b.redirect_url,b.title,b.title_original,b.title_zh,b.summary,b.source,CASE WHEN b.stage=1 AND b.deferred=1 THEN 5 ELSE b.stage END AS status,b.created_at,b.updated_at,b.read_at,b.published_at,b.starred_at, CASE WHEN b.stage=4 THEN COALESCE(b.starred_at,b.published_at,b.created_at) WHEN b.stage=3 THEN COALESCE(b.published_at,b.created_at) ELSE b.created_at END AS status_at,COALESCE((SELECT json_group_array(t.name) FROM bookmark_tags bt JOIN tags t ON t.id=bt.tag_id WHERE bt.bookmark_id=b.id),'[]') AS tags";
-const decode = row => row && ({...row, preferred_url:primaryUrl(row), tags:JSON.parse(row.tags || '[]')});
+const fields = "b.id,b.slug,b.url,b.normalized_url,b.redirect_url,b.title,b.title_original,b.title_zh,b.summary,b.source,b.references,CASE WHEN b.stage=1 AND b.deferred=1 THEN 5 ELSE b.stage END AS status,b.created_at,b.updated_at,b.read_at,b.published_at,b.starred_at, CASE WHEN b.stage=4 THEN COALESCE(b.starred_at,b.published_at,b.created_at) WHEN b.stage=3 THEN COALESCE(b.published_at,b.created_at) ELSE b.created_at END AS status_at,COALESCE((SELECT json_group_array(t.name) FROM bookmark_tags bt JOIN tags t ON t.id=bt.tag_id WHERE bt.bookmark_id=b.id),'[]') AS tags";
+const decode = row => row && ({...row, preferred_url:primaryUrl(row),
+  tags:JSON.parse(row.tags || '[]'), references:JSON.parse(row.references || '[]')});
 // Public feeds, markup and API must not expose the visitor's precise collection/reading times.
 const taipeiDay = date => date ? new Intl.DateTimeFormat('sv-SE',{
   timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit'
@@ -18,6 +19,26 @@ export function normalUrl(input) {
   if (!['https:', 'http:'].includes(u.protocol) || u.username || u.password) throw new Error('僅接受 HTTP(S) 網址');
   u.hash = '';
   return u.href;
+}
+export function normalizeReferences(input) {
+  if (!Array.isArray(input)) throw new Error('參考網址格式無效');
+  if (input.length > 12) throw new Error('參考網址最多 12 筆');
+  const seen=new Set(),result=[];
+  for (const item of input) {
+    if (!item || typeof item !== 'object') throw new Error('參考網址格式無效');
+    const url=normalUrl(String(item.url||'').trim());
+    if (url.length > 4096) throw new Error('參考網址過長');
+    if (seen.has(url)) continue;
+    seen.add(url);
+    const parsed=new URL(url);
+    const isHn=parsed.hostname==='news.ycombinator.com' && parsed.pathname==='/item'
+      && /^[0-9]+$/.test(parsed.searchParams.get('id')||'');
+    const kind=item.kind==='hacker-news' && isHn?'hacker-news':'link';
+    const title=String(item.title||'').trim() || parsed.hostname;
+    if (title.length>500) throw new Error('參考標題過長');
+    result.push({url,title,kind});
+  }
+  return result;
 }
 export function validate(raw) {
   if (!raw || typeof raw !== 'object') throw new Error('書籤格式無效');
@@ -40,7 +61,7 @@ export function validate(raw) {
   const tagMap=new Map();for(const name of tagNames)if(!tagMap.has(name.toLowerCase()))tagMap.set(name.toLowerCase(),name);
   const tags=[...tagMap.values()];
   if(tags.length>30 || tags.some(x=>x.length>80)) throw new Error('標籤過多或過長');
-  return {url,normalized_url,redirect_url:normalizedRedirect,title,title_original:title_original||null,title_zh:title_zh||null,summary,tags};
+  return {url,normalized_url,redirect_url:normalizedRedirect,title,title_original:title_original||null,title_zh:title_zh||null,summary,tags,references:normalizeReferences(raw.references||[])};
 }
 export async function get(db,id,includePrivate=false) {
   const row=await db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.id=?${includePrivate?'':' AND b.stage>=3'}`).bind(id).first();
@@ -124,7 +145,7 @@ export async function create(db,raw) {
   if(exists) return {item:exists,alreadyExists:true};
   const now=new Date().toISOString(), id=crypto.randomUUID();
   const source=String(raw.source||'manual').slice(0,80);
-  await db.prepare('INSERT INTO bookmarks(id,url,normalized_url,redirect_url,title,title_original,title_zh,summary,source,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,0,?,?)').bind(id,x.url,x.normalized_url,x.redirect_url,x.title,x.title_original,x.title_zh,x.summary,source,now,now).run();
+  await db.prepare('INSERT INTO bookmarks(id,url,normalized_url,redirect_url,title,title_original,title_zh,summary,source,references,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,0,?,?)').bind(id,x.url,x.normalized_url,x.redirect_url,x.title,x.title_original,x.title_zh,x.summary,source,JSON.stringify(x.references),now,now).run();
   await replaceTags(db,id,x.tags);
   return {item:await get(db,id,true),alreadyExists:false};
 }
@@ -150,11 +171,11 @@ export async function patch(db,id,raw) {
       await db.prepare('UPDATE bookmarks SET stage=?,deferred=?,status=?,read_at=?,published_at=?,starred_at=?,updated_at=? WHERE id=?').bind(stage,status===5?1:0,legacyStatus,readAt,publishAt,starredAt,now,id).run();
     }
   }
-  if(['url','redirect_url','title','title_original','title_zh','summary','tags'].some(x=>x in raw)){
+  if(['url','redirect_url','title','title_original','title_zh','summary','tags','references'].some(x=>x in raw)){
     const x=validate({...current,...raw});
     const conflict=await db.prepare('SELECT id FROM bookmarks WHERE (normalized_url=? OR redirect_url=?) AND id<>? LIMIT 1').bind(x.normalized_url,x.normalized_url,id).first();
     if(conflict)throw new Error('網址已被其他書籤收藏');
-    await db.prepare('UPDATE bookmarks SET url=?,normalized_url=?,redirect_url=?,title=?,title_original=?,title_zh=?,summary=?,updated_at=? WHERE id=?').bind(x.url,x.normalized_url,x.redirect_url,x.title,x.title_original,x.title_zh,x.summary,new Date().toISOString(),id).run();
+    await db.prepare('UPDATE bookmarks SET url=?,normalized_url=?,redirect_url=?,title=?,title_original=?,title_zh=?,summary=?,references=?,updated_at=? WHERE id=?').bind(x.url,x.normalized_url,x.redirect_url,x.title,x.title_original,x.title_zh,x.summary,JSON.stringify(x.references),new Date().toISOString(),id).run();
     if('tags' in raw)await replaceTags(db,id,x.tags);
   }
   const result=await get(db,id,true);
