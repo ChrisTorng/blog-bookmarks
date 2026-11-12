@@ -30,7 +30,7 @@ export function articleText(html){
  const body=String(html||'').match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1]||
   String(html||'').match(/<main\b[^>]*>([\s\S]*?)<\/main>/i)?.[1]||
   String(html||'').match(/<body\b[^>]*>([\s\S]*?)<\/body>/i)?.[1]||html;
- return cleanText(body).slice(0,45000);
+ return cleanText(body).slice(0,16000);
 }
 async function readLimited(res,max=360000){
  const reader=res.body?.getReader();
@@ -100,8 +100,7 @@ export async function autoReviewNewSummary(env,created,fetcher=fetch){
  }
  let replacement=original;
  if(!generated&&!original)return;
- if(needsSummaryRepair(original)&&generated)replacement=generated;
- else if(needsSummaryRepair(original)&&!source)replacement='';
+ if(needsSummaryRepair(original))replacement=generated||'';
  else {
   try{
    const decision=await compareSummaries(env,created,source,original,generated);
