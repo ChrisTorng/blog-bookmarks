@@ -8,7 +8,8 @@ test('flags empty and blocked snippets but not articles about JavaScript or CAPT
     '繼續操作，請登入你的 Reddit 帳號或使用開發者代幣。',
     'Google 系統偵測到來自你電腦網路的異常流量，請解開 CAPTCHA 後再繼續。',
     '你沒有權限存取這個伺服器上的頁面。',
-    '常見漏洞與暴露（CVE）'
+    '常見漏洞與暴露（CVE）',
+    '請稍等......我們只是確認你的網站連線安全。這有助於保護我們的網站和用戶。'
   ])assert.equal(needsSummaryRepair(s),true,s);
   for(const s of [
     '研究發現惡意 JavaScript 會在網頁中載入，並藉此執行跨站請求偽造攻擊。',
