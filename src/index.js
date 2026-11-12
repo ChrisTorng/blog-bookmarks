@@ -13,13 +13,13 @@ const reply = (body, type='text/plain; charset=utf-8', status=200) =>
   }});
 
 const worker = {
- async fetch(req, env) {
+ async fetch(req, env, ctx) {
   if (req.method === 'HEAD') {
-   const response = await worker.fetch(new Request(req,{method:'GET'}),env);
+   const response = await worker.fetch(new Request(req,{method:'GET'}),env,ctx);
    return new Response(null,{status:response.status,headers:response.headers});
   }
   const url=new URL(req.url), path=url.pathname;
-  if (path==='/bookmarks/api' || path==='/bookmarks/api/' || path.startsWith('/bookmarks/api/')) return api(req,env,url);
+  if (path==='/bookmarks/api' || path==='/bookmarks/api/' || path.startsWith('/bookmarks/api/')) return api(req,env,url,ctx);
   if (path==='/bookmarks/feed.xml' && req.method==='GET') {
    try {
     const tag=url.searchParams.get('tag')||'';
