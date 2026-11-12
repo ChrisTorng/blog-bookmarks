@@ -160,7 +160,7 @@ export async function patch(db,id,raw) {
   const finalTags='tags' in raw
     ?(Array.isArray(raw.tags)?raw.tags.map(t=>String(t).trim()).filter(Boolean):[])
     :current.tags;
-  if('status' in raw && [2,3,4].includes(desired) && !String(raw.summary??current.summary??'').trim())
+  if(([2,3,4].includes(desired)) && ('status' in raw || 'summary' in raw) && !String(raw.summary??current.summary??'').trim())
     throw new Error('摘要不可空白，請先補上或貼全文重新摘要');
   if(desired>=3 && desired<=4 && !finalTags.some(tag=>String(tag).toLowerCase()!=='default'))
     throw new Error('公開或推薦必須先選擇至少一個分類');
