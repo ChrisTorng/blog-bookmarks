@@ -40,7 +40,7 @@ try{
  assert.equal(invalidSize.body.size,3);
  // Deferred items are private and do not block the oldest pending queue.
  const deferred=await req('/bookmarks/api/admin/','POST',{
-  url:'https://example.org/deferred-study',title:'Read this paper later'
+  url:'https://example.org/deferred-study',title:'Read this paper later',summary:'Deferred bookmark summary for the workflow test.'
  },true);
  assert.equal(deferred.status,201);
  const deferredId=deferred.body.item.id;
@@ -71,7 +71,7 @@ try{
  assert.deepEqual(explicitlyNewest.body.items.slice(0,2).map(x=>x.id),[newer.body.item.id,created.body.item.id]);
  assert.equal((await req('/bookmarks/api/admin/'+newer.body.item.id,'DELETE',undefined,true)).body.deleted,true);
  const untagged=await req('/bookmarks/api/admin/','POST',{
-  url:'https://example.org/uncategorized',title:'Uncategorized'
+  url:'https://example.org/uncategorized',title:'Uncategorized',summary:'A sufficient summary exists for category validation.'
  },true);
  const untaggedId=untagged.body.item.id;
  const deniedPublic=await req('/bookmarks/api/admin/'+untaggedId,'PATCH',{status:3},true);
@@ -82,7 +82,24 @@ try{
  assert.equal((await req('/bookmarks/api/admin/'+untaggedId,'PATCH',{status:3,tags:['Science']},true)).body.status,3);
  assert.equal((await req('/bookmarks/api/admin/'+untaggedId,'PATCH',{tags:[]},true)).status,400);
  assert.equal((await req('/bookmarks/api/admin/'+untaggedId,'PATCH',{status:2,tags:[]},true)).body.status,2);
+ const bilingual=await req('/bookmarks/api/admin/tags','POST',{
+  name:'Test Custom Category',name_zh:'測試自訂分類',bookmark_id:untaggedId
+ },true);
+ assert.equal(bilingual.status,201,bilingual.text);
+ assert.equal(bilingual.body.tag.name_zh,'測試自訂分類');
+ assert.ok(bilingual.body.item.tags.includes('Test Custom Category'));
+ assert.equal((await req('/bookmarks/api/admin/tags','POST',{
+  name:'Test Custom Category',name_zh:'重複',bookmark_id:untaggedId
+ },true)).status,400);
+ assert.equal((await req('/bookmarks/api/admin/'+untaggedId,'PATCH',{status:3},true)).body.status,3);
  assert.equal((await req('/bookmarks/api/admin/'+untaggedId,'DELETE',undefined,true)).body.deleted,true);
+ const blank=await req('/bookmarks/api/admin/','POST',{url:'https://example.org/no-summary',title:'Missing summary',summary:''},true);
+ const blankId=blank.body.item.id;
+ const blocked=await req('/bookmarks/api/admin/'+blankId,'PATCH',{status:2},true);
+ assert.equal(blocked.status,400,blocked.text);
+ assert.match(blocked.body.error,/摘要/);
+ assert.equal((await req('/bookmarks/api/admin/'+blankId,'PATCH',{summary:'手動補充一段有意義的文章摘要。',status:2},true)).body.status,2);
+ assert.equal((await req('/bookmarks/api/admin/'+blankId,'DELETE',undefined,true)).body.deleted,true);
  const tagUpdate=await req('/bookmarks/api/admin/tags/ai','PATCH',{name:'AI Research',name_zh:'人工智慧'},true);
  assert.equal(tagUpdate.status,200,tagUpdate.text);
  assert.equal(tagUpdate.body.id,'ai');
