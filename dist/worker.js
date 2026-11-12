@@ -25598,6 +25598,8 @@ async function patch(db, id, raw) {
   if (!current) return null;
   const desired = "status" in raw ? Number(raw.status) : Number(current.status);
   const finalTags = "tags" in raw ? Array.isArray(raw.tags) ? raw.tags.map((t) => String(t).trim()).filter(Boolean) : [] : current.tags;
+  if ([2, 3, 4].includes(desired) && ("status" in raw || "summary" in raw) && !String(raw.summary ?? current.summary ?? "").trim())
+    throw new Error("\u6458\u8981\u4E0D\u53EF\u7A7A\u767D\uFF0C\u8ACB\u5148\u88DC\u4E0A\u6216\u8CBC\u5168\u6587\u91CD\u65B0\u6458\u8981");
   if (desired >= 3 && desired <= 4 && !finalTags.some((tag) => String(tag).toLowerCase() !== "default"))
     throw new Error("\u516C\u958B\u6216\u63A8\u85A6\u5FC5\u9808\u5148\u9078\u64C7\u81F3\u5C11\u4E00\u500B\u5206\u985E");
   if ("status" in raw) {
@@ -25645,6 +25647,27 @@ async function renameTag(db, id, value) {
   return db.prepare("SELECT id,name,name_zh FROM tags WHERE id=?").bind(id).first();
 }
 __name(renameTag, "renameTag");
+async function createAndAttachTag(db, raw) {
+  const name = String(raw?.name || "").trim(), name_zh = String(raw?.name_zh || "").trim();
+  const bookmarkId = String(raw?.bookmark_id || "");
+  if (!name || !name_zh || name.length > 80 || name_zh.length > 80)
+    throw Error("\u82F1\u6587\u8207\u7E41\u9AD4\u4E2D\u6587\u5206\u985E\u540D\u7A31\u90FD\u5FC5\u9808\u586B\u5BEB\uFF08\u6700\u591A 80 \u5B57\uFF09");
+  if (!/^[0-9a-f-]{36}$/i.test(bookmarkId)) throw Error("\u66F8\u7C64 ID \u7121\u6548");
+  if (!await get(db, bookmarkId, true)) throw Error("\u66F8\u7C64\u4E0D\u5B58\u5728");
+  const existing = await db.prepare("SELECT id FROM tags WHERE name=? COLLATE NOCASE").bind(name).first();
+  if (existing) throw Error("\u82F1\u6587\u5206\u985E\u540D\u7A31\u5DF2\u5B58\u5728\uFF0C\u8ACB\u76F4\u63A5\u9078\u53D6\u539F\u6709\u5206\u985E");
+  let id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  if (!id || id === "default") id = "tag-" + crypto.randomUUID().slice(0, 12);
+  if (await db.prepare("SELECT id FROM tags WHERE id=?").bind(id).first())
+    id += "-" + crypto.randomUUID().slice(0, 8);
+  await db.batch([
+    db.prepare("INSERT INTO tags(id,name,name_zh) VALUES(?,?,?)").bind(id, name, name_zh),
+    db.prepare("DELETE FROM bookmark_tags WHERE bookmark_id=? AND tag_id='default'").bind(bookmarkId),
+    db.prepare("INSERT INTO bookmark_tags(bookmark_id,tag_id) VALUES(?,?)").bind(bookmarkId, id)
+  ]);
+  return { tag: { id, name, name_zh }, item: await get(db, bookmarkId, true) };
+}
+__name(createAndAttachTag, "createAndAttachTag");
 
 // node_modules/markdown-it/lib/common/utils.mjs
 var utils_exports = {};
@@ -31725,7 +31748,8 @@ __name(betaCatExact, "betaCatExact");
 // src/classify.js
 var CATEGORY_GUIDANCE = Object.freeze({
   ai: "\u4EBA\u5DE5\u667A\u6167\u3001LLM\u3001\u6A5F\u5668\u5B78\u7FD2\u8207\u6838\u5FC3 AI \u61C9\u7528\uFF1B\u975E\u4EFB\u4F55\u63D0\u5230 AI \u7684\u65B0\u805E",
-  security: "\u8CC7\u5B89\u3001\u6F0F\u6D1E\u3001\u99ED\u4FB5\u3001\u60E1\u610F\u8EDF\u9AD4\u3001\u8A8D\u8B49\u6216\u9632\u8B77",
+  security: "\u8CC7\u8A0A\u5B89\u5168\u3001\u6F0F\u6D1E\u3001\u60E1\u610F\u8EDF\u9AD4\u3001\u5B89\u5168\u4E8B\u4EF6\u3001\u9632\u8B77\u8207\u8A8D\u8B49\u5F31\u9EDE\uFF1B\u7D14\u6280\u8853\u6539\u9020\u6216\u7834\u89E3\u5BE6\u4F5C\u4E0D\u4E00\u5B9A\u5C6C\u65BC\u5B89\u5168\u8B70\u984C",
+  hacking: "\u52D5\u624B\u5BE6\u9A57\u7684\u7834\u89E3\u3001\u9006\u5411\u5DE5\u7A0B\u3001\u786C\u9AD4\uFF0F\u8EDF\u9AD4\u6539\u88DD\u53CA\u6280\u8853\u63A2\u7D22\uFF1B\u8CC7\u8A0A\u5B89\u5168\u4E8B\u4EF6\u5982\u679C\u6C92\u6709\u5BE6\u4F5C\u62C6\u89E3\uFF0C\u512A\u5148 Security",
   tech: "\u4E00\u822C\u79D1\u6280\u53CA\u79D1\u6280\u7522\u54C1\uFF1B\u5DF2\u7531\u8F03\u7CBE\u78BA\u7684\u6280\u8853\u5206\u985E\u6DB5\u84CB\u6642\u4E0D\u5FC5\u91CD\u8907",
   programming: "\u7A0B\u5F0F\u8A9E\u8A00\u3001\u6846\u67B6\u3001\u8EDF\u9AD4\u5DE5\u7A0B\u3001\u7A0B\u5F0F\u958B\u767C\u5BE6\u4F5C\u53CA\u5DE5\u5177",
   hardware: "\u6676\u7247\u3001\u96FB\u5B50\u96F6\u7D44\u4EF6\u3001\u96FB\u8166\u786C\u9AD4\u8207\u5BE6\u9AD4\u88DD\u7F6E",
@@ -31737,11 +31761,11 @@ var CATEGORY_GUIDANCE = Object.freeze({
   law: "\u6CD5\u5F8B\u3001\u8A34\u8A1F\u3001\u53F8\u6CD5\u3001\u6CD5\u5F8B\u898F\u7BC4\u53CA\u5236\u5EA6",
   math: "\u6578\u5B78\u3001\u7D71\u8A08\u3001\u5B9A\u7406\u8207\u5F62\u5F0F\u6578\u5B78",
   nature: "\u52D5\u690D\u7269\u3001\u751F\u614B\u8207\u81EA\u7136\u74B0\u5883",
-  design: "\u8996\u89BA\u8A2D\u8A08\u3001\u5B57\u578B\u3001\u4E92\u52D5\u8A2D\u8A08\u3001\u4F7F\u7528\u8005\u4ECB\u9762",
-  thinking: "\u54F2\u5B78\u3001\u601D\u60F3\u3001\u8A8D\u77E5\u3001\u601D\u8003\u65B9\u6CD5\u8207\u50F9\u503C\u53CD\u7701",
+  design: "\u8996\u89BA\u8A2D\u8A08\u3001\u5B57\u578B\u3001\u6392\u7248\u3001\u4E92\u52D5\u8A2D\u8A08\u8207\u4F7F\u7528\u8005\u4ECB\u9762\u8A2D\u8A08\uFF1B\u4E00\u822C\u4F7F\u7528\u7DB2\u9801\u5DE5\u5177\u6216 3D \u6A21\u578B\u4E0D\u4E00\u5B9A\u662F Design",
+  thinking: "\u4EE5\u54F2\u5B78\u3001\u8A8D\u77E5\u3001\u63A8\u7406\u3001\u601D\u60F3\u5BE6\u9A57\u8207\u601D\u8003\u65B9\u6CD5\u70BA\u4E3B\u984C\uFF1B\u4E00\u822C\u65B0\u805E\u8A55\u8AD6\u6216\u6280\u8853\u5BE6\u4F5C\u4E0D\u56E0\u4F5C\u8005\u6709\u89C0\u9EDE\u5C31\u6B78\u5165 Thinking",
   believing: "\u4FE1\u4EF0\u3001\u5B97\u6559\u8207\u8D85\u81EA\u7136\u4FE1\u5FF5",
   gaming: "\u96FB\u73A9\u904A\u6232\u8207\u904A\u6232\u7522\u696D\uFF1BAI \u53EA\u7528\u904A\u6232\u505A\u6E2C\u8A66\u4E0D\u4E00\u5B9A\u5C6C\u65BC\u904A\u6232",
-  management: "\u7D44\u7E54\u7BA1\u7406\u3001\u9818\u5C0E\u529B\u3001\u5DE5\u4F5C\u6D41\u7A0B\u53CA\u4F01\u696D\u7BA1\u7406",
+  management: "\u7D44\u7E54\u7BA1\u7406\u3001\u9818\u5C0E\u529B\u3001\u7BA1\u7406\u5236\u5EA6\u3001\u8077\u5834\u7B56\u7565\u8207\u4F01\u696D\u5167\u90E8\u6D41\u7A0B\uFF1B\u55AE\u7D14\u4F01\u696D\u65B0\u805E\u3001\u4EBA\u4E8B\u6216\u52DF\u8CC7\u6D88\u606F\u4E0D\u56E0\u6B64\u5C6C\u65BC Management",
   music: "\u97F3\u6A02\u3001\u6A02\u5668\u3001\u4F5C\u66F2\u8207\u6F14\u594F\uFF1B\u7D14\u97F3\u8A0A\u7DE8\u78BC\u5DE5\u7A0B\u4E0D\u7B97",
   space: "\u592A\u7A7A\u3001\u822A\u592A\u3001\u885B\u661F\u3001\u5929\u6587\u8207\u5B87\u5B99\u7814\u7A76"
 });
@@ -32051,6 +32075,149 @@ async function readSubmittedContent(req) {
 }
 __name(readSubmittedContent, "readSubmittedContent");
 
+// src/auto-summary.js
+function safeArticleUrl(value) {
+  try {
+    const u = new URL(value);
+    if (u.protocol !== "https:" || u.username || u.password || u.port || !u.hostname.includes(".") || /^(?:localhost|\d+(?:\.\d+){0,3}|\[|0x)/i.test(u.hostname) || /\.(?:local|localhost|internal|test|invalid)$/.test(u.hostname)) return null;
+    return u.href;
+  } catch {
+    return null;
+  }
+}
+__name(safeArticleUrl, "safeArticleUrl");
+function cleanText(raw) {
+  return String(raw || "").replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ").replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ").replace(/<(?:nav|footer|header|aside|svg|form)\b[^>]*>[\s\S]*?<\/(?:nav|footer|header|aside|svg|form)>/gi, " ").replace(/<\/(?:p|li|h[1-6]|div|section|blockquote)>/gi, "\n").replace(/<[^>]+>/g, " ").replace(/&#(x[\da-f]+|\d+);/gi, (_, x) => {
+    const n = x[0].toLowerCase() === "x" ? parseInt(x.slice(1), 16) : Number(x);
+    return n > 0 && n <= 1114111 ? String.fromCodePoint(n) : " ";
+  }).replace(/&(?:nbsp|amp|lt|gt|quot|apos|rsquo|lsquo|ldquo|rdquo);/gi, (x) => ({
+    "&nbsp;": " ",
+    "&amp;": "&",
+    "&lt;": "<",
+    "&gt;": ">",
+    "&quot;": '"',
+    "&apos;": "'",
+    "&rsquo;": "\u2019",
+    "&lsquo;": "\u2018",
+    "&ldquo;": "\u201C",
+    "&rdquo;": "\u201D"
+  })[x.toLowerCase()] || " ").replace(/[ \t]{2,}/g, " ").replace(/\n\s*\n\s*\n/g, "\n\n").trim();
+}
+__name(cleanText, "cleanText");
+function articleText(html) {
+  const body = String(html || "").match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1] || String(html || "").match(/<main\b[^>]*>([\s\S]*?)<\/main>/i)?.[1] || String(html || "").match(/<body\b[^>]*>([\s\S]*?)<\/body>/i)?.[1] || html;
+  return cleanText(body).slice(0, 16e3);
+}
+__name(articleText, "articleText");
+async function readLimited(res, max = 36e4) {
+  const reader = res.body?.getReader();
+  if (!reader) return (await res.text()).slice(0, max);
+  const decoder = new TextDecoder(), parts = [];
+  let bytes = 0;
+  try {
+    while (bytes < max) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const part = value.slice(0, max - bytes);
+      bytes += part.byteLength;
+      parts.push(decoder.decode(part, { stream: true }));
+      if (part.byteLength < value.byteLength) break;
+    }
+  } finally {
+    try {
+      await reader.cancel();
+    } catch {
+    }
+  }
+  return parts.join("") + decoder.decode();
+}
+__name(readLimited, "readLimited");
+async function fetchReadableArticle(item, fetcher = fetch) {
+  const urls = [item.url, item.redirect_url].filter(Boolean);
+  for (const value of [...new Set(urls)]) {
+    const url = safeArticleUrl(value);
+    if (!url) continue;
+    try {
+      const r = await fetcher(url, { redirect: "manual", headers: { Accept: "text/html" } });
+      if (!r.ok || !/(?:text\/html|application\/xhtml\+xml)/i.test(r.headers.get("content-type") || "")) continue;
+      if (Number(r.headers.get("content-length") || 0) > 1e6) continue;
+      const html = await readLimited(r);
+      const meta = metadata(html);
+      if (meta.originalUrl && !sameArticle(url, new URL(meta.originalUrl, url).href)) continue;
+      const text2 = articleText(html);
+      if (text2.length >= 450 && !needsSummaryRepair(text2.slice(0, 260))) return text2;
+    } catch (error2) {
+      console.warn("Article extraction unavailable", String(error2));
+    }
+  }
+  return "";
+}
+__name(fetchReadableArticle, "fetchReadableArticle");
+function responseText(result) {
+  const value = result?.choices?.[0]?.message?.content ?? result?.response ?? "";
+  return typeof value === "string" ? value : JSON.stringify(value);
+}
+__name(responseText, "responseText");
+async function compareSummaries(env, item, source, oldSummary, newSummary) {
+  const result = await env.AI.run(CLASSIFIER_MODEL, {
+    messages: [
+      { role: "system", content: '\u4F60\u662F\u6587\u7AE0\u5167\u5BB9\u7A3D\u6838\u54E1\u3002\u53EA\u80FD\u6839\u64DA\u6587\u7AE0\u6A19\u984C\u53CA\u63D0\u4F9B\u7684\u4F86\u6E90\u5167\u6587\u6AA2\u67E5\u6458\u8981\u3002\u512A\u5148\u5224\u65B7\u662F\u5426\u6293\u5230\u767B\u5165\u3001\u53CD\u722C\u87F2\u3001CAPTCHA\u3001\u932F\u8AA4\u3001\u7121\u95DC\u9801\u9762\u3001\u5C0E\u822A\u9801\u7B49\u3002\u82E5\u6709\u4F86\u6E90\u5167\u6587\uFF0C\u6458\u8981\u5FC5\u9808\u7B26\u5408\u4F86\u6E90\u4E14\u6C92\u6709\u81C6\u6E2C\uFF1B\u82E5\u7121\u4F86\u6E90\uFF0C\u50C5\u80FD\u5224\u65B7\u6A19\u984C\u8207\u6458\u8981\u662F\u5426\u6709\u660E\u986F\u77DB\u76FE\uFF0C\u4E0D\u80FD\u63A8\u5B9A\u4E8B\u5BE6\u771F\u507D\u3002\u53EA\u80FD\u56DE\u50B3 JSON {"winner":"original"|"generated"|"neither","confidence":0.0}\u3002\u6709\u4F86\u6E90\u6642\u9078\u6700\u7B26\u5408\u4F86\u6E90\u7684\u5B8C\u6574\u6458\u8981\uFF0C\u5169\u8005\u90FD\u4E0D\u7B26\u5408\u624D\u7528 neither\uFF1B\u6C92\u6709\u4F86\u6E90\u6642\uFF0C\u53EA\u6709\u660E\u986F\u932F\u8AA4\u4E14\u9AD8\u5EA6\u78BA\u4FE1\u624D\u80FD\u7528 neither\uFF0C\u5426\u5247\u4FDD\u7559 original\u3002' },
+      { role: "user", content: JSON.stringify({
+        title_original: item.title_original || "",
+        title_zh: item.title_zh || item.title,
+        source_excerpt: source.slice(0, 1e4),
+        original: oldSummary.slice(0, 2500),
+        generated: newSummary.slice(0, 2500)
+      }) }
+    ],
+    response_format: { type: "json_object" },
+    chat_template_kwargs: { enable_thinking: false },
+    temperature: 0,
+    max_tokens: 130
+  });
+  const data = JSON.parse(responseText(result));
+  const winner = ["original", "generated", "neither"].includes(data.winner) ? data.winner : "original";
+  return { winner, confidence: Number(data.confidence) || 0 };
+}
+__name(compareSummaries, "compareSummaries");
+async function autoReviewNewSummary(env, created, fetcher = fetch) {
+  const original = String(created.summary || "").trim();
+  let source = "", generated = "";
+  try {
+    source = await fetchReadableArticle(created, fetcher);
+  } catch (error2) {
+    console.warn(String(error2));
+  }
+  if (source) {
+    try {
+      generated = await summarizeSubmittedArticle(env, created, source);
+    } catch (error2) {
+      console.warn("Automatic summary generation failed", String(error2));
+    }
+  }
+  let replacement = original;
+  if (!generated && !original) return;
+  if (needsSummaryRepair(original)) replacement = generated || "";
+  else {
+    try {
+      const decision = await compareSummaries(env, created, source, original, generated);
+      if (decision.winner === "generated" && generated && source && decision.confidence >= 0.65) replacement = generated;
+      else if (decision.winner === "neither" && decision.confidence >= 0.8) replacement = "";
+    } catch (error2) {
+      console.warn("Summary semantic quality check unavailable", String(error2));
+      if (needsSummaryRepair(original)) replacement = generated || "";
+    }
+  }
+  if (replacement === original) return;
+  const latest = await get(env.DB, created.id, true);
+  if (!latest || ![0, 1].includes(latest.status) || String(latest.summary || "").trim() !== original) return;
+  const result = await env.DB.prepare(
+    "UPDATE bookmarks SET summary=?,updated_at=? WHERE id=? AND stage IN (0,1) AND COALESCE(summary,'')=?"
+  ).bind(replacement, (/* @__PURE__ */ new Date()).toISOString(), created.id, original).run();
+  if (result.meta?.changes) console.log("New bookmark summary quality updated", created.id, replacement ? "replaced" : "cleared");
+}
+__name(autoReviewNewSummary, "autoReviewNewSummary");
+
 // src/api.js
 var json2 = /* @__PURE__ */ __name((value, status = 200) => new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } }), "json");
 function opts(url, privateList = false) {
@@ -32068,7 +32235,7 @@ async function input(req) {
   return JSON.parse(str);
 }
 __name(input, "input");
-async function createCategorized(env, raw) {
+async function createCategorized(env, raw, ctx) {
   const exists = await byUrl(env.DB, raw.url);
   if (exists) return { item: exists, alreadyExists: true };
   let inferred = [];
@@ -32078,10 +32245,14 @@ async function createCategorized(env, raw) {
     console.warn("Bookmark auto-categorization failed", String(error2));
   }
   const tags = mergeBookmarkTags(raw.tags, inferred);
-  return create(env.DB, { ...raw, tags: tags.length ? tags : ["default"] });
+  const saved = await create(env.DB, { ...raw, tags: tags.length ? tags : ["default"] });
+  if (!saved.alreadyExists && ctx?.waitUntil && env.AI) {
+    ctx.waitUntil(autoReviewNewSummary(env, saved.item).catch((e) => console.warn("New bookmark summary review failed", String(e))));
+  }
+  return saved;
 }
 __name(createCategorized, "createCategorized");
-async function api(req, env, url) {
+async function api(req, env, url, ctx) {
   const p = url.pathname;
   const privateApi = p === "/bookmarks/api/admin" || p.startsWith("/bookmarks/api/admin/");
   if (privateApi && !await isAdmin(req, env)) return json2({ error: "\u672A\u7D93\u7BA1\u7406\u54E1\u9A57\u8B49" }, 401);
@@ -32089,7 +32260,7 @@ async function api(req, env, url) {
   try {
     if (p === "/bookmarks/api/admin" || p === "/bookmarks/api/admin/") {
       if (req.method === "GET") return json2(await list(env.DB, opts(url, true)));
-      if (req.method === "POST") return json2(await createCategorized(env, await input(req)), 201);
+      if (req.method === "POST") return json2(await createCategorized(env, await input(req), ctx), 201);
     }
     if (p === "/bookmarks/api/admin/quick" && req.method === "GET")
       return json2(await reviewWindow(env.DB, url.searchParams.get("size")));
@@ -32099,6 +32270,12 @@ async function api(req, env, url) {
         const body = await readSubmittedContent(req);
         return json2(await commitArticleSummary(env, body.id, body.content));
       }
+    }
+    if (p === "/bookmarks/api/admin/summary-repair/preview" && req.method === "POST") {
+      const body = await readSubmittedContent(req);
+      const item = await get(env.DB, body.id, true);
+      if (!item) return json2({ error: "\u66F8\u7C64\u4E0D\u5B58\u5728" }, 404);
+      return json2({ summary: await summarizeSubmittedArticle(env, item, body.content), saved: false });
     }
     if (p === "/bookmarks/api/admin/reference/lookup" && req.method === "POST") {
       return json2(await lookupReference(await input(req)));
@@ -32118,6 +32295,7 @@ async function api(req, env, url) {
     }
     if (p === "/bookmarks/api/admin/ingest-token" && req.method === "POST") return json2(await rotateIngestToken(env.DB));
     if (p === "/bookmarks/api/admin/tags" && req.method === "GET") return json2(await tagsList(env.DB, true));
+    if (p === "/bookmarks/api/admin/tags" && req.method === "POST") return json2(await createAndAttachTag(env.DB, await input(req)), 201);
     const tagMatch = p.match(/^\/bookmarks\/api\/admin\/tags\/([^/]+)\/?$/);
     if (tagMatch && req.method === "PATCH") {
       const changed = await renameTag(env.DB, decodeURIComponent(tagMatch[1]), await input(req));
@@ -32148,7 +32326,7 @@ async function api(req, env, url) {
     if (p === "/bookmarks/api/ingest" && req.method === "POST") {
       const token = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "");
       if (!await validIngestToken(req, env)) return json2({ error: "\u7121\u6548\u7684\u65B0\u589E Token" }, 401);
-      return json2(await createCategorized(env, { ...await input(req), source: "tampermonkey" }), 201);
+      return json2(await createCategorized(env, { ...await input(req), source: "tampermonkey" }, ctx), 201);
     }
     const publicDetail = p.match(/^\/bookmarks\/api\/([0-9a-f-]{36})\/?$/);
     if (publicDetail && req.method === "GET") {
@@ -32206,13 +32384,13 @@ var reply = /* @__PURE__ */ __name((body, type = "text/plain; charset=utf-8", st
   "Cache-Control": "no-store"
 } }), "reply");
 var worker = {
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     if (req.method === "HEAD") {
-      const response = await worker.fetch(new Request(req, { method: "GET" }), env);
+      const response = await worker.fetch(new Request(req, { method: "GET" }), env, ctx);
       return new Response(null, { status: response.status, headers: response.headers });
     }
     const url = new URL(req.url), path = url.pathname;
-    if (path === "/bookmarks/api" || path === "/bookmarks/api/" || path.startsWith("/bookmarks/api/")) return api(req, env, url);
+    if (path === "/bookmarks/api" || path === "/bookmarks/api/" || path.startsWith("/bookmarks/api/")) return api(req, env, url, ctx);
     if (path === "/bookmarks/feed.xml" && req.method === "GET") {
       try {
         const tag = url.searchParams.get("tag") || "";
