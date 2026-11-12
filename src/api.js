@@ -3,9 +3,10 @@ import {suggestBookmarkTags,mergeBookmarkTags} from './classify.js';
 import {bulkStatus,updateTags} from './ingest.js';
 import {review,invalidSummary} from './metadata.js';
 import {lookupReference} from './references.js';
-import {repairCandidates,readSubmittedContent,commitArticleSummary} from './summary-repair.js';
+import {repairCandidates,readSubmittedContent,commitArticleSummary,summarizeSubmittedArticle} from './summary-repair.js';
+import {autoReviewNewSummary} from './auto-summary.js';
 import {validIngestToken,rotateIngestToken} from './token.js';
-import {list,get,byUrl,create,patch,remove,tagsList,renameTag,reviewWindow} from './data.js';
+import {list,get,byUrl,create,patch,remove,tagsList,renameTag,reviewWindow,createAndAttachTag} from './data.js';
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
 export function opts(url,privateList=false){
  const filter=url.searchParams.get('filter')||(privateList?'pending':'published');
@@ -18,7 +19,7 @@ async function input(req){
  const str=await req.text();if(str.length>100000)throw Error('資料過大');
  return JSON.parse(str);
 }
-async function createCategorized(env,raw) {
+async function createCategorized(env,raw,ctx) {
   // Check duplicates before spending inference or altering an existing manual decision.
   const exists=await byUrl(env.DB,raw.url);
   if(exists)return {item:exists,alreadyExists:true};
@@ -30,9 +31,13 @@ async function createCategorized(env,raw) {
   }
   // Preserve manual tags. The placeholder allows the user to revisit AI failures.
   const tags=mergeBookmarkTags(raw.tags,inferred);
-  return create(env.DB,{...raw,tags:tags.length?tags:['default']});
+  const saved=await create(env.DB,{...raw,tags:tags.length?tags:['default']});
+  if(!saved.alreadyExists&&ctx?.waitUntil&&env.AI){
+    ctx.waitUntil(autoReviewNewSummary(env,saved.item).catch(e=>console.warn('New bookmark summary review failed',String(e))));
+  }
+  return saved;
 }
-export async function api(req,env,url){
+export async function api(req,env,url,ctx){
  const p=url.pathname;
  const privateApi=p==='/bookmarks/api/admin'||p.startsWith('/bookmarks/api/admin/');
  if(privateApi && !await isAdmin(req,env))return json({error:'未經管理員驗證'},401);
@@ -40,7 +45,7 @@ export async function api(req,env,url){
  try{
   if(p==='/bookmarks/api/admin'||p==='/bookmarks/api/admin/'){
    if(req.method==='GET')return json(await list(env.DB,opts(url,true)));
-   if(req.method==='POST')return json(await createCategorized(env,await input(req)),201);
+   if(req.method==='POST')return json(await createCategorized(env,await input(req),ctx),201);
   }
   if(p==='/bookmarks/api/admin/quick'&&req.method==='GET')
     return json(await reviewWindow(env.DB,url.searchParams.get('size')));
@@ -50,6 +55,12 @@ export async function api(req,env,url){
       const body=await readSubmittedContent(req);
       return json(await commitArticleSummary(env,body.id,body.content));
     }
+  }
+  if(p==='/bookmarks/api/admin/summary-repair/preview' && req.method==='POST'){
+    const body=await readSubmittedContent(req);
+    const item=await get(env.DB,body.id,true);
+    if(!item)return json({error:'書籤不存在'},404);
+    return json({summary:await summarizeSubmittedArticle(env,item,body.content),saved:false});
   }
   if(p==='/bookmarks/api/admin/reference/lookup' && req.method==='POST'){
     return json(await lookupReference(await input(req)));
@@ -70,6 +81,7 @@ export async function api(req,env,url){
   }
   if(p==='/bookmarks/api/admin/ingest-token'&&req.method==='POST')return json(await rotateIngestToken(env.DB));
   if(p==='/bookmarks/api/admin/tags'&&req.method==='GET')return json(await tagsList(env.DB,true));
+  if(p==='/bookmarks/api/admin/tags'&&req.method==='POST')return json(await createAndAttachTag(env.DB,await input(req)),201);
   const tagMatch=p.match(/^\/bookmarks\/api\/admin\/tags\/([^/]+)\/?$/);
   if(tagMatch&&req.method==='PATCH'){
    const changed=await renameTag(env.DB,decodeURIComponent(tagMatch[1]),await input(req));
@@ -99,7 +111,7 @@ export async function api(req,env,url){
   if(p==='/bookmarks/api/ingest'&&req.method==='POST'){
    const token=req.headers.get('Authorization')?.replace(/^Bearer\s+/i,'');
    if(!await validIngestToken(req,env))return json({error:'無效的新增 Token'},401);
-   return json(await createCategorized(env,{...await input(req),source:'tampermonkey'}),201);
+   return json(await createCategorized(env,{...await input(req),source:'tampermonkey'},ctx),201);
   }
   const publicDetail=p.match(/^\/bookmarks\/api\/([0-9a-f-]{36})\/?$/);
   if(publicDetail && req.method==='GET'){
