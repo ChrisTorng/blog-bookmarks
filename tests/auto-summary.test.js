@@ -29,6 +29,13 @@ test('extractor refuses unrelated canonical URLs and tries verified alternative'
  assert.ok(text.length>450);
  assert.deepEqual(urls,['https://example.org/one','https://example.org/two']);
 });
+test('extractor never accepts a verbose Cloudflare anti-bot challenge as article content',async()=>{
+ const html='<html><head><title>Just a moment...</title></head><body><main>'+
+  '<p>'+('Checking if the site connection is secure before allowing access. ').repeat(16)+'</p>'+
+  '</main></body></html>';
+ const found=await fetchReadableArticle({url:'https://example.org/blocked'},async()=>new Response(html,{headers:{'content-type':'text/html'}}));
+ assert.equal(found,'');
+});
 test('auto review clears blocking text when no valid article is available',async()=>{
  const writes=[];
  const original='請啟用 JS 並關閉任何廣告攔截器';
