@@ -31625,7 +31625,7 @@ __name(isAdmin, "isAdmin");
 // src/metadata.js
 function invalidSummary(s) {
   const text2 = String(s || "").trim();
-  return !text2 || text2.length < 15 || /^(?:抱歉|sorry)$/i.test(text2) || /(?:請確保.{0,30}瀏覽器|啟用.{0,15}JavaScript|請啟用\s*JS|沒有權限存取|請登入.{0,30}帳號|繼續操作，請登入|協助.{0,20}help\.ft\.com|Google 系統偵測到|解開 CAPTCHA 後|access denied|verify you are human|解開 CAPTCHA|請完成 CAPTCHA|captcha required|captcha challenge|rate limit exceeded)/i.test(text2);
+  return !text2 || text2.length < 15 || /^(?:抱歉|sorry)$/i.test(text2) || text2.length < 500 && /(?:請稍等.{0,100}(?:連線安全|網站連線)|checking (?:your browser|if the site connection is secure)|just a moment|enable cookies to continue|此網站正在驗證)/i.test(text2) || /(?:請確保.{0,30}瀏覽器|啟用.{0,15}JavaScript|請啟用\s*JS|沒有權限存取|請登入.{0,30}帳號|繼續操作，請登入|協助.{0,20}help\.ft\.com|Google 系統偵測到|解開 CAPTCHA 後|access denied|verify you are human|解開 CAPTCHA|請完成 CAPTCHA|captcha required|captcha challenge|rate limit exceeded)/i.test(text2);
 }
 __name(invalidSummary, "invalidSummary");
 var clean = /* @__PURE__ */ __name((s) => String(s || "").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim(), "clean");
@@ -32143,6 +32143,7 @@ async function fetchReadableArticle(item, fetcher = fetch) {
       if (Number(r.headers.get("content-length") || 0) > 1e6) continue;
       const html = await readLimited(r);
       const meta = metadata(html);
+      if (/^(?:just a moment|access denied|verification required|attention required|請稍等|網站安全檢查)/i.test(meta.title)) continue;
       if (meta.originalUrl && !sameArticle(url, new URL(meta.originalUrl, url).href)) continue;
       const text2 = articleText(html);
       if (text2.length >= 450 && !needsSummaryRepair(text2.slice(0, 260))) return text2;
