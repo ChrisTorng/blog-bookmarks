@@ -160,6 +160,8 @@ export async function patch(db,id,raw) {
   const finalTags='tags' in raw
     ?(Array.isArray(raw.tags)?raw.tags.map(t=>String(t).trim()).filter(Boolean):[])
     :current.tags;
+  if('status' in raw && [2,3,4].includes(desired) && !String(raw.summary??current.summary??'').trim())
+    throw new Error('摘要不可空白，請先補上或貼全文重新摘要');
   if(desired>=3 && desired<=4 && !finalTags.some(tag=>String(tag).toLowerCase()!=='default'))
     throw new Error('公開或推薦必須先選擇至少一個分類');
   if('status' in raw){
@@ -205,4 +207,29 @@ export async function renameTag(db,id,value){
   if(conflict)throw new Error('英文標籤名稱已存在');
   await db.prepare('UPDATE tags SET name=?,name_zh=? WHERE id=?').bind(name,nameZh||null,id).run();
   return db.prepare('SELECT id,name,name_zh FROM tags WHERE id=?').bind(id).first();
+}
+
+/**
+ * Create a bilingual tag and attach it in one D1 batch (transaction).
+ * Never alter an existing tag's name or a bookmark's other manual selections.
+ */
+export async function createAndAttachTag(db,raw) {
+ const name=String(raw?.name||'').trim(), name_zh=String(raw?.name_zh||'').trim();
+ const bookmarkId=String(raw?.bookmark_id||'');
+ if(!name||!name_zh||name.length>80||name_zh.length>80)
+  throw Error('英文與繁體中文分類名稱都必須填寫（最多 80 字）');
+ if(!/^[0-9a-f-]{36}$/i.test(bookmarkId))throw Error('書籤 ID 無效');
+ if(!await get(db,bookmarkId,true))throw Error('書籤不存在');
+ const existing=await db.prepare('SELECT id FROM tags WHERE name=? COLLATE NOCASE').bind(name).first();
+ if(existing)throw Error('英文分類名稱已存在，請直接選取原有分類');
+ let id=name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+ if(!id||id==='default')id='tag-'+crypto.randomUUID().slice(0,12);
+ if(await db.prepare('SELECT id FROM tags WHERE id=?').bind(id).first())
+  id+='-'+crypto.randomUUID().slice(0,8);
+ await db.batch([
+  db.prepare('INSERT INTO tags(id,name,name_zh) VALUES(?,?,?)').bind(id,name,name_zh),
+  db.prepare("DELETE FROM bookmark_tags WHERE bookmark_id=? AND tag_id='default'").bind(bookmarkId),
+  db.prepare('INSERT INTO bookmark_tags(bookmark_id,tag_id) VALUES(?,?)').bind(bookmarkId,id)
+ ]);
+ return {tag:{id,name,name_zh},item:await get(db,bookmarkId,true)};
 }
