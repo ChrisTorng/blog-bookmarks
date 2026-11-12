@@ -57,6 +57,7 @@ export async function fetchReadableArticle(item,fetcher=fetch){
    if(Number(r.headers.get('content-length')||0)>1000000)continue;
    const html=await readLimited(r);
    const meta=metadata(html);
+   if(/^(?:just a moment|access denied|verification required|attention required|請稍等|網站安全檢查)/i.test(meta.title))continue;
    if(meta.originalUrl&&!sameArticle(url,new URL(meta.originalUrl,url).href))continue;
    const text=articleText(html);
    if(text.length>=450&&!needsSummaryRepair(text.slice(0,260)))return text;
