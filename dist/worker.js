@@ -31975,26 +31975,21 @@ async function repairCandidates(db) {
   return { total: items.length, items };
 }
 __name(repairCandidates, "repairCandidates");
-function aiText(value) {
-  const v = value?.choices?.[0]?.message?.content ?? value?.response;
-  return typeof v === "string" ? v : JSON.stringify(v ?? "");
-}
-__name(aiText, "aiText");
-async function infer(env, system, user, max_tokens = 520) {
-  const result = await env.AI.run(CLASSIFIER_MODEL, {
-    messages: [{ role: "system", content: system }, { role: "user", content: user }],
-    response_format: { type: "json_object" },
-    chat_template_kwargs: { enable_thinking: false },
-    temperature: 0,
-    max_tokens
-  });
-  let response;
-  try {
-    response = JSON.parse(aiText(result));
-  } catch {
-    throw Error("\u6458\u8981\u6A21\u578B\u56DE\u50B3\u7684\u683C\u5F0F\u7121\u6548\uFF0C\u539F\u6587\u4ECD\u4FDD\u7559\u5728\u672C\u6A5F\u8349\u7A3F");
+async function infer(env, system, user, maxTokens) {
+  const messages = [{ role: "system", content: system }, { role: "user", content: user }];
+  for (const max_tokens of [maxTokens, maxTokens * 2]) {
+    const result = await env.AI.run(CLASSIFIER_MODEL, {
+      messages,
+      chat_template_kwargs: { enable_thinking: false },
+      temperature: 0,
+      max_tokens
+    });
+    const choice = result?.choices?.[0];
+    const content = choice?.message?.content ?? result?.response;
+    if (choice?.finish_reason !== "length" && typeof content === "string" && content.trim())
+      return content.trim();
   }
-  return response;
+  throw Error("\u6458\u8981\u6A21\u578B\u672A\u56DE\u50B3\u5B8C\u6574\u6587\u5B57\uFF0C\u539F\u6587\u4ECD\u4FDD\u7559\u5728\u672C\u6A5F\u8349\u7A3F");
 }
 __name(infer, "infer");
 function splitByLength(value, max = 11e3) {
@@ -32026,24 +32021,22 @@ async function summarizeSubmittedArticle(env, item, text2) {
       const slice = parts.slice(i, i + 3);
       const values = await Promise.all(slice.map((part, j) => infer(
         env,
-        '\u4F60\u662F\u7E41\u9AD4\u4E2D\u6587\u6587\u7AE0\u7B46\u8A18\u54E1\u3002\u50C5\u6839\u64DA\u63D0\u4F9B\u7684\u539F\u6587\u7247\u6BB5\uFF0C\u6574\u7406\u5177\u9AD4\u8981\u9EDE\uFF0C\u52FF\u6DFB\u52A0\u539F\u6587\u6C92\u6709\u7684\u4E8B\u5BE6\u3002\u50C5\u56DE\u50B3 JSON\uFF1A{"points":"..."}\u3002',
+        "\u4F60\u662F\u7E41\u9AD4\u4E2D\u6587\u6587\u7AE0\u7B46\u8A18\u54E1\u3002\u50C5\u6839\u64DA\u63D0\u4F9B\u7684\u539F\u6587\u7247\u6BB5\uFF0C\u4EE5\u4E0D\u8D85\u904E 200 \u500B\u4E2D\u6587\u5B57\u6574\u7406\u6700\u91CD\u8981\u7684\u5177\u9AD4\u8981\u9EDE\uFF0C\u4FDD\u7559\u95DC\u9375\u6578\u5B57\u53CA\u6280\u8853\u7D30\u7BC0\u3002\u82E5\u662F\u7559\u8A00\uFF0C\u5340\u5206\u767C\u8A00\u8005\u8207\u4E3B\u5F35\u3002\u52FF\u6DFB\u52A0\u539F\u6587\u6C92\u6709\u7684\u4E8B\u5BE6\u3002\u53EA\u8F38\u51FA\u7B46\u8A18\u6587\u5B57\u3002",
         JSON.stringify({ title, part: i + j + 1, total: parts.length, text: part }),
         380
       )));
       values.forEach((value, j) => {
-        extracted[i + j] = String(value.points || "").trim();
+        extracted[i + j] = value;
       });
     }
-    if (extracted.some((x) => !x)) throw Error("\u6709\u539F\u6587\u7247\u6BB5\u672A\u80FD\u6B63\u78BA\u6574\u7406\uFF0C\u8ACB\u7A0D\u5F8C\u91CD\u8A66");
     material = extracted.map((x, i) => "\u6BB5\u843D " + (i + 1) + "\uFF1A" + x).join("\n");
   }
-  const answer = await infer(
+  const summary = await infer(
     env,
-    '\u8ACB\u4EE5\u53F0\u7063\u7E41\u9AD4\u4E2D\u6587\u70BA\u6587\u7AE0\u64B0\u5BEB\u5FE0\u5BE6\u6458\u8981\uFF0C\u7D04 100 \u81F3 220 \u500B\u4E2D\u6587\u5B57\u3002\u6DB5\u84CB\u6587\u7AE0\u771F\u6B63\u7684\u4E3B\u5F35\u3001\u91CD\u8981\u7D30\u7BC0\u8207\u7D50\u8AD6\uFF1B\u9069\u5EA6\u4FDD\u7559\u7CBE\u78BA\u6578\u5B57\u3001\u6280\u8853\u540D\u7A31\u53CA\u9650\u5236\u3002\u4E0D\u8981\u5957\u8A71\u3001\u4E0D\u8981\u865B\u69CB\u4E8B\u5BE6\u3001\u4E0D\u8981\u5F15\u7528\u7121\u95DC\u7DB2\u9801\u5C0E\u822A\u6216\u5EE3\u544A\u3002\u50C5\u56DE\u50B3 JSON\uFF1A{"summary":"..."}\u3002',
+    "\u8ACB\u4EE5\u53F0\u7063\u7E41\u9AD4\u4E2D\u6587\u70BA\u6587\u7AE0\u64B0\u5BEB\u5FE0\u5BE6\u6458\u8981\uFF0C\u7D04 100 \u81F3 220 \u500B\u4E2D\u6587\u5B57\u3002\u4EE5\u6587\u7AE0\u6B63\u6587\u7684\u4E3B\u5F35\u3001\u91CD\u8981\u7D30\u7BC0\u8207\u7D50\u8AD6\u70BA\u4E3B\u3002\u82E5\u6709\u7559\u8A00\uFF0C\u53EA\u88DC\u5145\u8207\u4E3B\u984C\u76F4\u63A5\u76F8\u95DC\u7684\u6F84\u6E05\uFF0C\u4E26\u6A19\u660E\u662F\u8AB0\u7684\u8AAA\u6CD5\u3002\u4FDD\u7559\u95DC\u9375\u6578\u5B57\u3001\u6280\u8853\u540D\u7A31\u53CA\u9650\u5236\u3002\u4E0D\u8981\u5957\u8A71\u3001\u4E0D\u8981\u865B\u69CB\u4E8B\u5BE6\u3001\u4E0D\u8981\u5F15\u7528\u7121\u95DC\u7DB2\u9801\u5C0E\u822A\u6216\u5EE3\u544A\u3002\u53EA\u8F38\u51FA\u6458\u8981\u6B63\u6587\uFF0C\u53EF\u4F7F\u7528 Markdown\u3002",
     JSON.stringify({ title, url: item.url, article: material }),
     600
   );
-  const summary = String(answer.summary || "").trim();
   if (summary.length < 30 || summary.length > 1500 || needsSummaryRepair(summary))
     throw Error("\u751F\u6210\u7684\u6458\u8981\u672A\u901A\u904E\u54C1\u8CEA\u6AA2\u67E5\uFF0C\u539F\u6587\u4ECD\u4FDD\u7559\u5728\u672C\u6A5F\u8349\u7A3F");
   return summary;
