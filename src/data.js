@@ -1,5 +1,6 @@
 import { preferredRedirect, primaryUrl } from './redirect.js';
 import { ensureSlug } from './slug.js';
+import { needsSummaryRepair } from './metadata.js';
 const fields = "b.id,b.slug,b.url,b.normalized_url,b.redirect_url,b.title,b.title_original,b.title_zh,b.summary,b.source,b.reference_links,CASE WHEN b.stage=1 AND b.deferred=1 THEN 5 ELSE b.stage END AS status,b.created_at,b.updated_at,b.read_at,b.published_at,b.starred_at, CASE WHEN b.stage=4 THEN COALESCE(b.starred_at,b.published_at,b.created_at) WHEN b.stage=3 THEN COALESCE(b.published_at,b.created_at) ELSE b.created_at END AS status_at,COALESCE((SELECT json_group_array(t.name) FROM bookmark_tags bt JOIN tags t ON t.id=bt.tag_id WHERE bt.bookmark_id=b.id),'[]') AS tags";
 const decode = row => {
   if(!row)return row;
@@ -160,8 +161,9 @@ export async function patch(db,id,raw) {
   const finalTags='tags' in raw
     ?(Array.isArray(raw.tags)?raw.tags.map(t=>String(t).trim()).filter(Boolean):[])
     :current.tags;
-  if(([2,3,4].includes(desired)) && ('status' in raw || 'summary' in raw) && !String(raw.summary??current.summary??'').trim())
-    throw new Error('摘要不可空白，請先補上或貼全文重新摘要');
+  const summary='summary' in raw?raw.summary:current.summary;
+  if([2,3,4].includes(desired) && ('status' in raw || 'summary' in raw) && needsSummaryRepair(summary))
+    throw new Error('摘要空白或來源無效，請先補上或貼全文重新摘要');
   if(desired>=3 && desired<=4 && !finalTags.some(tag=>String(tag).toLowerCase()!=='default'))
     throw new Error('公開或推薦必須先選擇至少一個分類');
   if('status' in raw){
