@@ -113,3 +113,18 @@ test('excludes the truncated Quick Summary and retries commentary using only art
   assert.equal(await summarizeSubmittedArticle(env,wsjItem,page),quickSummary);
   assert.equal(calls,2);
 });
+
+
+test('times out AI generation while keeping the pasted text available',async()=>{
+  const env={AI:{run:()=>new Promise(()=>{})}};
+  await assert.rejects(
+    ()=>summarizeSubmittedArticle(env,{title:'Article'},'原文內容。'.repeat(20),5),
+    /摘要逾時.*本機草稿/
+  );
+});
+
+
+test('removes a model-added summary heading before returning the prose',async()=>{
+  const env={AI:{run:async()=>({response:'**以下是這篇文章的摘要：**\n\n'+quickSummary})}};
+  assert.equal(await summarizeSubmittedArticle(env,{title:'Article'},'原文內容。'.repeat(20)),quickSummary);
+});
