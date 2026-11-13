@@ -95,3 +95,15 @@ export async function betaCatExact(item,transport=fetch) {
   }
   return null;
 }
+
+const commentaryOpening=/^[#*\s]*(?:根據(?:你)?(?:所)?提供的(?:文本(?:內容)?|文字(?:內容)?|內容|資料|文章)[，,。]|(?:這些|各個)段落(?:之間)?(?:存在|有|互相)|段落\s*\d+\s*(?:指出|提到|指稱|表示)|(?:based on|according to) the (?:provided|given) (?:text|passages?)[,.])/i;
+export const isSummaryCommentary=summary=>commentaryOpening.test(summary);
+
+// Narrow signals only: do not confuse articles ABOUT JavaScript, authentication,
+// or CAPTCHA with their own failed page-load message.
+export function needsSummaryRepair(summary) {
+  const s=String(summary||'').trim();
+  return invalidSummary(s) || isSummaryCommentary(s) ||
+    /^(?:常見漏洞與暴露(?:（CVE）)?|no description|not found)$/i.test(s) ||
+    /(?:Google 系統偵測到來自|解開 CAPTCHA 後|請啟用 JS 並關閉|繼續操作，請登入你的 Reddit 帳號|你沒有權限存取這個伺服器|如需協助，請造訪 help\.ft\.com|請確保您的瀏覽器支援 JavaScript 和 Cookies)/i.test(s);
+}
