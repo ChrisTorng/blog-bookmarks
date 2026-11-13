@@ -62,8 +62,10 @@ export async function fetchReadableArticle(item,fetcher=fetch){
  let fallbackText='';
  for(const value of [...new Set(urls)]){
   const url=safeArticleUrl(value);if(!url)continue;
+  const target=new URL(url);
+  if(/^(?:archive\.(?:is|today|ph))$/.test(target.hostname)&&/^\/submit(?:\/|$)/.test(target.pathname))continue;
   try{
-   const r=await fetcher(url,{redirect:'manual',headers:{Accept:'text/html'}});
+   const r=await fetcher(url,{redirect:'manual',headers:{Accept:'text/html'},signal:AbortSignal.timeout(4500)});
    if(!r.ok||!/(?:text\/html|application\/xhtml\+xml)/i.test(r.headers.get('content-type')||''))continue;
    if(Number(r.headers.get('content-length')||0)>1000000)continue;
    const html=await readLimited(r,wsj?1000000:360000);
@@ -77,7 +79,7 @@ export async function fetchReadableArticle(item,fetcher=fetch){
      ? publisherQuickSummary(html,item.url) : '';
    if(publisherSummary)return {text:'',publisherSummary};
    const text=articleText(html);
-   if(text.length>=450&&!needsSummaryRepair(text.slice(0,260))){
+   if(text.length>=450&&!needsSummaryRepair(text.slice(0,650))){
     if(!wsj)return {text,publisherSummary:''};
     fallbackText ||= text;
    }
@@ -115,8 +117,8 @@ export async function autoReviewNewSummary(env,created,fetcher=fetch){
  const original=String(created.summary||'').trim();
  let source='',publisherSummary='',generated='';
  try{({text:source,publisherSummary}=await fetchReadableArticle(created,fetcher));}catch(error){console.warn(String(error));}
- if(source){
-  try{generated=await summarizeSubmittedArticle(env,created,source);}
+ if(source&&env.AI){
+  try{generated=await summarizeSubmittedArticle(env,created,source,18000);}
   catch(error){console.warn('Automatic summary generation failed',String(error));}
  }
  let replacement=original;
