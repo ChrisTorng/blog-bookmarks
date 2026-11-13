@@ -17,22 +17,18 @@ export async function repairCandidates(db) {
   return {total:items.length,items};
 }
 
-function aiText(value) {
-  const v=value?.choices?.[0]?.message?.content ?? value?.response;
-  return typeof v==='string' ? v : JSON.stringify(v??'');
-}
-
-async function infer(env, system, user, max_tokens=520) {
-  const result=await env.AI.run(CLASSIFIER_MODEL,{
-    messages:[{role:'system',content:system},{role:'user',content:user}],
-    response_format:{type:'json_object'},
-    chat_template_kwargs:{enable_thinking:false},
-    temperature:0,max_tokens
-  });
-  let response;
-  try { response=JSON.parse(aiText(result)); }
-  catch { throw Error('摘要模型回傳的格式無效，原文仍保留在本機草稿'); }
-  return response;
+async function infer(env, system, user, maxTokens) {
+  const messages=[{role:'system',content:system},{role:'user',content:user}];
+  for(const max_tokens of [maxTokens,maxTokens*2]){
+    const result=await env.AI.run(CLASSIFIER_MODEL,{
+      messages,chat_template_kwargs:{enable_thinking:false},temperature:0,max_tokens
+    });
+    const choice=result?.choices?.[0];
+    const content=choice?.message?.content ?? result?.response;
+    if(choice?.finish_reason!=='length' && typeof content==='string' && content.trim())
+      return content.trim();
+  }
+  throw Error('摘要模型未回傳完整文字，原文仍保留在本機草稿');
 }
 
 function splitByLength(value,max=11000) {
@@ -63,17 +59,15 @@ export async function summarizeSubmittedArticle(env,item,text) {
     for(let i=0;i<parts.length;i+=3){
       const slice=parts.slice(i,i+3);
       const values=await Promise.all(slice.map((part,j)=>infer(env,
-        '你是繁體中文文章筆記員。僅根據提供的原文片段，整理具體要點，勿添加原文沒有的事實。僅回傳 JSON：{"points":"..."}。',
+        '你是繁體中文文章筆記員。僅根據提供的原文片段，以不超過 200 個中文字整理最重要的具體要點，保留關鍵數字及技術細節。若是留言，區分發言者與主張。勿添加原文沒有的事實。只輸出筆記文字。',
         JSON.stringify({title,part:i+j+1,total:parts.length,text:part}),380)));
-      values.forEach((value,j)=>{extracted[i+j]=String(value.points||'').trim();});
+      values.forEach((value,j)=>{extracted[i+j]=value;});
     }
-    if(extracted.some(x=>!x))throw Error('有原文片段未能正確整理，請稍後重試');
     material=extracted.map((x,i)=>'段落 '+(i+1)+'：'+x).join('\n');
   }
-  const answer=await infer(env,
-    '請以台灣繁體中文為文章撰寫忠實摘要，約 100 至 220 個中文字。涵蓋文章真正的主張、重要細節與結論；適度保留精確數字、技術名稱及限制。不要套話、不要虛構事實、不要引用無關網頁導航或廣告。僅回傳 JSON：{"summary":"..."}。',
+  const summary=await infer(env,
+    '請以台灣繁體中文為文章撰寫忠實摘要，約 100 至 220 個中文字。以文章正文的主張、重要細節與結論為主。若有留言，只補充與主題直接相關的澄清，並標明是誰的說法。保留關鍵數字、技術名稱及限制。不要套話、不要虛構事實、不要引用無關網頁導航或廣告。只輸出摘要正文，可使用 Markdown。',
     JSON.stringify({title,url:item.url,article:material}),600);
-  const summary=String(answer.summary||'').trim();
   if(summary.length<30 || summary.length>1500 || needsSummaryRepair(summary))
     throw Error('生成的摘要未通過品質檢查，原文仍保留在本機草稿');
   return summary;
