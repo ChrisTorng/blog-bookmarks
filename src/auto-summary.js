@@ -1,6 +1,6 @@
 import {get} from './data.js';
 import {metadata,sameArticle} from './metadata.js';
-import {needsSummaryRepair,summarizeSubmittedArticle} from './summary-repair.js';
+import {needsSummaryRepair,summarizeSubmittedArticle,wsjQuickSummary} from './summary-repair.js';
 import {CLASSIFIER_MODEL} from './classify.js';
 
 // Restrict outbound URLs: no private addresses, credentials, uncommon ports, or
@@ -14,17 +14,26 @@ export function safeArticleUrl(value) {
   return u.href;
  }catch{return null;}
 }
-function cleanText(raw){
- return String(raw||'').replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,' ')
-  .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi,' ')
-  .replace(/<(?:nav|footer|header|aside|svg|form)\b[^>]*>[\s\S]*?<\/(?:nav|footer|header|aside|svg|form)>/gi,' ')
-  .replace(/<\/(?:p|li|h[1-6]|div|section|blockquote)>/gi,'\n')
+function cleanText(raw,removeChrome=true){
+ const html=String(raw||'').replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi,' ')
+   .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi,' ');
+ const body=removeChrome?html.replace(/<(?:nav|footer|header|aside|svg|form)\b[^>]*>[\s\S]*?<\/(?:nav|footer|header|aside|svg|form)>/gi,' '):html;
+ return body
+  .replace(/<(?:br|p|li|h[1-6]|summary|button)\b[^>]*>|<\/(?:p|li|h[1-6]|div|section|blockquote|summary|button)>/gi,'\n')
   .replace(/<[^>]+>/g,' ')
   .replace(/&#(x[\da-f]+|\d+);/gi,(_,x)=>{const n=x[0].toLowerCase()==='x'?parseInt(x.slice(1),16):Number(x);return n>0&&n<=0x10ffff?String.fromCodePoint(n):' ';})
   .replace(/&(?:nbsp|amp|lt|gt|quot|apos|rsquo|lsquo|ldquo|rdquo);/gi,x=>({
    '&nbsp;':' ','&amp;':'&','&lt;':'<','&gt;':'>','&quot;':'"','&apos;':"'",'&rsquo;':'’','&lsquo;':'‘','&ldquo;':'“','&rdquo;':'”'
   })[x.toLowerCase()]||' ')
   .replace(/[ \t]{2,}/g,' ').replace(/\n\s*\n\s*\n/g,'\n\n').trim();
+}
+function publisherQuickSummary(html,url){
+ for(const [,details] of html.matchAll(/<details\b[^>]*>([\s\S]*?)<\/details>/gi)){
+  const text=cleanText(details,false);
+  const summary=wsjQuickSummary(text+'\nSee more',url);
+  if(summary)return summary;
+ }
+ return wsjQuickSummary(cleanText(html,false),url);
 }
 export function articleText(html){
  const body=String(html||'').match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1]||
@@ -49,21 +58,35 @@ async function readLimited(res,max=360000){
 export async function fetchReadableArticle(item,fetcher=fetch){
  // Try the original publisher first, then the explicitly stored destination.
  const urls=[item.url,item.redirect_url].filter(Boolean);
+ const wsj=/^https:\/\/(?:www\.)?wsj\.com\//i.test(item.url);
+ let fallbackText='';
  for(const value of [...new Set(urls)]){
   const url=safeArticleUrl(value);if(!url)continue;
+  const target=new URL(url);
+  if(/^(?:archive\.(?:is|today|ph))$/.test(target.hostname)&&/^\/submit(?:\/|$)/.test(target.pathname))continue;
   try{
-   const r=await fetcher(url,{redirect:'manual',headers:{Accept:'text/html'}});
+   const r=await fetcher(url,{redirect:'manual',headers:{Accept:'text/html'},signal:AbortSignal.timeout(4500)});
    if(!r.ok||!/(?:text\/html|application\/xhtml\+xml)/i.test(r.headers.get('content-type')||''))continue;
    if(Number(r.headers.get('content-length')||0)>1000000)continue;
-   const html=await readLimited(r);
+   const html=await readLimited(r,wsj?1000000:360000);
    const meta=metadata(html);
    if(/^(?:just a moment|access denied|verification required|attention required|請稍等|網站安全檢查)/i.test(meta.title))continue;
-   if(meta.originalUrl&&!sameArticle(url,new URL(meta.originalUrl,url).href))continue;
+   const canonical=meta.originalUrl?new URL(meta.originalUrl,url).href:'';
+   const isSnapshot=wsj && /^(?:archive\.(?:is|today|ph)|web\.archive\.org)$/.test(new URL(url).hostname);
+   const isVerifiedSnapshot=isSnapshot&&sameArticle(item.url,canonical);
+   if(isSnapshot?!isVerifiedSnapshot:canonical&&!sameArticle(url,canonical))continue;
+   const publisherSummary=wsj&&(sameArticle(item.url,url)||isVerifiedSnapshot)
+     ? publisherQuickSummary(html,item.url) : '';
+   if(publisherSummary)return {text:'',publisherSummary};
    const text=articleText(html);
-   if(text.length>=450&&!needsSummaryRepair(text.slice(0,260)))return text;
+   if(text.length>=450&&!needsSummaryRepair(text.slice(0,650))&&
+      !/^(?:404\s+)?page not found\b|^site unavailable\b/i.test(text)){
+    if(!wsj)return {text,publisherSummary:''};
+    fallbackText ||= text;
+   }
   }catch(error){console.warn('Article extraction unavailable',String(error));}
  }
- return '';
+ return {text:fallbackText,publisherSummary:''};
 }
 function responseText(result) {
  const value=result?.choices?.[0]?.message?.content??result?.response??'';
@@ -93,15 +116,16 @@ export async function compareSummaries(env,item,source,oldSummary,newSummary){
 export async function autoReviewNewSummary(env,created,fetcher=fetch){
  // Only new, still-undecided bookmarks. Never replace an edited summary.
  const original=String(created.summary||'').trim();
- let source='',generated='';
- try{source=await fetchReadableArticle(created,fetcher);}catch(error){console.warn(String(error));}
- if(source){
-  try{generated=await summarizeSubmittedArticle(env,created,source);}
+ let source='',publisherSummary='',generated='';
+ try{({text:source,publisherSummary}=await fetchReadableArticle(created,fetcher));}catch(error){console.warn(String(error));}
+ if(source&&env.AI){
+  try{generated=await summarizeSubmittedArticle(env,created,source,18000);}
   catch(error){console.warn('Automatic summary generation failed',String(error));}
  }
  let replacement=original;
- if(!generated&&!original)return;
- if(needsSummaryRepair(original))replacement=generated||'';
+ if(!publisherSummary&&!generated&&!original)return;
+ if(publisherSummary)replacement=publisherSummary;
+ else if(needsSummaryRepair(original))replacement=generated||'';
  else {
   try{
    const decision=await compareSummaries(env,created,source,original,generated);

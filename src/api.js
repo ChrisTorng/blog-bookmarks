@@ -3,7 +3,7 @@ import {suggestBookmarkTags,mergeBookmarkTags} from './classify.js';
 import {bulkStatus,updateTags} from './ingest.js';
 import {review,invalidSummary} from './metadata.js';
 import {lookupReference} from './references.js';
-import {repairCandidates,readSubmittedContent,commitArticleSummary,summarizeSubmittedArticle} from './summary-repair.js';
+import {needsSummaryRepair,repairCandidates,readSubmittedContent,commitArticleSummary,summarizeSubmittedArticle} from './summary-repair.js';
 import {autoReviewNewSummary} from './auto-summary.js';
 import {validIngestToken,rotateIngestToken} from './token.js';
 import {list,get,byUrl,create,patch,remove,tagsList,renameTag,reviewWindow,createAndAttachTag} from './data.js';
@@ -32,7 +32,7 @@ async function createCategorized(env,raw,ctx) {
   // Preserve manual tags. The placeholder allows the user to revisit AI failures.
   const tags=mergeBookmarkTags(raw.tags,inferred);
   const saved=await create(env.DB,{...raw,tags:tags.length?tags:['default']});
-  if(!saved.alreadyExists&&ctx?.waitUntil&&env.AI){
+  if(!saved.alreadyExists&&ctx?.waitUntil&&(env.AI||needsSummaryRepair(saved.item.summary))){
     ctx.waitUntil(autoReviewNewSummary(env,saved.item).catch(e=>console.warn('New bookmark summary review failed',String(e))));
   }
   return saved;

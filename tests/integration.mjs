@@ -93,6 +93,15 @@ try{
  },true)).status,400);
  assert.equal((await req('/bookmarks/api/admin/'+untaggedId,'PATCH',{status:3},true)).body.status,3);
  assert.equal((await req('/bookmarks/api/admin/'+untaggedId,'DELETE',undefined,true)).body.deleted,true);
+ const invalid=await req('/bookmarks/api/admin/','POST',{
+  url:'https://example.org/blocked-summary',title:'Blocked summary',summary:'請啟用 JS 並關閉任何廣告攔截器',tags:['AI']
+ },true);
+ for(const stage of [2,3,4]){
+  const blocked=await req('/bookmarks/api/admin/'+invalid.body.item.id,'PATCH',{status:stage},true);
+  assert.equal(blocked.status,400,blocked.text);
+  assert.match(blocked.body.error,/摘要/);
+ }
+ assert.equal((await req('/bookmarks/api/admin/'+invalid.body.item.id,'DELETE',undefined,true)).body.deleted,true);
  const blank=await req('/bookmarks/api/admin/','POST',{url:'https://example.org/no-summary',title:'Missing summary',summary:''},true);
  const blankId=blank.body.item.id;
  const blocked=await req('/bookmarks/api/admin/'+blankId,'PATCH',{status:2},true);
