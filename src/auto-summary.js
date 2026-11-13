@@ -79,7 +79,8 @@ export async function fetchReadableArticle(item,fetcher=fetch){
      ? publisherQuickSummary(html,item.url) : '';
    if(publisherSummary)return {text:'',publisherSummary};
    const text=articleText(html);
-   if(text.length>=450&&!needsSummaryRepair(text.slice(0,650))){
+   if(text.length>=450&&!needsSummaryRepair(text.slice(0,650))&&
+      !/^(?:404\s+)?page not found\b|^site unavailable\b/i.test(text)){
     if(!wsj)return {text,publisherSummary:''};
     fallbackText ||= text;
    }
