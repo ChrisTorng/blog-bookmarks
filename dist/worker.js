@@ -25417,6 +25417,136 @@ async function ensureSlug(db, table2, id, title) {
 }
 __name(ensureSlug, "ensureSlug");
 
+// src/metadata.js
+function invalidSummary(s) {
+  const text2 = String(s || "").trim();
+  return !text2 || text2.length < 15 || /^(?:抱歉|sorry)$/i.test(text2) || text2.length < 500 && /(?:請稍等.{0,100}(?:連線安全|網站連線)|checking (?:your browser|if the site connection is secure)|just a moment|enable cookies to continue|此網站正在驗證)/i.test(text2) || /(?:請確保.{0,30}瀏覽器|啟用.{0,15}JavaScript|請啟用\s*JS|沒有權限存取|請登入.{0,30}帳號|繼續操作，請登入|協助.{0,20}help\.ft\.com|Google 系統偵測到|解開 CAPTCHA 後|access denied|verify you are human|解開 CAPTCHA|請完成 CAPTCHA|captcha required|captcha challenge|rate limit exceeded)/i.test(text2);
+}
+__name(invalidSummary, "invalidSummary");
+var clean = /* @__PURE__ */ __name((s) => String(s || "").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim(), "clean");
+function metadata(html) {
+  const tags = [...html.matchAll(/<meta\b[^>]*>/gi)].map((m) => m[0]);
+  function find(name) {
+    const tag = tags.find((t) => t.includes('property="' + name + '"') || t.includes('name="' + name + '"'));
+    return tag?.match(/content=["']([^"']*)["']/i)?.[1] || "";
+  }
+  __name(find, "find");
+  return {
+    title: clean(find("og:title") || html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]),
+    description: clean(find("og:description") || find("description")),
+    originalUrl: clean(find("og:url"))
+  };
+}
+__name(metadata, "metadata");
+function sameArticle(a, b) {
+  try {
+    const x = new URL(a), y = new URL(b);
+    return x.hostname === y.hostname && x.pathname.replace(/\/+$/, "") === y.pathname.replace(/\/+$/, "") && x.search === y.search;
+  } catch {
+    return false;
+  }
+}
+__name(sameArticle, "sameArticle");
+function trustedTitle(title) {
+  return title.length >= 5 && title.length <= 500 && !/^(?:home|welcome|sign in|login|access denied|403|404|just a moment|hacker news|reddit|verification required|enable javascript)/i.test(title);
+}
+__name(trustedTitle, "trustedTitle");
+async function inspect(url, fetcher = fetch) {
+  const parsed = new URL(url);
+  if (parsed.protocol !== "https:" || !parsed.hostname.includes(".") || parsed.username || parsed.password || parsed.port || /^(?:localhost|[0-9.]+)$/.test(parsed.hostname) || /\.(?:local|internal|test|localhost)$/.test(parsed.hostname)) return null;
+  const res = await fetcher(url, { redirect: "manual" });
+  if (!res.ok || !(res.headers.get("Content-Type") || "").includes("text/html")) return null;
+  const data = metadata((await res.text()).slice(0, 1e6));
+  if (data.originalUrl && !sameArticle(url, new URL(data.originalUrl, url).href)) return null;
+  return trustedTitle(data.title) ? data : null;
+}
+__name(inspect, "inspect");
+async function hnExact(url, fetcher = fetch) {
+  const u = new URL(url);
+  if (u.hostname === "news.ycombinator.com" && u.pathname === "/item") {
+    const id = u.searchParams.get("id");
+    if (!/^[0-9]+$/.test(id || "")) return null;
+    const r2 = await fetcher("https://hacker-news.firebaseio.com/v0/item/" + id + ".json");
+    const x = r2.ok ? await r2.json() : null;
+    return x?.id === Number(id) && trustedTitle(x.title || "") ? { title: x.title, source: "hn-item-id" } : null;
+  }
+  const q = new URL("https://hn.algolia.com/api/v1/search");
+  q.searchParams.set("query", u.hostname + u.pathname);
+  q.searchParams.set("tags", "story");
+  q.searchParams.set("hitsPerPage", "50");
+  const r = await fetcher(q.href);
+  if (!r.ok) return null;
+  const matches = ((await r.json()).hits || []).filter((x) => x.url && sameArticle(url, x.url) && trustedTitle(x.title || ""));
+  return matches.length === 1 ? { title: matches[0].title, source: "hn-exact-url" } : null;
+}
+__name(hnExact, "hnExact");
+async function review(item, transport = fetch) {
+  let publisher = null, hn = null, archive = null, betaCat = null;
+  try {
+    publisher = await inspect(item.url, transport);
+  } catch {
+  }
+  try {
+    hn = await hnExact(item.url, transport);
+  } catch {
+  }
+  try {
+    const target = new URL(item.redirect_url);
+    if (!publisher && ["archive.is", "archive.ph", "web.archive.org"].includes(target.hostname) && !target.pathname.startsWith("/submit/")) {
+      const page = await inspect(target.href, transport);
+      if (page && page.originalUrl && sameArticle(item.url, page.originalUrl)) archive = page;
+    }
+  } catch {
+  }
+  if (!hn && !publisher && !archive) {
+    try {
+      betaCat = await betaCatExact(item, transport);
+    } catch {
+    }
+  }
+  const title = hn?.title || publisher?.title || archive?.title || betaCat?.title || null;
+  const description = publisher?.description || archive?.description || null;
+  return {
+    verified: !!title,
+    title_original: title,
+    source: hn?.source || (publisher ? "publisher-exact-url" : archive ? "archive-exact-url" : betaCat?.source || null),
+    summary: description && !invalidSummary(description) ? description : null,
+    invalid_existing_summary: invalidSummary(item.summary)
+  };
+}
+__name(review, "review");
+async function betaCatExact(item, transport = fetch) {
+  if (!item.created_at) return null;
+  const t = Date.parse(item.created_at);
+  if (!Number.isFinite(t)) return null;
+  const dates = [0, -1, -2, -3].map((n) => new Date(t + n * 864e5).toISOString().slice(0, 10));
+  for (const date of dates) {
+    try {
+      const page = await transport("https://hackernews.betacat.io/daily/" + date + "/", { redirect: "manual" });
+      if (!page.ok) continue;
+      const html = (await page.text()).slice(0, 15e5);
+      const links = [...html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)];
+      const matching = links.filter((m) => m[1].includes("post-url")).filter((m) => {
+        const url = m[1].match(/href=["']([^"']+)["']/)?.[1];
+        return url && sameArticle(item.url, url.replace(/&amp;/g, "&"));
+      });
+      if (matching.length !== 1) continue;
+      const title = clean(matching[0][2]);
+      if (trustedTitle(title)) return { title, source: "betacat-exact-url", date };
+    } catch {
+    }
+  }
+  return null;
+}
+__name(betaCatExact, "betaCatExact");
+var commentaryOpening = /^[#*\s]*(?:根據(?:你)?(?:所)?提供的(?:文本(?:內容)?|文字(?:內容)?|內容|資料|文章)[，,。]|(?:這些|各個)段落(?:之間)?(?:存在|有|互相)|段落\s*\d+\s*(?:指出|提到|指稱|表示)|(?:based on|according to) the (?:provided|given) (?:text|passages?)[,.])/i;
+var isSummaryCommentary = /* @__PURE__ */ __name((summary) => commentaryOpening.test(summary), "isSummaryCommentary");
+function needsSummaryRepair(summary) {
+  const s = String(summary || "").trim();
+  return invalidSummary(s) || isSummaryCommentary(s) || /^(?:常見漏洞與暴露(?:（CVE）)?|no description|not found)$/i.test(s) || /(?:Google 系統偵測到來自|解開 CAPTCHA 後|請啟用 JS 並關閉|繼續操作，請登入你的 Reddit 帳號|你沒有權限存取這個伺服器|如需協助，請造訪 help\.ft\.com|請確保您的瀏覽器支援 JavaScript 和 Cookies)/i.test(s);
+}
+__name(needsSummaryRepair, "needsSummaryRepair");
+
 // src/data.js
 var fields = "b.id,b.slug,b.url,b.normalized_url,b.redirect_url,b.title,b.title_original,b.title_zh,b.summary,b.source,b.reference_links,CASE WHEN b.stage=1 AND b.deferred=1 THEN 5 ELSE b.stage END AS status,b.created_at,b.updated_at,b.read_at,b.published_at,b.starred_at, CASE WHEN b.stage=4 THEN COALESCE(b.starred_at,b.published_at,b.created_at) WHEN b.stage=3 THEN COALESCE(b.published_at,b.created_at) ELSE b.created_at END AS status_at,COALESCE((SELECT json_group_array(t.name) FROM bookmark_tags bt JOIN tags t ON t.id=bt.tag_id WHERE bt.bookmark_id=b.id),'[]') AS tags";
 var decode = /* @__PURE__ */ __name((row) => {
@@ -25598,8 +25728,9 @@ async function patch(db, id, raw) {
   if (!current) return null;
   const desired = "status" in raw ? Number(raw.status) : Number(current.status);
   const finalTags = "tags" in raw ? Array.isArray(raw.tags) ? raw.tags.map((t) => String(t).trim()).filter(Boolean) : [] : current.tags;
-  if ([2, 3, 4].includes(desired) && ("status" in raw || "summary" in raw) && !String(raw.summary ?? current.summary ?? "").trim())
-    throw new Error("\u6458\u8981\u4E0D\u53EF\u7A7A\u767D\uFF0C\u8ACB\u5148\u88DC\u4E0A\u6216\u8CBC\u5168\u6587\u91CD\u65B0\u6458\u8981");
+  const summary = "summary" in raw ? raw.summary : current.summary;
+  if ([2, 3, 4].includes(desired) && ("status" in raw || "summary" in raw) && needsSummaryRepair(summary))
+    throw new Error("\u6458\u8981\u7A7A\u767D\u6216\u4F86\u6E90\u7121\u6548\uFF0C\u8ACB\u5148\u88DC\u4E0A\u6216\u8CBC\u5168\u6587\u91CD\u65B0\u6458\u8981");
   if (desired >= 3 && desired <= 4 && !finalTags.some((tag) => String(tag).toLowerCase() !== "default"))
     throw new Error("\u516C\u958B\u6216\u63A8\u85A6\u5FC5\u9808\u5148\u9078\u64C7\u81F3\u5C11\u4E00\u500B\u5206\u985E");
   if ("status" in raw) {
@@ -31622,129 +31753,6 @@ async function isAdmin(req, env) {
 }
 __name(isAdmin, "isAdmin");
 
-// src/metadata.js
-function invalidSummary(s) {
-  const text2 = String(s || "").trim();
-  return !text2 || text2.length < 15 || /^(?:抱歉|sorry)$/i.test(text2) || text2.length < 500 && /(?:請稍等.{0,100}(?:連線安全|網站連線)|checking (?:your browser|if the site connection is secure)|just a moment|enable cookies to continue|此網站正在驗證)/i.test(text2) || /(?:請確保.{0,30}瀏覽器|啟用.{0,15}JavaScript|請啟用\s*JS|沒有權限存取|請登入.{0,30}帳號|繼續操作，請登入|協助.{0,20}help\.ft\.com|Google 系統偵測到|解開 CAPTCHA 後|access denied|verify you are human|解開 CAPTCHA|請完成 CAPTCHA|captcha required|captcha challenge|rate limit exceeded)/i.test(text2);
-}
-__name(invalidSummary, "invalidSummary");
-var clean = /* @__PURE__ */ __name((s) => String(s || "").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim(), "clean");
-function metadata(html) {
-  const tags = [...html.matchAll(/<meta\b[^>]*>/gi)].map((m) => m[0]);
-  function find(name) {
-    const tag = tags.find((t) => t.includes('property="' + name + '"') || t.includes('name="' + name + '"'));
-    return tag?.match(/content=["']([^"']*)["']/i)?.[1] || "";
-  }
-  __name(find, "find");
-  return {
-    title: clean(find("og:title") || html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]),
-    description: clean(find("og:description") || find("description")),
-    originalUrl: clean(find("og:url"))
-  };
-}
-__name(metadata, "metadata");
-function sameArticle(a, b) {
-  try {
-    const x = new URL(a), y = new URL(b);
-    return x.hostname === y.hostname && x.pathname.replace(/\/+$/, "") === y.pathname.replace(/\/+$/, "") && x.search === y.search;
-  } catch {
-    return false;
-  }
-}
-__name(sameArticle, "sameArticle");
-function trustedTitle(title) {
-  return title.length >= 5 && title.length <= 500 && !/^(?:home|welcome|sign in|login|access denied|403|404|just a moment|hacker news|reddit|verification required|enable javascript)/i.test(title);
-}
-__name(trustedTitle, "trustedTitle");
-async function inspect(url, fetcher = fetch) {
-  const parsed = new URL(url);
-  if (parsed.protocol !== "https:" || !parsed.hostname.includes(".") || parsed.username || parsed.password || parsed.port || /^(?:localhost|[0-9.]+)$/.test(parsed.hostname) || /\.(?:local|internal|test|localhost)$/.test(parsed.hostname)) return null;
-  const res = await fetcher(url, { redirect: "manual" });
-  if (!res.ok || !(res.headers.get("Content-Type") || "").includes("text/html")) return null;
-  const data = metadata((await res.text()).slice(0, 1e6));
-  if (data.originalUrl && !sameArticle(url, new URL(data.originalUrl, url).href)) return null;
-  return trustedTitle(data.title) ? data : null;
-}
-__name(inspect, "inspect");
-async function hnExact(url, fetcher = fetch) {
-  const u = new URL(url);
-  if (u.hostname === "news.ycombinator.com" && u.pathname === "/item") {
-    const id = u.searchParams.get("id");
-    if (!/^[0-9]+$/.test(id || "")) return null;
-    const r2 = await fetcher("https://hacker-news.firebaseio.com/v0/item/" + id + ".json");
-    const x = r2.ok ? await r2.json() : null;
-    return x?.id === Number(id) && trustedTitle(x.title || "") ? { title: x.title, source: "hn-item-id" } : null;
-  }
-  const q = new URL("https://hn.algolia.com/api/v1/search");
-  q.searchParams.set("query", u.hostname + u.pathname);
-  q.searchParams.set("tags", "story");
-  q.searchParams.set("hitsPerPage", "50");
-  const r = await fetcher(q.href);
-  if (!r.ok) return null;
-  const matches = ((await r.json()).hits || []).filter((x) => x.url && sameArticle(url, x.url) && trustedTitle(x.title || ""));
-  return matches.length === 1 ? { title: matches[0].title, source: "hn-exact-url" } : null;
-}
-__name(hnExact, "hnExact");
-async function review(item, transport = fetch) {
-  let publisher = null, hn = null, archive = null, betaCat = null;
-  try {
-    publisher = await inspect(item.url, transport);
-  } catch {
-  }
-  try {
-    hn = await hnExact(item.url, transport);
-  } catch {
-  }
-  try {
-    const target = new URL(item.redirect_url);
-    if (!publisher && ["archive.is", "archive.ph", "web.archive.org"].includes(target.hostname) && !target.pathname.startsWith("/submit/")) {
-      const page = await inspect(target.href, transport);
-      if (page && page.originalUrl && sameArticle(item.url, page.originalUrl)) archive = page;
-    }
-  } catch {
-  }
-  if (!hn && !publisher && !archive) {
-    try {
-      betaCat = await betaCatExact(item, transport);
-    } catch {
-    }
-  }
-  const title = hn?.title || publisher?.title || archive?.title || betaCat?.title || null;
-  const description = publisher?.description || archive?.description || null;
-  return {
-    verified: !!title,
-    title_original: title,
-    source: hn?.source || (publisher ? "publisher-exact-url" : archive ? "archive-exact-url" : betaCat?.source || null),
-    summary: description && !invalidSummary(description) ? description : null,
-    invalid_existing_summary: invalidSummary(item.summary)
-  };
-}
-__name(review, "review");
-async function betaCatExact(item, transport = fetch) {
-  if (!item.created_at) return null;
-  const t = Date.parse(item.created_at);
-  if (!Number.isFinite(t)) return null;
-  const dates = [0, -1, -2, -3].map((n) => new Date(t + n * 864e5).toISOString().slice(0, 10));
-  for (const date of dates) {
-    try {
-      const page = await transport("https://hackernews.betacat.io/daily/" + date + "/", { redirect: "manual" });
-      if (!page.ok) continue;
-      const html = (await page.text()).slice(0, 15e5);
-      const links = [...html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)];
-      const matching = links.filter((m) => m[1].includes("post-url")).filter((m) => {
-        const url = m[1].match(/href=["']([^"']+)["']/)?.[1];
-        return url && sameArticle(item.url, url.replace(/&amp;/g, "&"));
-      });
-      if (matching.length !== 1) continue;
-      const title = clean(matching[0][2]);
-      if (trustedTitle(title)) return { title, source: "betacat-exact-url", date };
-    } catch {
-    }
-  }
-  return null;
-}
-__name(betaCatExact, "betaCatExact");
-
 // src/classify.js
 var CATEGORY_GUIDANCE = Object.freeze({
   ai: "\u4EBA\u5DE5\u667A\u6167\u3001LLM\u3001\u6A5F\u5668\u5B78\u7FD2\u8207\u6838\u5FC3 AI \u61C9\u7528\uFF1B\u975E\u4EFB\u4F55\u63D0\u5230 AI \u7684\u65B0\u805E",
@@ -31964,11 +31972,6 @@ async function lookupReference(raw, transport = fetch) {
 __name(lookupReference, "lookupReference");
 
 // src/summary-repair.js
-function needsSummaryRepair(summary) {
-  const s = String(summary || "").trim();
-  return invalidSummary(s) || /^(?:常見漏洞與暴露(?:（CVE）)?|no description|not found)$/i.test(s) || /(?:Google 系統偵測到來自|解開 CAPTCHA 後|請啟用 JS 並關閉|繼續操作，請登入你的 Reddit 帳號|你沒有權限存取這個伺服器|如需協助，請造訪 help\.ft\.com|請確保您的瀏覽器支援 JavaScript 和 Cookies)/i.test(s);
-}
-__name(needsSummaryRepair, "needsSummaryRepair");
 async function repairCandidates(db) {
   const result = await db.prepare("SELECT id,stage,title,title_original,title_zh,url,redirect_url,summary,created_at FROM bookmarks ORDER BY created_at ASC,id ASC").all();
   const items = result.results.filter((x) => needsSummaryRepair(x.summary));
@@ -31992,6 +31995,43 @@ async function infer(env, system, user, maxTokens) {
   throw Error("\u6458\u8981\u6A21\u578B\u672A\u56DE\u50B3\u5B8C\u6574\u6587\u5B57\uFF0C\u539F\u6587\u4ECD\u4FDD\u7559\u5728\u672C\u6A5F\u8349\u7A3F");
 }
 __name(infer, "infer");
+var quickHeading = /^\s*(?:#{1,6}\s+)?(?:Quick Summary|Key Points|快速摘要|重點摘要|要點)\s*[:：]?\s*$/i;
+var quickEnd = /^\s*(?:See more|Read more|Show more|See less|Show less|What[’']s this\?|查看更多|檢視更多|顯示更多|查看完整摘要|收合|顯示較少)\s*$/i;
+function wsjSummaryBlock(source, url) {
+  if (!/^https:\/\/(?:www\.)?wsj\.com\//i.test(url || "")) return null;
+  const lines = source.split("\n");
+  const start = lines.findIndex((line) => quickHeading.test(line));
+  if (start < 0 || lines.slice(0, start).join("\n").length > 6e3) return null;
+  const end = lines.findIndex((line, i) => i > start && i <= start + 12 && quickEnd.test(line));
+  if (end < 0) return null;
+  const text2 = lines.slice(start + 1, end).map((line) => line.trim()).filter(Boolean).join("\n");
+  const complete = text2.length >= 25 && text2.length <= 900 && /[。！？.!?][”"’）)]?$/.test(text2) && !/(?:…|\.{3})\s*(?:$|\n)/.test(text2) && !needsSummaryRepair(text2);
+  return { summary: complete ? text2 : "", body: lines.slice(end + 1).join("\n").trimStart() };
+}
+__name(wsjSummaryBlock, "wsjSummaryBlock");
+function wsjQuickSummary(source, url) {
+  return wsjSummaryBlock(source, url)?.summary || "";
+}
+__name(wsjQuickSummary, "wsjQuickSummary");
+function trimCopiedPage(source) {
+  const footer = /^(?:版權所有\s*©|Copyright\s+©|(?:Hide|Show) Conversation\s*\([\d,.]+[kK]?\)|Conversation\s*[\d,.]+[kK]?\s+Comments|#{1,6}\s*\d[\d,.]*\s+(?:comments?|則留言|條留言)\s*[:：]?\s*$)/im;
+  const match2 = [...source.matchAll(new RegExp(footer, "gim"))].find((m) => source.slice(0, m.index).trim().length >= 600);
+  const beforeFooter = match2 ? source.slice(0, match2.index).trimEnd() : source;
+  const lines = beforeFooter.split("\n").map((line) => line.trim()).filter(Boolean);
+  const isProse = /* @__PURE__ */ __name((line) => line.length >= 65 && /[。！？.!?]/.test(line), "isProse");
+  const isMenu = /* @__PURE__ */ __name((lines2) => lines2.length >= 6 && lines2.every((line) => line.length <= 32 && !/[。！？!?]|[.]$/.test(line)), "isMenu");
+  const first = lines.findIndex(isProse);
+  const last = lines.findLastIndex(isProse);
+  if (first < 0 || last <= first) return beforeFooter;
+  const start = isMenu(lines.slice(0, first)) ? first : 0;
+  const end = isMenu(lines.slice(last + 1)) ? last + 1 : lines.length;
+  if (start === 0 && end === lines.length) return beforeFooter;
+  const rawLines = beforeFooter.split("\n");
+  const firstLine = start ? rawLines.findIndex((line) => line.trim() === lines[first]) : 0;
+  const lastLine = end === lines.length ? rawLines.length : rawLines.findLastIndex((line) => line.trim() === lines[last]) + 1;
+  return rawLines.slice(firstLine, lastLine).join("\n").trim();
+}
+__name(trimCopiedPage, "trimCopiedPage");
 function splitByLength(value, max = 11e3) {
   const segments = [];
   let rest = value;
@@ -32006,22 +32046,43 @@ function splitByLength(value, max = 11e3) {
   return segments;
 }
 __name(splitByLength, "splitByLength");
-async function summarizeSubmittedArticle(env, item, text2) {
-  if (!env.AI) throw Error("Workers AI \u5C1A\u672A\u8A2D\u5B9A");
+async function summarizeSubmittedArticle(env, item, text2, timeoutMs = 25e3) {
   const source = String(text2 || "").replace(/\r\n?/g, "\n").trim();
-  if (source.length < 60) throw Error("\u539F\u6587\u4E0D\u8DB3 60 \u5B57\uFF0C\u8ACB\u8CBC\u5165\u6587\u7AE0\u4E3B\u8981\u5167\u6587");
   if (source.length > 15e4) throw Error("\u539F\u6587\u8D85\u904E 15 \u842C\u5B57\u5143\uFF0C\u8ACB\u5206\u6BB5\u7CBE\u7C21\u5F8C\u518D\u8CBC\u5165");
-  if (needsSummaryRepair(source) && source.length < 300) throw Error("\u8CBC\u5165\u7684\u5167\u5BB9\u7591\u4F3C\u4ECD\u70BA\u5C01\u9396\u6216\u9A57\u8B49\u756B\u9762");
+  if (source.length >= 60 && needsSummaryRepair(source) && source.length < 300) throw Error("\u8CBC\u5165\u7684\u5167\u5BB9\u7591\u4F3C\u4ECD\u70BA\u5C01\u9396\u6216\u9A57\u8B49\u756B\u9762");
+  const quick = wsjSummaryBlock(source, item.url);
+  if (quick?.summary) return quick.summary;
+  const article = trimCopiedPage(quick?.body ?? source);
+  if (article.length < 60) throw Error("\u539F\u6587\u4E0D\u8DB3 60 \u5B57\uFF0C\u8ACB\u8CBC\u5165\u6587\u7AE0\u4E3B\u8981\u5167\u6587");
+  if (!env.AI) throw Error("Workers AI \u5C1A\u672A\u8A2D\u5B9A");
+  let timeout;
+  try {
+    return await Promise.race([
+      summarizeArticleBody(env, item, article),
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(Error("\u91CD\u65B0\u6458\u8981\u903E\u6642\uFF0C\u539F\u6587\u4ECD\u4FDD\u7559\u5728\u672C\u6A5F\u8349\u7A3F\uFF0C\u8ACB\u7A0D\u5F8C\u91CD\u8A66")), timeoutMs);
+      })
+    ]);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+__name(summarizeSubmittedArticle, "summarizeSubmittedArticle");
+function stripSummaryPreamble(text2) {
+  return text2.replace(/^(?:#{1,6}\s*|\*{1,2})?(?:以下(?:是|為).{0,18}(?:摘要|重點)|(?:文章|新聞|報導|繁體中文)?摘要|Summary|Here(?:'s| is) (?:the|a) summary)\s*[*：:\s]+/i, "").trim();
+}
+__name(stripSummaryPreamble, "stripSummaryPreamble");
+async function summarizeArticleBody(env, item, article) {
   const title = item.title_original || item.title;
-  const parts = splitByLength(source);
-  let material = source;
+  const parts = splitByLength(article);
+  let material = article;
   if (parts.length > 1) {
     const extracted = new Array(parts.length);
     for (let i = 0; i < parts.length; i += 3) {
       const slice = parts.slice(i, i + 3);
       const values = await Promise.all(slice.map((part, j) => infer(
         env,
-        "\u4F60\u662F\u7E41\u9AD4\u4E2D\u6587\u6587\u7AE0\u7B46\u8A18\u54E1\u3002\u50C5\u6839\u64DA\u63D0\u4F9B\u7684\u539F\u6587\u7247\u6BB5\uFF0C\u4EE5\u4E0D\u8D85\u904E 200 \u500B\u4E2D\u6587\u5B57\u6574\u7406\u6700\u91CD\u8981\u7684\u5177\u9AD4\u8981\u9EDE\uFF0C\u4FDD\u7559\u95DC\u9375\u6578\u5B57\u53CA\u6280\u8853\u7D30\u7BC0\u3002\u82E5\u662F\u7559\u8A00\uFF0C\u5340\u5206\u767C\u8A00\u8005\u8207\u4E3B\u5F35\u3002\u52FF\u6DFB\u52A0\u539F\u6587\u6C92\u6709\u7684\u4E8B\u5BE6\u3002\u53EA\u8F38\u51FA\u7B46\u8A18\u6587\u5B57\u3002",
+        "\u4F60\u662F\u7E41\u9AD4\u4E2D\u6587\u6587\u7AE0\u7B46\u8A18\u54E1\u3002\u50C5\u6839\u64DA\u63D0\u4F9B\u7684\u539F\u6587\u7247\u6BB5\uFF0C\u4EE5\u4E0D\u8D85\u904E 200 \u500B\u4E2D\u6587\u5B57\u6574\u7406\u6700\u91CD\u8981\u7684\u5177\u9AD4\u8981\u9EDE\uFF0C\u4FDD\u7559\u95DC\u9375\u6578\u5B57\u53CA\u6280\u8853\u7D30\u7BC0\u3002\u53EA\u6574\u7406\u6587\u7AE0\u6B63\u6587\u3002\u7565\u904E\u4F5C\u8005\u7C21\u4ECB\u3001\u8B80\u8005\u7559\u8A00\u3001\u5C0E\u89BD\u3001\u63A8\u85A6\u6587\u7AE0\u53CA\u7DB2\u9801\u5B58\u6A94\u4ECB\u9762\u3002\u52FF\u6DFB\u52A0\u539F\u6587\u6C92\u6709\u7684\u4E8B\u5BE6\u3002\u53EA\u8F38\u51FA\u7B46\u8A18\u6587\u5B57\u3002",
         JSON.stringify({ title, part: i + j + 1, total: parts.length, text: part }),
         380
       )));
@@ -32031,17 +32092,16 @@ async function summarizeSubmittedArticle(env, item, text2) {
     }
     material = extracted.map((x, i) => "\u6BB5\u843D " + (i + 1) + "\uFF1A" + x).join("\n");
   }
-  const summary = await infer(
-    env,
-    "\u8ACB\u4EE5\u53F0\u7063\u7E41\u9AD4\u4E2D\u6587\u70BA\u6587\u7AE0\u64B0\u5BEB\u5FE0\u5BE6\u6458\u8981\uFF0C\u7D04 100 \u81F3 220 \u500B\u4E2D\u6587\u5B57\u3002\u4EE5\u6587\u7AE0\u6B63\u6587\u7684\u4E3B\u5F35\u3001\u91CD\u8981\u7D30\u7BC0\u8207\u7D50\u8AD6\u70BA\u4E3B\u3002\u82E5\u6709\u7559\u8A00\uFF0C\u53EA\u88DC\u5145\u8207\u4E3B\u984C\u76F4\u63A5\u76F8\u95DC\u7684\u6F84\u6E05\uFF0C\u4E26\u6A19\u660E\u662F\u8AB0\u7684\u8AAA\u6CD5\u3002\u4FDD\u7559\u95DC\u9375\u6578\u5B57\u3001\u6280\u8853\u540D\u7A31\u53CA\u9650\u5236\u3002\u4E0D\u8981\u5957\u8A71\u3001\u4E0D\u8981\u865B\u69CB\u4E8B\u5BE6\u3001\u4E0D\u8981\u5F15\u7528\u7121\u95DC\u7DB2\u9801\u5C0E\u822A\u6216\u5EE3\u544A\u3002\u53EA\u8F38\u51FA\u6458\u8981\u6B63\u6587\uFF0C\u53EF\u4F7F\u7528 Markdown\u3002",
-    JSON.stringify({ title, url: item.url, article: material }),
-    600
-  );
+  const instructions = "\u4EE5\u53F0\u7063\u7E41\u9AD4\u4E2D\u6587\uFF0C\u7528\u5169\u5230\u4E09\u53E5\u8A71\u6458\u8981\u6587\u7AE0\u3002\u7B2C\u4E00\u53E5\u76F4\u63A5\u5BEB\u4E3B\u8981\u4E8B\u4EF6\u6216\u767C\u73FE\uFF0C\u4E0D\u52A0\u6A19\u984C\u3001\u524D\u8A00\u6216\u81EA\u6211\u8AAA\u660E\u3002\u4FDD\u7559\u5FC5\u8981\u7684\u6578\u5B57\u53CA\u9650\u5236\uFF0C\u6E05\u695A\u6B78\u5C6C\u5F15\u8FF0\u8207\u5C1A\u672A\u8B49\u5BE6\u7684\u6307\u63A7\u3002\u82E5\u8F38\u5165\u6709\u591A\u500B\u7247\u6BB5\uFF0C\u5B83\u5011\u90FD\u4F86\u81EA\u540C\u4E00\u7BC7\u6587\u7AE0\u3002\u53EA\u4F9D\u6B63\u6587\u6458\u8981\uFF0C\u5FFD\u7565\u7559\u8A00\u3001\u4F5C\u8005\u7C21\u4ECB\u3001\u5C0E\u89BD\u3001\u5EE3\u544A\u53CA\u63A8\u85A6\u6587\u7AE0\u3002";
+  const input2 = JSON.stringify({ title, url: item.url, article: material });
+  let summary = stripSummaryPreamble(await infer(env, instructions, input2, 600));
+  if (isSummaryCommentary(summary))
+    summary = stripSummaryPreamble(await infer(env, instructions + "\u53EA\u5BEB\u6587\u7AE0\u672C\u8EAB\u7684\u4E3B\u4E8B\u4EF6\u8207\u8981\u9EDE\u3002", input2, 600));
   if (summary.length < 30 || summary.length > 1500 || needsSummaryRepair(summary))
     throw Error("\u751F\u6210\u7684\u6458\u8981\u672A\u901A\u904E\u54C1\u8CEA\u6AA2\u67E5\uFF0C\u539F\u6587\u4ECD\u4FDD\u7559\u5728\u672C\u6A5F\u8349\u7A3F");
   return summary;
 }
-__name(summarizeSubmittedArticle, "summarizeSubmittedArticle");
+__name(summarizeArticleBody, "summarizeArticleBody");
 async function commitArticleSummary(env, id, text2) {
   const item = await get(env.DB, id, true);
   if (!item) throw Error("\u66F8\u7C64\u4E0D\u5B58\u5728");
@@ -32079,8 +32139,10 @@ function safeArticleUrl(value) {
   }
 }
 __name(safeArticleUrl, "safeArticleUrl");
-function cleanText(raw) {
-  return String(raw || "").replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ").replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ").replace(/<(?:nav|footer|header|aside|svg|form)\b[^>]*>[\s\S]*?<\/(?:nav|footer|header|aside|svg|form)>/gi, " ").replace(/<\/(?:p|li|h[1-6]|div|section|blockquote)>/gi, "\n").replace(/<[^>]+>/g, " ").replace(/&#(x[\da-f]+|\d+);/gi, (_, x) => {
+function cleanText(raw, removeChrome = true) {
+  const html = String(raw || "").replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ").replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ");
+  const body = removeChrome ? html.replace(/<(?:nav|footer|header|aside|svg|form)\b[^>]*>[\s\S]*?<\/(?:nav|footer|header|aside|svg|form)>/gi, " ") : html;
+  return body.replace(/<(?:br|p|li|h[1-6]|summary|button)\b[^>]*>|<\/(?:p|li|h[1-6]|div|section|blockquote|summary|button)>/gi, "\n").replace(/<[^>]+>/g, " ").replace(/&#(x[\da-f]+|\d+);/gi, (_, x) => {
     const n = x[0].toLowerCase() === "x" ? parseInt(x.slice(1), 16) : Number(x);
     return n > 0 && n <= 1114111 ? String.fromCodePoint(n) : " ";
   }).replace(/&(?:nbsp|amp|lt|gt|quot|apos|rsquo|lsquo|ldquo|rdquo);/gi, (x) => ({
@@ -32097,6 +32159,15 @@ function cleanText(raw) {
   })[x.toLowerCase()] || " ").replace(/[ \t]{2,}/g, " ").replace(/\n\s*\n\s*\n/g, "\n\n").trim();
 }
 __name(cleanText, "cleanText");
+function publisherQuickSummary(html, url) {
+  for (const [, details] of html.matchAll(/<details\b[^>]*>([\s\S]*?)<\/details>/gi)) {
+    const text2 = cleanText(details, false);
+    const summary = wsjQuickSummary(text2 + "\nSee more", url);
+    if (summary) return summary;
+  }
+  return wsjQuickSummary(cleanText(html, false), url);
+}
+__name(publisherQuickSummary, "publisherQuickSummary");
 function articleText(html) {
   const body = String(html || "").match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1] || String(html || "").match(/<main\b[^>]*>([\s\S]*?)<\/main>/i)?.[1] || String(html || "").match(/<body\b[^>]*>([\s\S]*?)<\/body>/i)?.[1] || html;
   return cleanText(body).slice(0, 16e3);
@@ -32127,24 +32198,36 @@ async function readLimited(res, max = 36e4) {
 __name(readLimited, "readLimited");
 async function fetchReadableArticle(item, fetcher = fetch) {
   const urls = [item.url, item.redirect_url].filter(Boolean);
+  const wsj = /^https:\/\/(?:www\.)?wsj\.com\//i.test(item.url);
+  let fallbackText = "";
   for (const value of [...new Set(urls)]) {
     const url = safeArticleUrl(value);
     if (!url) continue;
+    const target = new URL(url);
+    if (/^(?:archive\.(?:is|today|ph))$/.test(target.hostname) && /^\/submit(?:\/|$)/.test(target.pathname)) continue;
     try {
-      const r = await fetcher(url, { redirect: "manual", headers: { Accept: "text/html" } });
+      const r = await fetcher(url, { redirect: "manual", headers: { Accept: "text/html" }, signal: AbortSignal.timeout(4500) });
       if (!r.ok || !/(?:text\/html|application\/xhtml\+xml)/i.test(r.headers.get("content-type") || "")) continue;
       if (Number(r.headers.get("content-length") || 0) > 1e6) continue;
-      const html = await readLimited(r);
+      const html = await readLimited(r, wsj ? 1e6 : 36e4);
       const meta = metadata(html);
       if (/^(?:just a moment|access denied|verification required|attention required|請稍等|網站安全檢查)/i.test(meta.title)) continue;
-      if (meta.originalUrl && !sameArticle(url, new URL(meta.originalUrl, url).href)) continue;
+      const canonical = meta.originalUrl ? new URL(meta.originalUrl, url).href : "";
+      const isSnapshot = wsj && /^(?:archive\.(?:is|today|ph)|web\.archive\.org)$/.test(new URL(url).hostname);
+      const isVerifiedSnapshot = isSnapshot && sameArticle(item.url, canonical);
+      if (isSnapshot ? !isVerifiedSnapshot : canonical && !sameArticle(url, canonical)) continue;
+      const publisherSummary = wsj && (sameArticle(item.url, url) || isVerifiedSnapshot) ? publisherQuickSummary(html, item.url) : "";
+      if (publisherSummary) return { text: "", publisherSummary };
       const text2 = articleText(html);
-      if (text2.length >= 450 && !needsSummaryRepair(text2.slice(0, 260))) return text2;
+      if (text2.length >= 450 && !needsSummaryRepair(text2.slice(0, 650)) && !/^(?:404\s+)?page not found\b|^site unavailable\b/i.test(text2)) {
+        if (!wsj) return { text: text2, publisherSummary: "" };
+        fallbackText ||= text2;
+      }
     } catch (error2) {
       console.warn("Article extraction unavailable", String(error2));
     }
   }
-  return "";
+  return { text: fallbackText, publisherSummary: "" };
 }
 __name(fetchReadableArticle, "fetchReadableArticle");
 function responseText(result) {
@@ -32176,22 +32259,23 @@ async function compareSummaries(env, item, source, oldSummary, newSummary) {
 __name(compareSummaries, "compareSummaries");
 async function autoReviewNewSummary(env, created, fetcher = fetch) {
   const original = String(created.summary || "").trim();
-  let source = "", generated = "";
+  let source = "", publisherSummary = "", generated = "";
   try {
-    source = await fetchReadableArticle(created, fetcher);
+    ({ text: source, publisherSummary } = await fetchReadableArticle(created, fetcher));
   } catch (error2) {
     console.warn(String(error2));
   }
-  if (source) {
+  if (source && env.AI) {
     try {
-      generated = await summarizeSubmittedArticle(env, created, source);
+      generated = await summarizeSubmittedArticle(env, created, source, 18e3);
     } catch (error2) {
       console.warn("Automatic summary generation failed", String(error2));
     }
   }
   let replacement = original;
-  if (!generated && !original) return;
-  if (needsSummaryRepair(original)) replacement = generated || "";
+  if (!publisherSummary && !generated && !original) return;
+  if (publisherSummary) replacement = publisherSummary;
+  else if (needsSummaryRepair(original)) replacement = generated || "";
   else {
     try {
       const decision = await compareSummaries(env, created, source, original, generated);
@@ -32240,7 +32324,7 @@ async function createCategorized(env, raw, ctx) {
   }
   const tags = mergeBookmarkTags(raw.tags, inferred);
   const saved = await create(env.DB, { ...raw, tags: tags.length ? tags : ["default"] });
-  if (!saved.alreadyExists && ctx?.waitUntil && env.AI) {
+  if (!saved.alreadyExists && ctx?.waitUntil && (env.AI || needsSummaryRepair(saved.item.summary))) {
     ctx.waitUntil(autoReviewNewSummary(env, saved.item).catch((e) => console.warn("New bookmark summary review failed", String(e))));
   }
   return saved;
