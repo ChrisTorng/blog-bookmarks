@@ -84,3 +84,10 @@ test('only accepts a WSJ summary from a snapshot that identifies the original ar
  assert.equal((await fetchReadableArticle({url,redirect_url},fetcher(url))).publisherSummary,expected);
  assert.equal((await fetchReadableArticle({url,redirect_url},fetcher(url+'4'))).publisherSummary,'');
 });
+
+
+test('rejects a soft 404 even if the surrounding page contains article recommendations',async()=>{
+ const html='<main><h1>404</h1><h2>Page Not Found</h2><p>'+('Popular articles and recommendations. ').repeat(20)+'</p></main>';
+ const response=await fetchReadableArticle({url:'https://www.wsj.com/business/missing'},async()=>new Response(html,{headers:{'content-type':'text/html'}}));
+ assert.deepEqual(response,{text:'',publisherSummary:''});
+});
