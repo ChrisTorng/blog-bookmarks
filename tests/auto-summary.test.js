@@ -26,7 +26,7 @@ test('extractor refuses unrelated canonical URLs and tries verified alternative'
    '<p>'+('This article documents concrete analysis of a software system and its implementation. ').repeat(12)+'</p>'+
    '</article></body></html>',{headers:{'content-type':'text/html'}});
  });
- assert.ok(text.length>450);
+ assert.ok(text.text.length>450);
  assert.deepEqual(urls,['https://example.org/one','https://example.org/two']);
 });
 test('extractor never accepts a verbose Cloudflare anti-bot challenge as article content',async()=>{
@@ -34,7 +34,7 @@ test('extractor never accepts a verbose Cloudflare anti-bot challenge as article
   '<p>'+('Checking if the site connection is secure before allowing access. ').repeat(16)+'</p>'+
   '</main></body></html>';
  const found=await fetchReadableArticle({url:'https://example.org/blocked'},async()=>new Response(html,{headers:{'content-type':'text/html'}}));
- assert.equal(found,'');
+ assert.deepEqual(found,{text:'',publisherSummary:''});
 });
 test('auto review clears blocking text when no valid article is available',async()=>{
  const writes=[];
@@ -61,4 +61,26 @@ test('auto review does not change an edited or decided item',async()=>{
  }};
  await autoReviewNewSummary(env,item,async()=>new Response('Blocked',{status:403}));
  assert.deepEqual(writes,[]);
+});
+
+
+test('prefers the WSJ summary even when the fetched page has little body text',async()=>{
+ const url='https://www.wsj.com/business/test-123';
+ const expected='The company said its board would meet Wednesday to review the leadership transition.';
+ const html='<html><body><article><details><summary>Quick Summary</summary>'+
+  '<p>'+expected+'</p></details></article></body></html>';
+ const fetched=await fetchReadableArticle({url},async()=>new Response(html,{headers:{'content-type':'text/html'}}));
+ assert.deepEqual(fetched,{text:'',publisherSummary:expected});
+});
+
+
+test('only accepts a WSJ summary from a snapshot that identifies the original article',async()=>{
+ const url='https://www.wsj.com/business/test-123';
+ const redirect_url='https://archive.is/example';
+ const expected='The company said its board would meet Wednesday to review the leadership transition.';
+ const fetcher=canonical=>async target=>target===url ? new Response('<article><p>'+('This is an example of a publisher article about a leadership transition. ').repeat(10)+'</p></article>',{headers:{'content-type':'text/html'}}) : new Response(
+  '<meta property="og:url" content="'+canonical+'"><h2>Key Points</h2><p>'+expected+'</p><button>See more</button>',
+  {headers:{'content-type':'text/html'}});
+ assert.equal((await fetchReadableArticle({url,redirect_url},fetcher(url))).publisherSummary,expected);
+ assert.equal((await fetchReadableArticle({url,redirect_url},fetcher(url+'4'))).publisherSummary,'');
 });
