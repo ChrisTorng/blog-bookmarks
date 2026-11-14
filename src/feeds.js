@@ -1,10 +1,7 @@
 import { esc } from './data.js';
-import { bookmarkArticleHtml, bookmarkTags } from './public-content.js';
+import { bookmarkArticleHtml, bookmarkPermalink, bookmarkTags } from './public-content.js';
 
 const siteTitle = 'ChrisTorng 學習天地';
-const publicBookmarkUrl = (base, item) => item.slug
- ? base + '/bookmarks/' + encodeURIComponent(item.slug) + '/'
- : base + '/bookmarks/view/?id=' + encodeURIComponent(item.id);
 const publicDay = (item) => (item.status_at || item.published_at || item.created_at).slice(0, 10);
 
 // Public records deliberately contain only Taiwan-local calendar dates; precise reading/
@@ -26,7 +23,7 @@ function publicationDates(items) {
 }
 
 
-export function rss(items, siteUrl, tag = '', tagLabel = '', categories = []) {
+export function rss(items, siteUrl, tag = '', tagLabel = '', categories = [], noteHtmlById = {}) {
  const base = siteUrl.replace(/\/$/, '');
  const section = tag ? (tagLabel || tag) + ' · 書籤' : '所有書籤';
  const title = section + ' RSS | ' + siteTitle;
@@ -36,8 +33,8 @@ export function rss(items, siteUrl, tag = '', tagLabel = '', categories = []) {
   + '<title>' + esc(title) + '</title><link>' + esc(feedLink) + '</link>'
   + '<description>ChrisTorng 分享的書籤</description><language>zh-TW</language>'
   + items.map((item, index) => {
-   const url = publicBookmarkUrl(base, item);
-   const content = bookmarkArticleHtml(item, categories);
+   const url = base + bookmarkPermalink(item);
+   const content = bookmarkArticleHtml(item, categories, noteHtmlById[item.id]);
    const labels = bookmarkTags(item, categories);
    // New feed is not public yet: canonical permalink is the RSS GUID.
    return '<item><title>' + esc(item.title) + '</title><link>' + esc(url) + '</link>'

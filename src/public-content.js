@@ -5,6 +5,9 @@ import { esc } from './data.js';
 // CommonMark/GFM tables and autolinks work, and soft line breaks stay legible.
 const md = new MarkdownIt({html:false,linkify:true,breaks:true,typographer:false});
 
+export const bookmarkPermalink = item => item.slug
+  ? '/bookmarks/' + encodeURIComponent(item.slug) + '/'
+  : '/bookmarks/view/?id=' + encodeURIComponent(item.id);
 export const bookmarkTarget = item => item.preferred_url || item.redirect_url || item.url;
 export const bookmarkDate = item => (item.status_at || item.published_at || item.created_at || '').slice(0,10);
 
@@ -58,7 +61,7 @@ export function renderSummary(markdown,baseUrl) {
 }
 // The article is the canonical public content contract: the Worker detail and
 // both RSS representations use this exact complete HTML, not parallel summaries.
-export function bookmarkArticleHtml(item,categories=[]) {
+export function bookmarkArticleHtml(item,categories=[],relatedNotesHtml='',permalink='') {
   const target=bookmarkTarget(item),date=bookmarkDate(item);
   const english=item.title_original && item.title_original!==item.title
     ? '<p lang="en" class="mt-1 text-sm leading-snug text-gray-600 dark:text-gray-300">'+esc(item.title_original)+'</p>' : '';
@@ -69,7 +72,13 @@ export function bookmarkArticleHtml(item,categories=[]) {
     ? '<a href="'+esc(item.url)+'" target="_blank" rel="noopener noreferrer" class="hidden max-w-full truncate underline md:inline">原始網址：'+esc(item.url)+'</a>' : '';
   const tags=bookmarkTags(item,categories).map(t=>
     '<a class="text-primary-500" href="/bookmarks/?tag='+encodeURIComponent(t.id)+'">#'+esc(t.name)+'</a>').join('');
-  const status=item.status===4?'<span class="text-primary-500">☆ 推薦</span>':'';
+  const status=item.status===4?'<span class="text-primary-500">☆ 推薦</span>':
+    item.status!==3?'<span class="text-gray-500">未公開</span>':'';
+  const referenceLink=permalink
+    ? '<a class="text-primary-500" href="'+esc(permalink)+'">書籤永久連結</a>' : '';
+  const relatedNotes=relatedNotesHtml
+    ? '<aside aria-label="引用隨筆" class="mt-3 min-w-0 rounded-r-lg border-l-4 border-primary-500 bg-gray-50/60 px-3 py-2 dark:bg-gray-800/40">'+
+      relatedNotesHtml+'</aside>' : '';
   return '<article class="border-b border-gray-300/40 py-4 dark:border-gray-700">'+
     '<div class="mb-2 flex items-center justify-between gap-3 text-xs">'+
     '<time class="text-gray-500" datetime="'+esc(date)+'">'+esc(date)+'</time>'+status+'</div>'+
@@ -77,6 +86,6 @@ export function bookmarkArticleHtml(item,categories=[]) {
     esc(target)+'" target="_blank" rel="noopener noreferrer">'+esc(item.title)+'</a></h1>'+
     english+summary+
     '<div class="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600 dark:text-gray-300">'+
-    bookmarkSource(item.url)+original+'</div>'+bookmarkReferences(item)+
-    '<div class="mt-2 flex flex-wrap items-center gap-3 text-sm">'+tags+'</div></article>';
+    bookmarkSource(item.url)+original+referenceLink+'</div>'+bookmarkReferences(item)+
+    '<div class="mt-2 flex flex-wrap items-center gap-3 text-sm">'+tags+'</div>'+relatedNotes+'</article>';
 }

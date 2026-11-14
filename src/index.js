@@ -2,6 +2,7 @@ import { list, tagsList, get, getBySlug, esc } from './data.js';
 import { publicBookmarkPage } from './public-page.js';
 import { api, opts } from './api.js';
 import { rss } from './feeds.js';
+import { relatedNoteHtml } from './note-references.js';
 
 // The HTML, JS and CSS live exclusively on GitHub Pages.
 // This Worker serves the API and the dynamic RSS feed only.
@@ -33,7 +34,8 @@ const worker = {
      const page=await list(env.DB,{tag,filter:'published',page:n});
      items.push(...page.items);
     }
-    return reply(rss(items,env.SITE_URL||'https://christorng.idv.tw',tag,tagLabel,tags),'application/rss+xml; charset=utf-8');
+    const notes=await relatedNoteHtml(env,items);
+    return reply(rss(items,env.SITE_URL||'https://christorng.idv.tw',tag,tagLabel,tags,notes),'application/rss+xml; charset=utf-8');
    }catch{return reply('RSS 暫時無法取得','text/plain; charset=utf-8',500);}
   }
   if (path === '/bookmarks/sitemap.xml' && req.method === 'GET') {
@@ -67,7 +69,8 @@ const worker = {
         const canonical = '/bookmarks/' + published.slug + '/';
         if (url.pathname !== canonical)
           return Response.redirect(url.origin + canonical,308);
-        return publicBookmarkPage(req,published,await tagsList(env.DB));
+        const [tags,notes]=await Promise.all([tagsList(env.DB),relatedNoteHtml(env,[published])]);
+        return publicBookmarkPage(req,published,tags,notes[published.id]);
       }
       return reply('找不到書籤','text/plain; charset=utf-8',404);
     }
