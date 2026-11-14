@@ -7,6 +7,7 @@ import {needsSummaryRepair,repairCandidates,readSubmittedContent,commitArticleSu
 import {autoReviewNewSummary} from './auto-summary.js';
 import {validIngestToken,rotateIngestToken} from './token.js';
 import {list,get,byUrl,create,patch,remove,tagsList,renameTag,reviewWindow,createAndAttachTag} from './data.js';
+import {bookmarkArticleHtml} from './public-content.js';
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
 export function opts(url,privateList=false){
  const filter=url.searchParams.get('filter')||(privateList?'pending':'published');
@@ -112,6 +113,18 @@ export async function api(req,env,url,ctx){
    const token=req.headers.get('Authorization')?.replace(/^Bearer\s+/i,'');
    if(!await validIngestToken(req,env))return json({error:'無效的新增 Token'},401);
    return json(await createCategorized(env,{...await input(req),source:'tampermonkey'},ctx),201);
+  }
+  // Public, live HTML representation used by Notes permalink and RSS.
+  // A private/deleted bookmark is never exposed by the embed endpoint.
+  const embed=p.match(/^\/bookmarks\/api\/embed\/([0-9a-f-]{36})\/?$/);
+  if(embed && req.method==='GET'){
+    const item=await get(env.DB,embed[1]);
+    if(!item)return json({error:'書籤未公開或不存在'},404);
+    const categories=await tagsList(env.DB);
+    return new Response(bookmarkArticleHtml(item,categories),{
+      headers:{'Content-Type':'text/html; charset=utf-8',
+        'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}
+    });
   }
   const publicDetail=p.match(/^\/bookmarks\/api\/([0-9a-f-]{36})\/?$/);
   if(publicDetail && req.method==='GET'){
