@@ -5,6 +5,9 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
+// src/worker/index.js
+import { WorkerEntrypoint } from "cloudflare:workers";
+
 // src/redirect.js
 var ARCHIVE_TODAY_HOSTS = /* @__PURE__ */ new Set([
   "www.404media.co",
@@ -25723,7 +25726,7 @@ async function create(db, raw) {
   return { item: await get(db, id, true), alreadyExists: false };
 }
 __name(create, "create");
-async function patch(db, id, raw) {
+async function patch(db, id, raw, hasNoteReference) {
   const current = await get(db, id, true);
   if (!current) return null;
   const desired = "status" in raw ? Number(raw.status) : Number(current.status);
@@ -25734,16 +25737,19 @@ async function patch(db, id, raw) {
   if (desired >= 3 && desired <= 4 && !finalTags.some((tag) => String(tag).toLowerCase() !== "default"))
     throw new Error("\u516C\u958B\u6216\u63A8\u85A6\u5FC5\u9808\u5148\u9078\u64C7\u81F3\u5C11\u4E00\u500B\u5206\u985E");
   if ("status" in raw) {
-    const status = Number(raw.status);
-    if (!Number.isInteger(status) || status < 0 || status > 5) throw new Error("\u72C0\u614B\u7121\u6548");
+    const requested = Number(raw.status);
+    if (!Number.isInteger(requested) || requested < 0 || requested > 5) throw new Error("\u72C0\u614B\u7121\u6548");
+    const publishAsRecommendation = requested === 3 && current.status !== 3 && await hasNoteReference?.();
+    const status = publishAsRecommendation ? 4 : requested;
     const now = (/* @__PURE__ */ new Date()).toISOString();
     if (current.status !== status) {
       const stage = status === 5 ? 1 : status;
       const legacyStatus = status === 5 ? 1 : status === 2 ? 1 : status >= 3 ? status - 1 : status;
       const readAt = status === 5 ? current.read_at : status >= 1 ? current.read_at || now : null;
-      const publishAt = status >= 3 ? current.status >= 3 && current.published_at ? current.published_at : now : null;
+      const publishAt = [3, 4].includes(status) ? current.published_at || now : null;
       const starredAt = status === 4 ? current.status === 4 && current.starred_at ? current.starred_at : now : null;
-      await db.prepare("UPDATE bookmarks SET stage=?,deferred=?,status=?,read_at=?,published_at=?,starred_at=?,updated_at=? WHERE id=?").bind(stage, status === 5 ? 1 : 0, legacyStatus, readAt, publishAt, starredAt, now, id).run();
+      const updated = await db.prepare("UPDATE bookmarks SET stage=?,deferred=?,status=?,read_at=?,published_at=?,starred_at=?,updated_at=? WHERE id=? AND stage=? AND deferred=?").bind(stage, status === 5 ? 1 : 0, legacyStatus, readAt, publishAt, starredAt, now, id, current.status === 5 ? 1 : current.status, current.status === 5 ? 1 : 0).run();
+      if (!updated.meta.changes) throw new Error("\u66F8\u7C64\u72C0\u614B\u5DF2\u8B8A\u66F4\uFF0C\u8ACB\u91CD\u65B0\u8F09\u5165");
     }
   }
   if (["url", "redirect_url", "title", "title_original", "title_zh", "summary", "tags", "references"].some((x) => x in raw)) {
@@ -31567,6 +31573,7 @@ var lib_default = MarkdownIt;
 
 // src/public-content.js
 var md = new lib_default({ html: false, linkify: true, breaks: true, typographer: false });
+var bookmarkPermalink = /* @__PURE__ */ __name((item) => item.slug ? "/bookmarks/" + encodeURIComponent(item.slug) + "/" : "/bookmarks/view/?id=" + encodeURIComponent(item.id), "bookmarkPermalink");
 var bookmarkTarget = /* @__PURE__ */ __name((item) => item.preferred_url || item.redirect_url || item.url, "bookmarkTarget");
 var bookmarkDate = /* @__PURE__ */ __name((item) => (item.status_at || item.published_at || item.created_at || "").slice(0, 10), "bookmarkDate");
 function bookmarkTags(item, categories = []) {
@@ -31624,26 +31631,28 @@ function renderSummary(markdown, baseUrl) {
   });
 }
 __name(renderSummary, "renderSummary");
-function bookmarkArticleHtml(item, categories = []) {
+function bookmarkArticleHtml(item, categories = [], relatedNotesHtml = "", permalink = "") {
   const target = bookmarkTarget(item), date = bookmarkDate(item);
   const english = item.title_original && item.title_original !== item.title ? '<p lang="en" class="mt-1 text-sm leading-snug text-gray-600 dark:text-gray-300">' + esc(item.title_original) + "</p>" : "";
   const summary = item.summary ? '<div class="my-2 text-gray-700 dark:text-gray-200"><div class="prose max-w-none text-sm dark:prose-invert">' + renderSummary(item.summary, item.url) + "</div></div>" : "";
   const original = target !== item.url ? '<a href="' + esc(item.url) + '" target="_blank" rel="noopener noreferrer" class="hidden max-w-full truncate underline md:inline">\u539F\u59CB\u7DB2\u5740\uFF1A' + esc(item.url) + "</a>" : "";
   const tags = bookmarkTags(item, categories).map((t) => '<a class="text-primary-500" href="/bookmarks/?tag=' + encodeURIComponent(t.id) + '">#' + esc(t.name) + "</a>").join("");
-  const status = item.status === 4 ? '<span class="text-primary-500">\u2606 \u63A8\u85A6</span>' : "";
-  return '<article class="border-b border-gray-300/40 py-4 dark:border-gray-700"><div class="mb-2 flex items-center justify-between gap-3 text-xs"><time class="text-gray-500" datetime="' + esc(date) + '">' + esc(date) + "</time>" + status + '</div><h1 class="text-xl leading-snug font-bold"><a class="text-primary-500 hover:text-primary-600 dark:hover:text-primary-400" href="' + esc(target) + '" target="_blank" rel="noopener noreferrer">' + esc(item.title) + "</a></h1>" + english + summary + '<div class="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600 dark:text-gray-300">' + bookmarkSource(item.url) + original + "</div>" + bookmarkReferences(item) + '<div class="mt-2 flex flex-wrap items-center gap-3 text-sm">' + tags + "</div></article>";
+  const status = item.status === 4 ? '<span class="text-primary-500">\u2606 \u63A8\u85A6</span>' : item.status !== 3 ? '<span class="text-gray-500">\u672A\u516C\u958B</span>' : "";
+  const referenceLink = permalink ? '<a class="text-primary-500" href="' + esc(permalink) + '">\u66F8\u7C64\u6C38\u4E45\u9023\u7D50</a>' : "";
+  const relatedNotes = relatedNotesHtml ? '<aside aria-label="\u5F15\u7528\u96A8\u7B46" class="mt-3 min-w-0 rounded-r-lg border-l-4 border-primary-500 bg-gray-50/60 px-3 py-2 dark:bg-gray-800/40">' + relatedNotesHtml + "</aside>" : "";
+  return '<article class="border-b border-gray-300/40 py-4 dark:border-gray-700"><div class="mb-2 flex items-center justify-between gap-3 text-xs"><time class="text-gray-500" datetime="' + esc(date) + '">' + esc(date) + "</time>" + status + '</div><h1 class="text-xl leading-snug font-bold"><a class="text-primary-500 hover:text-primary-600 dark:hover:text-primary-400" href="' + esc(target) + '" target="_blank" rel="noopener noreferrer">' + esc(item.title) + "</a></h1>" + english + summary + '<div class="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600 dark:text-gray-300">' + bookmarkSource(item.url) + original + referenceLink + "</div>" + bookmarkReferences(item) + '<div class="mt-2 flex flex-wrap items-center gap-3 text-sm">' + tags + "</div>" + relatedNotes + "</article>";
 }
 __name(bookmarkArticleHtml, "bookmarkArticleHtml");
 
 // src/public-page.js
 var siteTitle = "ChrisTorng \u5B78\u7FD2\u5929\u5730";
 var pageUrl = /* @__PURE__ */ __name((item) => "/bookmarks/" + encodeURIComponent(item.slug) + "/", "pageUrl");
-async function publicBookmarkPage(request, item, categories = []) {
+async function publicBookmarkPage(request, item, categories = [], relatedNotesHtml = "") {
   const siteUrl = new URL(request.url).origin;
   const canonical = siteUrl + pageUrl(item);
   const title = item.title + " | " + siteTitle;
   const description = String(item.summary || item.title).replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/[*_~#]/g, "").slice(0, 180);
-  const body = '<section class="w-full py-5 pb-12"><a class="text-primary-500 text-sm" href="/bookmarks/">\u2190 \u66F8\u7C64\u5217\u8868</a><div class="mt-4">' + bookmarkArticleHtml(item, categories) + "</div></section>";
+  const body = '<section class="w-full py-5 pb-12"><a class="text-primary-500 text-sm" href="/bookmarks/">\u2190 \u66F8\u7C64\u5217\u8868</a><div class="mt-4">' + bookmarkArticleHtml(item, categories, relatedNotesHtml) + "</div></section>";
   const meta = '<meta name="description" content="' + esc(description) + '"><meta name="robots" content="index,follow"><link rel="canonical" href="' + esc(canonical) + '"><meta property="og:type" content="article"><meta property="og:title" content="' + esc(item.title) + '"><meta property="og:url" content="' + esc(canonical) + '"><meta property="og:description" content="' + esc(description) + '"><link rel="alternate" type="application/rss+xml" title="\u6240\u6709\u66F8\u7C64 RSS | ' + siteTitle + '" href="/bookmarks/feed.xml">';
   const response = await fetch(siteUrl + "/notes-shell/", { headers: { Accept: "text/html" } });
   if (!response.ok) return new Response("\u7DB2\u7AD9\u7248\u578B\u66AB\u6642\u7121\u6CD5\u53D6\u5F97", { status: 503 });
@@ -31665,7 +31674,7 @@ async function publicBookmarkPage(request, item, categories = []) {
     } });
   }
   const headers = new Headers(response.headers);
-  headers.set("Cache-Control", "public, max-age=60");
+  headers.set("Cache-Control", "no-store");
   headers.delete("content-length");
   return rewrite.transform(new Response(response.body, { status: 200, headers }));
 }
@@ -32296,6 +32305,13 @@ async function autoReviewNewSummary(env, created, fetcher = fetch) {
 }
 __name(autoReviewNewSummary, "autoReviewNewSummary");
 
+// src/note-references.js
+async function relatedNoteHtml(env, items) {
+  if (!env.NOTE_REFERENCES || !items.length) return {};
+  return env.NOTE_REFERENCES.publishedHtml(items.map((item) => item.id));
+}
+__name(relatedNoteHtml, "relatedNoteHtml");
+
 // src/api.js
 var json2 = /* @__PURE__ */ __name((value, status = 200) => new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } }), "json");
 function opts(url, privateList = false) {
@@ -32386,7 +32402,15 @@ async function api(req, env, url, ctx) {
     const match2 = p.match(/^\/bookmarks\/api\/admin\/([0-9a-f-]{36})\/?$/);
     if (match2) {
       if (req.method === "GET") return json2(await get(env.DB, match2[1], true));
-      if (req.method === "PATCH") return json2(await patch(env.DB, match2[1], await input(req)));
+      if (req.method === "PATCH") {
+        const id = match2[1];
+        return json2(await patch(
+          env.DB,
+          id,
+          await input(req),
+          () => env.NOTE_REFERENCES?.hasReference(id)
+        ));
+      }
       if (req.method === "DELETE") return json2({ deleted: await remove(env.DB, match2[1]) });
     }
     if (p === "/bookmarks/api/ingest/status" && req.method === "POST") return bulkStatus(req, env);
@@ -32411,7 +32435,7 @@ async function api(req, env, url, ctx) {
       const item = await get(env.DB, embed[1]);
       if (!item) return json2({ error: "\u66F8\u7C64\u672A\u516C\u958B\u6216\u4E0D\u5B58\u5728" }, 404);
       const categories = await tagsList(env.DB);
-      return new Response(bookmarkArticleHtml(item, categories), {
+      return new Response(bookmarkArticleHtml(item, categories, "", bookmarkPermalink(item)), {
         headers: {
           "Content-Type": "text/html; charset=utf-8",
           "Cache-Control": "no-store",
@@ -32422,9 +32446,15 @@ async function api(req, env, url, ctx) {
     const publicDetail = p.match(/^\/bookmarks\/api\/([0-9a-f-]{36})\/?$/);
     if (publicDetail && req.method === "GET") {
       const item = await get(env.DB, publicDetail[1]);
-      return item ? json2(item) : json2({ error: "\u66F8\u7C64\u4E0D\u5B58\u5728" }, 404);
+      if (!item) return json2({ error: "\u66F8\u7C64\u4E0D\u5B58\u5728" }, 404);
+      const notes = await relatedNoteHtml(env, [item]);
+      return json2({ ...item, related_notes_html: notes[item.id] });
     }
-    if ((p === "/bookmarks/api" || p === "/bookmarks/api/") && req.method === "GET") return json2(await list(env.DB, opts(url)));
+    if ((p === "/bookmarks/api" || p === "/bookmarks/api/") && req.method === "GET") {
+      const data = await list(env.DB, opts(url));
+      const notes = await relatedNoteHtml(env, data.items);
+      return json2({ ...data, items: data.items.map((item) => ({ ...item, related_notes_html: notes[item.id] })) });
+    }
     if (p === "/bookmarks/api/tags" && req.method === "GET") return json2(await tagsList(env.DB));
     return json2({ error: "\u4E0D\u5B58\u5728\u7684 API" }, 404);
   } catch (e) {
@@ -32436,7 +32466,6 @@ __name(api, "api");
 
 // src/feeds.js
 var siteTitle2 = "ChrisTorng \u5B78\u7FD2\u5929\u5730";
-var publicBookmarkUrl = /* @__PURE__ */ __name((base2, item) => item.slug ? base2 + "/bookmarks/" + encodeURIComponent(item.slug) + "/" : base2 + "/bookmarks/view/?id=" + encodeURIComponent(item.id), "publicBookmarkUrl");
 var publicDay = /* @__PURE__ */ __name((item) => (item.status_at || item.published_at || item.created_at).slice(0, 10), "publicDay");
 function publicationDates(items) {
   const remaining = /* @__PURE__ */ new Map();
@@ -32453,15 +32482,15 @@ function publicationDates(items) {
   });
 }
 __name(publicationDates, "publicationDates");
-function rss(items, siteUrl, tag = "", tagLabel = "", categories = []) {
+function rss(items, siteUrl, tag = "", tagLabel = "", categories = [], noteHtmlById = {}) {
   const base2 = siteUrl.replace(/\/$/, "");
   const section = tag ? (tagLabel || tag) + " \xB7 \u66F8\u7C64" : "\u6240\u6709\u66F8\u7C64";
   const title = section + " RSS | " + siteTitle2;
   const feedLink = base2 + "/bookmarks/" + (tag ? "?tag=" + encodeURIComponent(tag) : "");
   const dates = publicationDates(items);
   return '<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>' + esc(title) + "</title><link>" + esc(feedLink) + "</link><description>ChrisTorng \u5206\u4EAB\u7684\u66F8\u7C64</description><language>zh-TW</language>" + items.map((item, index) => {
-    const url = publicBookmarkUrl(base2, item);
-    const content = bookmarkArticleHtml(item, categories);
+    const url = base2 + bookmarkPermalink(item);
+    const content = bookmarkArticleHtml(item, categories, noteHtmlById[item.id]);
     const labels = bookmarkTags(item, categories);
     return "<item><title>" + esc(item.title) + "</title><link>" + esc(url) + '</link><guid isPermaLink="true">' + esc(url) + "</guid><pubDate>" + dates[index] + "</pubDate>" + labels.map((t) => "<category>" + esc(t.name) + "</category>").join("") + "<description>" + esc(content) + "</description><content:encoded><![CDATA[" + content.replaceAll("]]>", "]]]]><![CDATA[>") + "]]></content:encoded></item>";
   }).join("") + "</channel></rss>";
@@ -32496,7 +32525,8 @@ var worker = {
           const page = await list(env.DB, { tag, filter: "published", page: n });
           items.push(...page.items);
         }
-        return reply(rss(items, env.SITE_URL || "https://christorng.idv.tw", tag, tagLabel, tags), "application/rss+xml; charset=utf-8");
+        const notes = await relatedNoteHtml(env, items);
+        return reply(rss(items, env.SITE_URL || "https://christorng.idv.tw", tag, tagLabel, tags, notes), "application/rss+xml; charset=utf-8");
       } catch {
         return reply("RSS \u66AB\u6642\u7121\u6CD5\u53D6\u5F97", "text/plain; charset=utf-8", 500);
       }
@@ -32526,7 +32556,8 @@ var worker = {
           const canonical = "/bookmarks/" + published.slug + "/";
           if (url.pathname !== canonical)
             return Response.redirect(url.origin + canonical, 308);
-          return publicBookmarkPage(req, published, await tagsList(env.DB));
+          const [tags, notes] = await Promise.all([tagsList(env.DB), relatedNoteHtml(env, [published])]);
+          return publicBookmarkPage(req, published, tags, notes[published.id]);
         }
         return reply("\u627E\u4E0D\u5230\u66F8\u7C64", "text/plain; charset=utf-8", 404);
       }
@@ -32537,7 +32568,21 @@ var worker = {
   }
 };
 var index_default = worker;
+
+// src/worker/index.js
+var NoteEditor = class extends WorkerEntrypoint {
+  static {
+    __name(this, "NoteEditor");
+  }
+  async previewBookmark(id) {
+    const item = await get(this.env.DB, id, true);
+    if (!item) return null;
+    const tags = await tagsList(this.env.DB, true);
+    return bookmarkArticleHtml(item, tags, "", bookmarkPermalink(item));
+  }
+};
 export {
+  NoteEditor,
   index_default as default
 };
 //# sourceMappingURL=index.js.map
