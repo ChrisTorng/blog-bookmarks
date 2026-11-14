@@ -32406,6 +32406,19 @@ async function api(req, env, url, ctx) {
       if (!await validIngestToken(req, env)) return json2({ error: "\u7121\u6548\u7684\u65B0\u589E Token" }, 401);
       return json2(await createCategorized(env, { ...await input(req), source: "tampermonkey" }, ctx), 201);
     }
+    const embed = p.match(/^\/bookmarks\/api\/embed\/([0-9a-f-]{36})\/?$/);
+    if (embed && req.method === "GET") {
+      const item = await get(env.DB, embed[1]);
+      if (!item) return json2({ error: "\u66F8\u7C64\u672A\u516C\u958B\u6216\u4E0D\u5B58\u5728" }, 404);
+      const categories = await tagsList(env.DB);
+      return new Response(bookmarkArticleHtml(item, categories), {
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "no-store",
+          "X-Content-Type-Options": "nosniff"
+        }
+      });
+    }
     const publicDetail = p.match(/^\/bookmarks\/api\/([0-9a-f-]{36})\/?$/);
     if (publicDetail && req.method === "GET") {
       const item = await get(env.DB, publicDetail[1]);
