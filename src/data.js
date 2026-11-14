@@ -154,7 +154,7 @@ export async function create(db,raw) {
   await replaceTags(db,id,x.tags);
   return {item:await get(db,id,true),alreadyExists:false};
 }
-export async function patch(db,id,raw) {
+export async function patch(db,id,raw,hasNoteReference) {
   const current=await get(db,id,true);if(!current)return null;
   // Publication must have a persisted or concurrently submitted category.
   const desired='status' in raw?Number(raw.status):Number(current.status);
@@ -167,16 +167,22 @@ export async function patch(db,id,raw) {
   if(desired>=3 && desired<=4 && !finalTags.some(tag=>String(tag).toLowerCase()!=='default'))
     throw new Error('公開或推薦必須先選擇至少一個分類');
   if('status' in raw){
-    const status=Number(raw.status);
-    if(!Number.isInteger(status)||status<0||status>5)throw new Error('狀態無效');
+    const requested=Number(raw.status);
+    if(!Number.isInteger(requested)||requested<0||requested>5)throw new Error('狀態無效');
+    // Keep the result of a repeated publish request while the reference exists.
+    const publishAsRecommendation = requested===3 && current.status!==3
+      && await hasNoteReference?.();
+    const status=publishAsRecommendation?4:requested;
     const now=new Date().toISOString();
     if(current.status!==status){
       const stage=status===5?1:status;
       const legacyStatus=status===5?1:status===2?1:status>=3?status-1:status;
       const readAt=status===5?current.read_at:status>=1?(current.read_at||now):null;
-      const publishAt=status>=3?(current.status>=3&&current.published_at?current.published_at:now):null;
+      const publishAt=[3,4].includes(status)?(current.published_at||now):null;
       const starredAt=status===4?(current.status===4&&current.starred_at?current.starred_at:now):null;
-      await db.prepare('UPDATE bookmarks SET stage=?,deferred=?,status=?,read_at=?,published_at=?,starred_at=?,updated_at=? WHERE id=?').bind(stage,status===5?1:0,legacyStatus,readAt,publishAt,starredAt,now,id).run();
+      const updated=await db.prepare('UPDATE bookmarks SET stage=?,deferred=?,status=?,read_at=?,published_at=?,starred_at=?,updated_at=? WHERE id=? AND stage=? AND deferred=?')
+        .bind(stage,status===5?1:0,legacyStatus,readAt,publishAt,starredAt,now,id,current.status===5?1:current.status,current.status===5?1:0).run();
+      if(!updated.meta.changes)throw new Error('書籤狀態已變更，請重新載入');
     }
   }
   if(['url','redirect_url','title','title_original','title_zh','summary','tags','references'].some(x=>x in raw)){

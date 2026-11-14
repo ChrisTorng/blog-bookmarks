@@ -4,7 +4,7 @@ import { bookmarkArticleHtml } from './public-content.js';
 const siteTitle = 'ChrisTorng 學習天地';
 const pageUrl = item => '/bookmarks/' + encodeURIComponent(item.slug) + '/';
 
-export async function publicBookmarkPage(request,item,categories=[]) {
+export async function publicBookmarkPage(request,item,categories=[],relatedNotesHtml='') {
   const siteUrl = new URL(request.url).origin;
   const canonical = siteUrl + pageUrl(item);
   const title = item.title + ' | ' + siteTitle;
@@ -12,7 +12,7 @@ export async function publicBookmarkPage(request,item,categories=[]) {
     .replace(/[*_~#]/g,'').slice(0,180);
   const body = '<section class="w-full py-5 pb-12">'+
     '<a class="text-primary-500 text-sm" href="/bookmarks/">← 書籤列表</a>'+
-    '<div class="mt-4">'+bookmarkArticleHtml(item,categories)+'</div></section>';
+    '<div class="mt-4">'+bookmarkArticleHtml(item,categories,relatedNotesHtml)+'</div></section>';
   const meta = '<meta name="description" content="'+esc(description)+'">'+
     '<meta name="robots" content="index,follow">'+
     '<link rel="canonical" href="'+esc(canonical)+'">'+
@@ -33,7 +33,7 @@ export async function publicBookmarkPage(request,item,categories=[]) {
     rewrite=rewrite.on(selector,{element(el){el.remove();}});
   }
   const headers=new Headers(response.headers);
-  headers.set('Cache-Control','public, max-age=60');
+  headers.set('Cache-Control','no-store');
   headers.delete('content-length');
   return rewrite.transform(new Response(response.body,{status:200,headers}));
 }

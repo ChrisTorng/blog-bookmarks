@@ -7,7 +7,8 @@ import {needsSummaryRepair,repairCandidates,readSubmittedContent,commitArticleSu
 import {autoReviewNewSummary} from './auto-summary.js';
 import {validIngestToken,rotateIngestToken} from './token.js';
 import {list,get,byUrl,create,patch,remove,tagsList,renameTag,reviewWindow,createAndAttachTag} from './data.js';
-import {bookmarkArticleHtml} from './public-content.js';
+import {bookmarkArticleHtml,bookmarkPermalink} from './public-content.js';
+import {relatedNoteHtml} from './note-references.js';
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
 export function opts(url,privateList=false){
  const filter=url.searchParams.get('filter')||(privateList?'pending':'published');
@@ -94,7 +95,11 @@ export async function api(req,env,url,ctx){
   const match=p.match(/^\/bookmarks\/api\/admin\/([0-9a-f-]{36})\/?$/);
   if(match){
    if(req.method==='GET')return json(await get(env.DB,match[1],true));
-   if(req.method==='PATCH')return json(await patch(env.DB,match[1],await input(req)));
+   if(req.method==='PATCH'){
+    const id=match[1];
+    return json(await patch(env.DB,id,await input(req),
+      () => env.NOTE_REFERENCES?.hasReference(id)));
+   }
    if(req.method==='DELETE')return json({deleted:await remove(env.DB,match[1])});
   }
   if(p==='/bookmarks/api/ingest/status'&&req.method==='POST')return bulkStatus(req,env);
@@ -121,7 +126,7 @@ export async function api(req,env,url,ctx){
     const item=await get(env.DB,embed[1]);
     if(!item)return json({error:'書籤未公開或不存在'},404);
     const categories=await tagsList(env.DB);
-    return new Response(bookmarkArticleHtml(item,categories),{
+    return new Response(bookmarkArticleHtml(item,categories,'',bookmarkPermalink(item)),{
       headers:{'Content-Type':'text/html; charset=utf-8',
         'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}
     });
@@ -129,9 +134,15 @@ export async function api(req,env,url,ctx){
   const publicDetail=p.match(/^\/bookmarks\/api\/([0-9a-f-]{36})\/?$/);
   if(publicDetail && req.method==='GET'){
     const item=await get(env.DB,publicDetail[1]);
-    return item?json(item):json({error:'書籤不存在'},404);
+    if(!item)return json({error:'書籤不存在'},404);
+    const notes=await relatedNoteHtml(env,[item]);
+    return json({...item,related_notes_html:notes[item.id]});
   }
-  if((p==='/bookmarks/api'||p==='/bookmarks/api/')&&req.method==='GET')return json(await list(env.DB,opts(url)));
+  if((p==='/bookmarks/api'||p==='/bookmarks/api/')&&req.method==='GET'){
+    const data=await list(env.DB,opts(url));
+    const notes=await relatedNoteHtml(env,data.items);
+    return json({...data,items:data.items.map(item=>({...item,related_notes_html:notes[item.id]}))});
+  }
   if(p==='/bookmarks/api/tags'&&req.method==='GET')return json(await tagsList(env.DB));
   return json({error:'不存在的 API'},404);
  }catch(e){const bad=e instanceof TypeError||e instanceof SyntaxError||/網址|標題|摘要|標籤|分類|JSON|狀態|資料過大|格式|HTTP|原文|文章|書籤 ID|已被|模型|片段|Workers AI|參考/.test(String(e.message));return json({error:bad?e.message:'伺服器錯誤'},bad?400:500);}
