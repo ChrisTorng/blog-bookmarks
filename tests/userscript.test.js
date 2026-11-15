@@ -26,7 +26,7 @@ test('single click toggles empty/full star without category modal', () => {
   assert.doesNotMatch(source, /openMenu/);
 });
 
-test('bookmark star docks below the image or at the summary's right edge without a toolbar row', () => {
+test('bookmark star docks below the image or at the summary right edge without a toolbar row', () => {
   assert.match(source, /article\.post-item \{ position: relative !important; \}/);
   assert.match(source, /article\.appendChild\(button\)/);
   assert.match(source, /querySelector\('\.post-summary a\.feature-image img'\)/);
