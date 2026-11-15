@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.8
-// @description  Overlay bookmark stars on BetaCat images or titles with persistent per-article error indicators
+// @version      0.5.9
+// @description  Dock bookmark stars at article separators without obscuring images; keep persistent per-article errors
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
 // @downloadURL  https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -271,23 +271,27 @@
         }
     }
 
-    // The button remains a direct child of the article, not inside an image link.
-    // Absolute positioning avoids adding any height or an extra toolbar row.
+    // Keep the star above the article's bottom separator, without adding a row.
+    // Align with the image's right edge, but never overlay the image itself.
+    // With no usable image, dock at the article's lower-right separator instead.
     function positionControl(control) {
         const article = control.link.closest('article.post-item');
         if (!article || !article.isConnected) return;
+        const articleRect = article.getBoundingClientRect();
         const image = article.querySelector('.post-summary a.feature-image img');
         const imageRect = image?.getBoundingClientRect();
         const hasImage = imageRect && imageRect.width >= 24 && imageRect.height >= 24 &&
             !(image.complete && image.naturalWidth === 0);
-        const anchor = hasImage ? image : article.querySelector('.post-title') || control.link;
-        const rect = anchor.getBoundingClientRect();
-        const articleRect = article.getBoundingClientRect();
         const width = control.button.offsetWidth || 38;
         const height = control.button.offsetHeight || 34;
-        const left = Math.max(0, Math.min(rect.right - articleRect.left - width - 4,
-            (article.clientWidth || articleRect.width) - width));
-        const top = Math.max(0, rect.bottom - articleRect.top - height - 4);
+        const maxLeft = Math.max(0, (article.clientWidth || articleRect.width) - width);
+        const anchorRight = hasImage ? imageRect.right - articleRect.left : maxLeft + width;
+        const left = Math.max(0, Math.min(anchorRight - width - (hasImage ? 4 : 6), maxLeft));
+        // Straddle the existing divider. If the image ends at the divider,
+        // move below it rather than obscuring its bottom edge.
+        const dividerTop = articleRect.bottom - articleRect.top - height / 2;
+        const belowImage = hasImage ? imageRect.bottom - articleRect.top + 3 : 0;
+        const top = Math.max(0, dividerTop, belowImage);
         control.button.style.setProperty('left', Math.round(left) + 'px', 'important');
         control.button.style.setProperty('top', Math.round(top) + 'px', 'important');
     }
