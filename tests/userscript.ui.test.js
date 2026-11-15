@@ -107,20 +107,30 @@ function harness() {
   return { api, document, replies, requests, addArticle };
 }
 
-test('star stays over image and uses title for missing or broken images', () => {
+test('star docks on the divider, below the image or at the right edge without an image', () => {
   const { api, addArticle } = harness();
   const withImage = addArticle('https://example.org/image');
+  const originalHeight = withImage.article.rect.height;
   api.positionControl(withImage.control);
-  assert.equal(withImage.button.styles.left, '198px');
-  assert.equal(withImage.button.styles.top, '122px');
+  assert.equal(withImage.button.styles.left, '198px'); // Align with image right edge.
+  assert.equal(withImage.button.styles.top, '333px'); // Straddles article bottom separator.
+  assert.ok(300 + Number.parseInt(withImage.button.styles.top) > withImage.img.rect.bottom);
+  assert.equal(withImage.article.rect.height, originalHeight); // No extra layout height.
+
+  // An image ending at the divider must still remain completely unobscured.
+  withImage.img.rect.bottom = 645;
+  api.positionControl(withImage.control);
+  assert.equal(withImage.button.styles.top, '348px');
+
+  // Broken and absent images use the separator's far-right end, not the title.
   withImage.img.naturalWidth = 0;
   api.positionControl(withImage.control);
-  assert.equal(withImage.button.styles.left, '318px');
-  assert.equal(withImage.button.styles.top, '2px');
+  assert.equal(withImage.button.styles.left, '356px');
+  assert.equal(withImage.button.styles.top, '333px');
   const noImage = addArticle('https://example.org/title', { image: false });
   api.positionControl(noImage.control);
-  assert.equal(noImage.button.styles.left, '318px');
-  assert.equal(noImage.button.styles.top, '2px');
+  assert.equal(noImage.button.styles.left, '356px');
+  assert.equal(noImage.button.styles.top, '333px');
 });
 
 test('three independent errors attach to visible star or top/bottom viewport corners', () => {
