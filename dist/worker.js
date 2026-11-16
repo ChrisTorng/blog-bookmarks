@@ -32007,10 +32007,15 @@ async function lookupReference(raw, transport = fetch) {
 __name(lookupReference, "lookupReference");
 
 // src/summary-repair.js
+var lastRepairKey = "last_summary_repair";
 async function repairCandidates(db) {
-  const result = await db.prepare("SELECT id,stage,title,title_original,title_zh,url,redirect_url,summary,created_at FROM bookmarks ORDER BY created_at ASC,id ASC").all();
+  const [result, last] = await Promise.all([
+    db.prepare("SELECT id,stage,title,title_original,title_zh,url,redirect_url,summary,created_at FROM bookmarks ORDER BY created_at ASC,id ASC").all(),
+    db.prepare("SELECT value,updated_at FROM bookmark_settings WHERE key=?").bind(lastRepairKey).first()
+  ]);
   const items = result.results.filter((x) => needsSummaryRepair(x.summary));
-  return { total: items.length, items };
+  const last_repair = last ? { repaired_at: last.updated_at, items: JSON.parse(last.value) } : null;
+  return { total: items.length, items, last_repair };
 }
 __name(repairCandidates, "repairCandidates");
 async function infer(env, system, user, maxTokens) {
@@ -32137,20 +32142,26 @@ async function summarizeArticleBody(env, item, article) {
   return summary;
 }
 __name(summarizeArticleBody, "summarizeArticleBody");
-async function commitArticleSummary(env, id, text2) {
+async function commitArticleSummary(env, id, { content, description }) {
   const item = await get(env.DB, id, true);
   if (!item) throw Error("\u66F8\u7C64\u4E0D\u5B58\u5728");
   if (!needsSummaryRepair(item.summary)) throw Error("\u6458\u8981\u5DF2\u88AB\u66F4\u65B0\uFF0C\u70BA\u907F\u514D\u8986\u5BEB\u8ACB\u91CD\u65B0\u6574\u7406\u6E05\u55AE");
-  const summary = await summarizeSubmittedArticle(env, item, text2);
-  const old = item.summary ?? null;
-  const update = await env.DB.prepare(
-    "UPDATE bookmarks SET summary=?,updated_at=? WHERE id=? AND ((summary IS NULL AND ? IS NULL) OR summary=?)"
-  ).bind(summary, (/* @__PURE__ */ new Date()).toISOString(), id, old, old).run();
+  const summary = description ?? await summarizeSubmittedArticle(env, item, content);
+  if (summary.length > 5e3 || needsSummaryRepair(summary)) throw Error("\u4F86\u6E90\u6458\u8981\u672A\u901A\u904E\u54C1\u8CEA\u6AA2\u67E5");
+  const repaired_at = (/* @__PURE__ */ new Date()).toISOString();
+  const [update, log] = await env.DB.batch([
+    env.DB.prepare("UPDATE bookmarks SET summary=?,updated_at=? WHERE id=? AND summary IS ?").bind(summary, repaired_at, id, item.summary ?? null),
+    env.DB.prepare(`INSERT INTO bookmark_settings(key,value,updated_at)
+      SELECT ?,json_array(json_object('id',id,'title',title,'title_original',title_original,'url',url,'summary',summary)),?
+      FROM bookmarks WHERE id=? AND changes()=1
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at
+      RETURNING value`).bind(lastRepairKey, repaired_at, id)
+  ]);
   if (!update.meta.changes) throw Error("\u6458\u8981\u5DF2\u88AB\u5176\u4ED6\u64CD\u4F5C\u66F4\u65B0\uFF0C\u8ACB\u91CD\u65B0\u6574\u7406");
-  return { id, summary, saved: true };
+  return { id, summary, saved: true, last_repair: { repaired_at, items: JSON.parse(log.results[0].value) } };
 }
 __name(commitArticleSummary, "commitArticleSummary");
-async function readSubmittedContent(req) {
+async function readSubmittedContent(req, { allowDescription = false } = {}) {
   if (!req.headers.get("Content-Type")?.startsWith("application/json")) throw Error("\u9700\u8981 JSON \u683C\u5F0F");
   const declared = Number(req.headers.get("Content-Length") || 0);
   if (declared > 5e5) throw Error("\u6587\u7AE0\u8CC7\u6599\u904E\u5927");
@@ -32158,6 +32169,8 @@ async function readSubmittedContent(req) {
   if (text2.length > 3e5) throw Error("\u6587\u7AE0\u8CC7\u6599\u904E\u5927");
   const json3 = JSON.parse(text2);
   if (!/^[0-9a-f-]{36}$/i.test(String(json3?.id || ""))) throw Error("\u66F8\u7C64 ID \u7121\u6548");
+  if (allowDescription && typeof json3.description === "string")
+    return { id: json3.id, description: json3.description.trim() };
   if (typeof json3.content !== "string") throw Error("\u8ACB\u5148\u8CBC\u5165\u539F\u6587\u5167\u5BB9");
   return json3;
 }
@@ -32387,8 +32400,8 @@ async function api(req, env, url, ctx) {
     if (p === "/bookmarks/api/admin/summary-repair") {
       if (req.method === "GET") return json2(await repairCandidates(env.DB));
       if (req.method === "POST") {
-        const body = await readSubmittedContent(req);
-        return json2(await commitArticleSummary(env, body.id, body.content));
+        const body = await readSubmittedContent(req, { allowDescription: true });
+        return json2(await commitArticleSummary(env, body.id, body));
       }
     }
     if (p === "/bookmarks/api/admin/summary-repair/preview" && req.method === "POST") {
