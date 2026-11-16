@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.9
-// @description  Dock bookmark stars at article separators without obscuring images; keep persistent per-article errors
+// @version      0.5.10
+// @description  Place stars at summary upper-right or collapsed title lower-right; keep persistent errors
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
 // @downloadURL  https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -38,6 +38,7 @@
     let positionScheduled = false;
     let errorLayoutScheduled = false;
     let positionObserver;
+    let collapseObserver;
     let topErrorStack;
     let bottomErrorStack;
 
@@ -271,27 +272,28 @@
         }
     }
 
-    // Keep the star above the article's bottom separator, without adding a row.
-    // Align with the image's right edge, but never overlay the image itself.
-    // With no usable image, dock at the article's lower-right separator instead.
+    // Dock at the summary's upper-right corner, never at the article bottom.
+    // The collapse script hides the summary but intentionally keeps this button
+    // visible, so fall back to the title's lower-right corner while collapsed.
+    // Absolute positioning leaves the article layout and height untouched.
     function positionControl(control) {
         const article = control.link.closest('article.post-item');
         if (!article || !article.isConnected) return;
+        const summary = article.querySelector('.post-summary');
+        const summaryRect = summary?.getBoundingClientRect();
+        const collapsed = article.classList?.contains('auto-open-new-articles-collapsed') ||
+            !summaryRect || summaryRect.width <= 0 || summaryRect.height <= 0;
+        const anchor = collapsed ? article.querySelector('.post-title') : summary;
+        const rect = collapsed ? anchor?.getBoundingClientRect() : summaryRect;
+        if (!rect) return;
         const articleRect = article.getBoundingClientRect();
-        const image = article.querySelector('.post-summary a.feature-image img');
-        const imageRect = image?.getBoundingClientRect();
-        const hasImage = imageRect && imageRect.width >= 24 && imageRect.height >= 24 &&
-            !(image.complete && image.naturalWidth === 0);
         const width = control.button.offsetWidth || 38;
         const height = control.button.offsetHeight || 34;
         const maxLeft = Math.max(0, (article.clientWidth || articleRect.width) - width);
-        const anchorRight = hasImage ? imageRect.right - articleRect.left : maxLeft + width;
-        const left = Math.max(0, Math.min(anchorRight - width - (hasImage ? 4 : 6), maxLeft));
-        // Straddle the existing divider. If the image ends at the divider,
-        // move below it rather than obscuring its bottom edge.
-        const dividerTop = articleRect.bottom - articleRect.top - height / 2;
-        const belowImage = hasImage ? imageRect.bottom - articleRect.top + 3 : 0;
-        const top = Math.max(0, dividerTop, belowImage);
+        const left = Math.max(0, Math.min(rect.right - articleRect.left - width - 4, maxLeft));
+        const top = collapsed
+            ? Math.max(0, rect.bottom - articleRect.top - height - 2)
+            : Math.max(0, rect.top - articleRect.top + 2);
         control.button.style.setProperty('left', Math.round(left) + 'px', 'important');
         control.button.style.setProperty('top', Math.round(top) + 'px', 'important');
     }
@@ -562,6 +564,9 @@
             positionControl(control);
             positionObserver?.observe(article);
             positionObserver?.observe(title);
+            const summary = article.querySelector('.post-summary');
+            if (summary) positionObserver?.observe(summary);
+            collapseObserver?.observe(article, { attributes: true, attributeFilter: ['class'] });
             const image = article.querySelector('.post-summary a.feature-image img');
             if (image) {
                 positionObserver?.observe(image);
@@ -638,6 +643,7 @@
         ensureErrorStacks();
         positionObserver = typeof ResizeObserver === 'function'
             ? new ResizeObserver(schedulePositions) : null;
+        collapseObserver = new MutationObserver(schedulePositions);
         window.addEventListener('resize', schedulePositions, { passive: true });
         window.addEventListener('scroll', scheduleErrorLayout, { passive: true, capture: true });
         captureOriginalTitles();
