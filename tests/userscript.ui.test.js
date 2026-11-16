@@ -83,16 +83,23 @@ function harness() {
     const title = element('title');
     title.rect = { left: 100, right: 460, top: 300, bottom: 340, width: 360, height: 40 };
     const summary = element('summary');
-    summary.rect = { left: 100, right: 500, top: 420, bottom: 620, width: 400, height: 200 };
+    summary.rect = { left: 100, right: 500, top: 420, bottom: 745, width: 400, height: 325 };
+    const summaryText = element('summary-text');
+    summaryText.rect = { left: 100, right: 500, top: 640, bottom: 740, width: 400, height: 100 };
+    const meta = element('post-meta');
+    meta.rect = { left: 100, right: 500, top: 350, bottom: 405, width: 400, height: 55 };
+    summary.querySelector = selector => selector === '.summary-text' ? summaryText :
+      selector === 'a.feature-image img' ? img : null;
     article.collapsed = false;
     article.classList = { contains: name => name === 'auto-open-new-articles-collapsed' && article.collapsed };
     const img = image ? element('img') : null;
     if (img) {
-      img.rect = { left: 120, right: 340, top: 320, bottom: 460, width: 220, height: 140 };
+      img.rect = { left: 120, right: 480, top: 435, bottom: 630, width: 360, height: 195 };
       img.complete = true;
       img.naturalWidth = 220;
     }
     article.querySelector = selector => selector === '.post-summary' ? summary :
+      selector === '.post-meta' ? meta :
       selector.includes('feature-image') ? img :
       selector === '.post-title' ? title :
       selector === '.summary-text' ? { textContent: 'Original summary' } : null;
@@ -107,50 +114,73 @@ function harness() {
     button.rect = { left: 200, right: 238, top: y, bottom: y + 34, width: 38, height: 34 };
     const control = { link, button, url };
     api.controls.set(link, control);
-    return { article, title, summary, img, link, button, control };
+    return { article, title, meta, summary, summaryText, img, link, button, control };
   }
   return { api, document, replies, requests, addArticle };
 }
 
-test('expanded star always uses summary upper-right regardless of image', () => {
+test('expanded image star straddles image bottom/right and does not move with summary top', () => {
   const { api, addArticle } = harness();
-  const withImage = addArticle('https://example.org/image');
-  const originalHeight = withImage.article.rect.height;
-  api.positionControl(withImage.control);
-  assert.equal(withImage.button.styles.left, '358px');
-  assert.equal(withImage.button.styles.top, '122px');
-  assert.equal(withImage.article.rect.height, originalHeight);
+  const row = addArticle('https://example.org/image');
+  const initialArticleHeight = row.article.rect.height;
+  api.positionControl(row.control);
+  assert.equal(row.button.styles.left, '338px'); // Image right: 480 - 100 - 38 - 4.
+  assert.equal(row.button.styles.top, '313px'); // Image bottom: 630 - 300 - 17.
+  assert.equal(row.article.rect.height, initialArticleHeight);
+  assert.ok(300 + Number.parseInt(row.button.styles.top) < row.img.rect.bottom);
+  assert.ok(300 + Number.parseInt(row.button.styles.top) + 34 > row.img.rect.bottom);
 
-  // Image geometry and broken-image state must not change the anchor.
-  withImage.img.rect = { left: 120, right: 490, top: 430, bottom: 640, width: 370, height: 210 };
-  withImage.img.naturalWidth = 0;
-  api.positionControl(withImage.control);
-  assert.equal(withImage.button.styles.left, '358px');
-  assert.equal(withImage.button.styles.top, '122px');
+  // Changing summary height or top must not pin the star to the image top.
+  row.summary.rect.top = 400;
+  row.img.rect.bottom = 680;
+  api.positionControl(row.control);
+  assert.equal(row.button.styles.top, '363px');
 
-  const noImage = addArticle('https://example.org/no-image', { image: false });
-  api.positionControl(noImage.control);
-  assert.equal(noImage.button.styles.left, '358px');
-  assert.equal(noImage.button.styles.top, '122px');
+  // Width and height reserved by lazy images still count before loading.
+  row.img.complete = false;
+  row.img.naturalWidth = 0;
+  api.positionControl(row.control);
+  assert.equal(row.button.styles.top, '363px');
 });
 
-test('collapsed or hidden summary moves star to title lower-right then restores summary position', () => {
+test('expanded image-free star fits between metadata and summary text, even when narrow', () => {
+  const { api, addArticle } = harness();
+  const row = addArticle('https://example.org/no-image', { image: false });
+  row.summaryText.rect.top = 430;
+  api.positionControl(row.control);
+  assert.equal(row.button.styles.left, '358px');
+  assert.equal(row.button.styles.top, '98px'); // Button bottom 432, 2px into prose at 430.
+  row.meta.rect.bottom = 428; // No space left; prioritize readable summary text.
+  api.positionControl(row.control);
+  assert.equal(row.button.styles.top, '98px');
+  assert.ok(300 + Number.parseInt(row.button.styles.top) + 34 <= row.summaryText.rect.top + 2);
+
+  // Broken image follows the no-image rule instead of using its placeholder.
+  const broken = addArticle('https://example.org/broken');
+  broken.img.naturalWidth = 0;
+  broken.summaryText.rect.top = 430;
+  api.positionControl(broken.control);
+  assert.equal(broken.button.styles.left, '358px');
+  assert.equal(broken.button.styles.top, '98px');
+});
+
+test('collapse and expand move star between title lower-right and image/metadata boundary', () => {
   const { api, addArticle } = harness();
   const row = addArticle('https://example.org/toggle');
   api.positionControl(row.control);
-  assert.equal(row.button.styles.top, '122px');
+  assert.equal(row.button.styles.top, '313px');
   row.article.collapsed = true;
   api.positionControl(row.control);
   assert.equal(row.button.styles.left, '318px');
-  assert.equal(row.button.styles.top, '4px');
+  assert.equal(row.button.styles.top, '21px');
   row.article.collapsed = false;
   api.positionControl(row.control);
-  assert.equal(row.button.styles.left, '358px');
-  assert.equal(row.button.styles.top, '122px');
-  row.summary.rect.width = 0; // Hidden by another stylesheet even without class.
+  assert.equal(row.button.styles.left, '338px');
+  assert.equal(row.button.styles.top, '313px');
+  row.summary.rect.width = 0; // Hidden by third-party stylesheet.
   api.positionControl(row.control);
   assert.equal(row.button.styles.left, '318px');
-  assert.equal(row.button.styles.top, '4px');
+  assert.equal(row.button.styles.top, '21px');
 });
 
 test('three independent errors attach to visible star or top/bottom viewport corners', () => {
