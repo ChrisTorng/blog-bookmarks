@@ -5,8 +5,9 @@ const siteTitle = 'ChrisTorng 學習天地';
 const publicDay = (item) => (item.status_at || item.published_at || item.created_at).slice(0, 10);
 
 // Public records deliberately contain only Taiwan-local calendar dates; precise reading/
-// publishing times are private. Give same-day entries monotonic synthetic seconds so
-// RSS clients can sort them without disclosing when the owner processed a bookmark.
+// publishing times are private. Give same-day entries monotonic synthetic minutes so
+// readers that hide seconds can visibly distinguish same-day ordering. Existing
+// permalink GUIDs remain unchanged; these times are not actual posting times.
 function publicationDates(items) {
  const remaining = new Map();
  for (const item of items) {
@@ -18,7 +19,9 @@ function publicationDates(items) {
   const rank = remaining.get(day);
   remaining.set(day, rank - 1);
   const baseline = Date.parse(day + 'T00:00:00+08:00');
-  return new Date(baseline + Math.min(rank, 86399) * 1000).toUTCString();
+  // Rank 1 (oldest) starts at 00:00, newest increases by one minute.
+  // A day has 1440 distinct minutes; do not spill synthetic times into the next day.
+  return new Date(baseline + Math.min(rank - 1, 1439) * 60000).toUTCString();
  });
 }
 
