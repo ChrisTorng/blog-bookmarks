@@ -32,7 +32,7 @@ test('same full HTML is embedded in both public permalink and RSS, never unparse
   const withReference=bookmarkArticleHtml({...item,tags:['Tech','Tech']},categories,'<article><h2>隨筆內容</h2></article>','/bookmarks/'+item.slug+'/')
   assert.match(withReference, /<hr><p><strong>引用隨筆<\/strong><\/p>/)
   assert.match(withReference, /<p class="mt-2 text-xs"><a[^>]+>書籤永久連結<\/a><\/p>/)
-  assert.match(withReference, /#科技<\/a> #科技<\/a>/)
+  assert.match(withReference, /#科技<\/a> <a[^>]+>#科技<\/a>/)
   assert.ok(feed.includes('/bookmarks/'+item.slug+'/'))
   assert.ok(feed.includes('&lt;article'))
 })
