@@ -31715,7 +31715,7 @@ function bookmarkSource(url) {
     } catch {
     }
     const label = u.hostname + (decoded ? "/" + decoded : "");
-    return '<span class="inline-flex max-w-full min-w-0 items-center gap-1.5" title="' + esc(label) + '"><img src="https://www.google.com/s2/favicons?domain=' + encodeURIComponent(u.hostname) + '&amp;sz=32" alt="" width="16" height="16" loading="lazy" decoding="async" referrerpolicy="no-referrer" class="h-4 w-4 shrink-0 rounded-sm"><span class="min-w-0 truncate">' + esc(label) + "</span></span>";
+    return '<span class="inline-flex max-w-full min-w-0 items-center gap-1.5" title="' + esc(label) + '"><img src="https://www.google.com/s2/favicons?domain=' + encodeURIComponent(u.hostname) + '&amp;sz=32" alt="" width="16" height="16" loading="lazy" decoding="async" referrerpolicy="no-referrer" class="h-4 w-4 shrink-0 rounded-sm">&nbsp;<span class="min-w-0 truncate">' + esc(label) + "</span></span>";
   } catch {
     return "";
   }
@@ -31756,11 +31756,11 @@ function bookmarkArticleHtml(item, categories = [], relatedNotesHtml = "", perma
   const english = item.title_original && item.title_original !== item.title ? '<p lang="en" class="mt-1 text-sm leading-snug text-gray-600 dark:text-gray-300">' + esc(item.title_original) + "</p>" : "";
   const summary = item.summary ? '<div class="my-2 text-gray-700 dark:text-gray-200"><div class="prose max-w-none text-sm dark:prose-invert">' + renderSummary(item.summary, item.url) + "</div></div>" : "";
   const original = target !== item.url ? '<a href="' + esc(item.url) + '" target="_blank" rel="noopener noreferrer" class="hidden max-w-full truncate underline md:inline">\u539F\u59CB\u7DB2\u5740\uFF1A' + esc(item.url) + "</a>" : "";
-  const tags = bookmarkTags(item, categories).map((t) => '<a class="text-primary-500" href="/bookmarks/?tag=' + encodeURIComponent(t.id) + '">#' + esc(t.name) + "</a>").join("");
+  const tags = bookmarkTags(item, categories).map((t) => '<a class="text-primary-500" href="/bookmarks/?tag=' + encodeURIComponent(t.id) + '">#' + esc(t.name) + "</a>").join(" ");
   const status = item.status === 4 ? '<span class="text-primary-500">\u2606 \u63A8\u85A6</span>' : item.status !== 3 ? '<span class="text-gray-500">\u672A\u516C\u958B</span>' : "";
   const referenceLink = permalink ? '<a class="text-primary-500" href="' + esc(permalink) + '">\u66F8\u7C64\u6C38\u4E45\u9023\u7D50</a>' : "";
-  const relatedNotes = relatedNotesHtml ? '<aside aria-label="\u5F15\u7528\u96A8\u7B46" class="mt-3 min-w-0 rounded-r-lg border-l-4 border-primary-500 bg-gray-50/60 px-3 py-2 dark:bg-gray-800/40">' + relatedNotesHtml + "</aside>" : "";
-  return '<article class="border-b border-gray-300/40 py-4 dark:border-gray-700"><div class="mb-2 flex items-center justify-between gap-3 text-xs"><time class="text-gray-500" datetime="' + esc(date) + '">' + esc(date) + "</time>" + status + '</div><h1 class="text-xl leading-snug font-bold"><a class="text-primary-500 hover:text-primary-600 dark:hover:text-primary-400" href="' + esc(target) + '" target="_blank" rel="noopener noreferrer">' + esc(item.title) + "</a></h1>" + english + summary + '<div class="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600 dark:text-gray-300">' + bookmarkSource(item.url) + original + referenceLink + "</div>" + bookmarkReferences(item) + '<div class="mt-2 flex flex-wrap items-center gap-3 text-sm">' + tags + "</div>" + relatedNotes + "</article>";
+  const relatedNotes = relatedNotesHtml ? '<aside aria-label="\u5F15\u7528\u96A8\u7B46" class="mt-3 min-w-0 rounded-r-lg border-l-4 border-primary-500 bg-gray-50/60 px-3 py-2 dark:bg-gray-800/40"><hr><p><strong>\u5F15\u7528\u96A8\u7B46</strong></p>' + relatedNotesHtml + "</aside>" : "";
+  return '<article class="border-b border-gray-300/40 py-4 dark:border-gray-700"><div class="mb-2 flex items-center justify-between gap-3 text-xs"><time class="text-gray-500" datetime="' + esc(date) + '">' + esc(date) + "</time>" + status + '</div><h1 class="text-xl leading-snug font-bold"><a class="text-primary-500 hover:text-primary-600 dark:hover:text-primary-400" href="' + esc(target) + '" target="_blank" rel="noopener noreferrer">' + esc(item.title) + "</a></h1>" + english + summary + '<div class="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600 dark:text-gray-300">' + bookmarkSource(item.url) + original + "</div>" + (referenceLink ? '<p class="mt-2 text-xs">' + referenceLink + "</p>" : "") + bookmarkReferences(item) + '<div class="mt-2 flex flex-wrap items-center gap-3 text-sm">' + tags + "</div>" + relatedNotes + "</article>";
 }
 __name(bookmarkArticleHtml, "bookmarkArticleHtml");
 
@@ -32504,7 +32504,7 @@ function publicationDates(items) {
     const rank = remaining.get(day);
     remaining.set(day, rank - 1);
     const baseline = Date.parse(day + "T00:00:00+08:00");
-    return new Date(baseline + Math.min(rank, 86399) * 1e3).toUTCString();
+    return new Date(baseline + Math.min(rank - 1, 1439) * 6e4).toUTCString();
   });
 }
 __name(publicationDates, "publicationDates");
