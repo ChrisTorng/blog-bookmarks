@@ -3,10 +3,16 @@ import { isSummaryCommentary, needsSummaryRepair } from './metadata.js';
 export { needsSummaryRepair } from './metadata.js';
 import { get } from './data.js';
 
+const lastRepairKey = 'last_summary_repair';
+
 export async function repairCandidates(db) {
-  const result=await db.prepare('SELECT id,stage,title,title_original,title_zh,url,redirect_url,summary,created_at FROM bookmarks ORDER BY created_at ASC,id ASC').all();
+  const [result,last]=await Promise.all([
+    db.prepare('SELECT id,stage,title,title_original,title_zh,url,redirect_url,summary,created_at FROM bookmarks ORDER BY created_at ASC,id ASC').all(),
+    db.prepare('SELECT value,updated_at FROM bookmark_settings WHERE key=?').bind(lastRepairKey).first()
+  ]);
   const items=result.results.filter(x=>needsSummaryRepair(x.summary));
-  return {total:items.length,items};
+  const last_repair=last ? {repaired_at:last.updated_at,items:JSON.parse(last.value)} : null;
+  return {total:items.length,items,last_repair};
 }
 
 async function infer(env, system, user, maxTokens) {
@@ -127,20 +133,27 @@ async function summarizeArticleBody(env,item,article) {
   return summary;
 }
 
-export async function commitArticleSummary(env,id,text) {
+export async function commitArticleSummary(env,id,{content,description}) {
   const item=await get(env.DB,id,true);
   if(!item)throw Error('書籤不存在');
   if(!needsSummaryRepair(item.summary))throw Error('摘要已被更新，為避免覆寫請重新整理清單');
-  const summary=await summarizeSubmittedArticle(env,item,text);
-  const old=item.summary??null;
-  const update=await env.DB.prepare(
-    'UPDATE bookmarks SET summary=?,updated_at=? WHERE id=? AND ((summary IS NULL AND ? IS NULL) OR summary=?)'
-  ).bind(summary,new Date().toISOString(),id,old,old).run();
+  const summary=description ?? await summarizeSubmittedArticle(env,item,content);
+  if(summary.length>5000 || needsSummaryRepair(summary))throw Error('來源摘要未通過品質檢查');
+  const repaired_at=new Date().toISOString();
+  const [update,log]=await env.DB.batch([
+    env.DB.prepare('UPDATE bookmarks SET summary=?,updated_at=? WHERE id=? AND summary IS ?')
+      .bind(summary,repaired_at,id,item.summary??null),
+    env.DB.prepare(`INSERT INTO bookmark_settings(key,value,updated_at)
+      SELECT ?,json_array(json_object('id',id,'title',title,'title_original',title_original,'url',url,'summary',summary)),?
+      FROM bookmarks WHERE id=? AND changes()=1
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at
+      RETURNING value`).bind(lastRepairKey,repaired_at,id)
+  ]);
   if(!update.meta.changes)throw Error('摘要已被其他操作更新，請重新整理');
-  return {id,summary,saved:true};
+  return {id,summary,saved:true,last_repair:{repaired_at,items:JSON.parse(log.results[0].value)}};
 }
 
-export async function readSubmittedContent(req) {
+export async function readSubmittedContent(req,{allowDescription=false}={}) {
   if(!req.headers.get('Content-Type')?.startsWith('application/json'))throw Error('需要 JSON 格式');
   const declared=Number(req.headers.get('Content-Length')||0);
   if(declared>500000)throw Error('文章資料過大');
@@ -148,6 +161,8 @@ export async function readSubmittedContent(req) {
   if(text.length>300000)throw Error('文章資料過大');
   const json=JSON.parse(text);
   if(!/^[0-9a-f-]{36}$/i.test(String(json?.id||'')))throw Error('書籤 ID 無效');
+  if(allowDescription && typeof json.description==='string')
+    return {id:json.id,description:json.description.trim()};
   if(typeof json.content!=='string')throw Error('請先貼入原文內容');
   return json;
 }

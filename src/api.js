@@ -54,8 +54,8 @@ export async function api(req,env,url,ctx){
   if(p==='/bookmarks/api/admin/summary-repair'){
     if(req.method==='GET')return json(await repairCandidates(env.DB));
     if(req.method==='POST'){
-      const body=await readSubmittedContent(req);
-      return json(await commitArticleSummary(env,body.id,body.content));
+      const body=await readSubmittedContent(req,{allowDescription:true});
+      return json(await commitArticleSummary(env,body.id,body));
     }
   }
   if(p==='/bookmarks/api/admin/summary-repair/preview' && req.method==='POST'){
