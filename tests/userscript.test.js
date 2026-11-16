@@ -7,7 +7,7 @@ const source = readFileSync(new URL('../tampermonkey/BlogBookmarks.user.js', imp
 test('userscript installs from blog-bookmarks and parses', () => {
   assert.doesNotThrow(() => new Function(source));
   assert.match(source, /\/\/ @name\s+Blog Bookmarks\n/);
-  assert.match(source, /\/\/ @version\s+0\.5\.11\n/);
+  assert.match(source, /\/\/ @version\s+0\.5\.12\n/);
   assert.match(source, /raw\.githubusercontent\.com\/ChrisTorng\/blog-bookmarks\/main\/tampermonkey\/BlogBookmarks\.user\.js/);
   assert.match(source, /\/\/ @match\s+https:\/\/hackernews\.betacat\.io\/\*/);
   assert.doesNotMatch(source, /cloudmark-christorng|cloudmark\.site/);
@@ -26,14 +26,16 @@ test('single click toggles empty/full star without category modal', () => {
   assert.doesNotMatch(source, /openMenu/);
 });
 
-test('bookmark star straddles image bottom or metadata/summary boundary and collapsed title lower-right without a toolbar row', () => {
+test('bookmark star follows viewport center within article and collapsed title lower-right without a toolbar row', () => {
   assert.match(source, /article\.post-item \{ position: relative !important; \}/);
   assert.match(source, /article\.appendChild\(button\)/);
   assert.match(source, /querySelector\('\.post-summary'\)/);
   assert.match(source, /const collapsed = article\.classList\?\.contains/);
-  assert.match(source, /centerY = imageRect\.bottom/);
-  assert.match(source, /const afterMeta = metaRect\?\.bottom/);
-  assert.match(source, /centerY = Math\.min\(centerY, beforeText - height \/ 2 \+ 2\)/);
+  assert.match(source, /const viewportMiddle = visual/);
+  assert.match(source, /const titleTop = Math\.max/);
+  assert.match(source, /const bottomStop = Math\.max/);
+  assert.match(source, /window\.addEventListener\('scroll', schedulePositions/);
+  assert.match(source, /window\.visualViewport\?\.addEventListener\('resize'/);
   assert.match(source, /collapseObserver\?\.observe\(article/);
   assert.match(source, /position: absolute !important/);
   assert.match(source, /positionControl\(control\)/);
@@ -99,7 +101,8 @@ test('per-URL failures persist with scroll-aware top/bottom messages and red sta
   assert.match(source, /rect\.top >= viewportHeight\) below\.push\(entry\)/);
   assert.match(source, /bottomErrorStack\.appendChild\(entry\.notice\)/);
   assert.match(source, /topErrorStack\.appendChild\(entry\.notice\)/);
-  assert.match(source, /window\.addEventListener\('scroll', scheduleErrorLayout/);
+  assert.match(source, /window\.addEventListener\('scroll', schedulePositions/);
+  assert.match(source, /for \(const control of controls\.values\(\)\) positionControl\(control\);\s*scheduleErrorLayout\(\)/);
   assert.match(source, /entry\.notice\.textContent = 'Bookmarks｜' \+ entry\.title/);
   assert.match(source, /clearError\(key\)/);
   assert.doesNotMatch(source, /tm-bookmarks-error';/);

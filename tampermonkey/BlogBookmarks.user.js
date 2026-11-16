@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.11
-// @description  Float stars between image/metadata and summary, or beside collapsed title; keep errors
+// @version      0.5.12
+// @description  Keep expanded stars at viewport mid-right within each article; dock collapsed stars at titles
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
 // @downloadURL  https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -272,53 +272,39 @@
         }
     }
 
-    // Float the star at the edge between image/metadata and article summary text.
-    // It deliberately straddles the image's lower edge rather than covering its
-    // upper-right corner. The collapsed state uses the title's lower-right edge.
-    // The button stays a direct article child and never participates in layout.
+    // Follow the visible viewport's vertical center while remaining inside
+    // the expanded article: from the title's lower-right edge down to the
+    // article's bottom divider. A collapsed article stays at the title edge.
+    // This direct-child absolute overlay does not add a row or alter layout.
     function positionControl(control) {
         const article = control.link.closest('article.post-item');
         if (!article || !article.isConnected) return;
+        const title = article.querySelector('.post-title');
+        const titleRect = title?.getBoundingClientRect();
+        if (!titleRect) return;
         const articleRect = article.getBoundingClientRect();
-        const summary = article.querySelector('.post-summary');
-        const summaryRect = summary?.getBoundingClientRect();
+        const summaryRect = article.querySelector('.post-summary')?.getBoundingClientRect();
         const collapsed = article.classList?.contains('auto-open-new-articles-collapsed') ||
             !summaryRect || summaryRect.width <= 0 || summaryRect.height <= 0;
         const width = control.button.offsetWidth || 38;
         const height = control.button.offsetHeight || 34;
-        let rightEdge, centerY;
+        const maxLeft = Math.max(0, (article.clientWidth || articleRect.width) - width);
+        const left = Math.max(0, Math.min(articleRect.right - articleRect.left - width - 4, maxLeft));
 
-        if (collapsed) {
-            const titleRect = article.querySelector('.post-title')?.getBoundingClientRect();
-            if (!titleRect) return;
-            rightEdge = titleRect.right;
-            centerY = titleRect.bottom - 2;
-        } else {
-            const image = summary.querySelector('a.feature-image img');
-            const imageRect = image?.getBoundingClientRect();
-            const hasImage = imageRect && imageRect.width >= 24 && imageRect.height >= 24 &&
-                !(image.complete && image.naturalWidth === 0);
-            if (hasImage) {
-                // Half on the image, half below it; never at the image's top edge.
-                rightEdge = imageRect.right;
-                centerY = imageRect.bottom;
-            } else {
-                const metaRect = article.querySelector('.post-meta')?.getBoundingClientRect();
-                const textRect = summary.querySelector('.summary-text')?.getBoundingClientRect();
-                // Use the gap after the small metadata text, before summary prose.
-                rightEdge = metaRect?.right || summaryRect.right;
-                const afterMeta = metaRect?.bottom ?? summaryRect.top;
-                const beforeText = textRect?.top ?? summaryRect.top;
-                centerY = beforeText > afterMeta
-                    ? (afterMeta + beforeText) / 2 : beforeText;
-                // Keep the button's lower edge at most 2px into summary text.
-                centerY = Math.min(centerY, beforeText - height / 2 + 2);
-            }
+        // The upper stop matches the collapsed title-lower-right position.
+        const titleTop = Math.max(0, titleRect.bottom - articleRect.top - height / 2 - 2);
+        let top = titleTop;
+        if (!collapsed) {
+            const visual = window.visualViewport;
+            const viewportMiddle = visual
+                ? visual.offsetTop + visual.height / 2
+                : (window.innerHeight || document.documentElement.clientHeight) / 2;
+            const targetTop = viewportMiddle - articleRect.top - height / 2;
+            // Keep the entire button above this article's bottom separator.
+            const bottomStop = Math.max(titleTop, articleRect.bottom - articleRect.top - height - 4);
+            top = Math.min(bottomStop, Math.max(titleTop, targetTop));
         }
 
-        const maxLeft = Math.max(0, (article.clientWidth || articleRect.width) - width);
-        const left = Math.max(0, Math.min(rightEdge - articleRect.left - width - 4, maxLeft));
-        const top = Math.max(0, centerY - articleRect.top - height / 2);
         control.button.style.setProperty('left', Math.round(left) + 'px', 'important');
         control.button.style.setProperty('top', Math.round(top) + 'px', 'important');
     }
@@ -590,20 +576,8 @@
             positionObserver?.observe(article);
             positionObserver?.observe(title);
             const summary = article.querySelector('.post-summary');
-            if (summary) {
-                positionObserver?.observe(summary);
-                const summaryText = summary.querySelector('.summary-text');
-                if (summaryText) positionObserver?.observe(summaryText);
-            }
-            const meta = article.querySelector('.post-meta');
-            if (meta) positionObserver?.observe(meta);
+            if (summary) positionObserver?.observe(summary);
             collapseObserver?.observe(article, { attributes: true, attributeFilter: ['class'] });
-            const image = article.querySelector('.post-summary a.feature-image img');
-            if (image) {
-                positionObserver?.observe(image);
-                image.addEventListener('load', schedulePositions, { once: true });
-                image.addEventListener('error', schedulePositions, { once: true });
-            }
             added++;
         }
         render();
@@ -676,7 +650,9 @@
             ? new ResizeObserver(schedulePositions) : null;
         collapseObserver = new MutationObserver(schedulePositions);
         window.addEventListener('resize', schedulePositions, { passive: true });
-        window.addEventListener('scroll', scheduleErrorLayout, { passive: true, capture: true });
+        window.addEventListener('scroll', schedulePositions, { passive: true, capture: true });
+        window.visualViewport?.addEventListener('resize', schedulePositions, { passive: true });
+        window.visualViewport?.addEventListener('scroll', schedulePositions, { passive: true });
         captureOriginalTitles();
         scan();
         const observer = new MutationObserver(() => {
