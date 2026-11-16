@@ -82,13 +82,18 @@ function harness() {
     article.rect = { left: 100, right: 500, top: 300, bottom: 650, width: 400, height: 350 };
     const title = element('title');
     title.rect = { left: 100, right: 460, top: 300, bottom: 340, width: 360, height: 40 };
+    const summary = element('summary');
+    summary.rect = { left: 100, right: 500, top: 420, bottom: 620, width: 400, height: 200 };
+    article.collapsed = false;
+    article.classList = { contains: name => name === 'auto-open-new-articles-collapsed' && article.collapsed };
     const img = image ? element('img') : null;
     if (img) {
       img.rect = { left: 120, right: 340, top: 320, bottom: 460, width: 220, height: 140 };
       img.complete = true;
       img.naturalWidth = 220;
     }
-    article.querySelector = selector => selector.includes('feature-image') ? img :
+    article.querySelector = selector => selector === '.post-summary' ? summary :
+      selector.includes('feature-image') ? img :
       selector === '.post-title' ? title :
       selector === '.summary-text' ? { textContent: 'Original summary' } : null;
     const link = {
@@ -102,35 +107,50 @@ function harness() {
     button.rect = { left: 200, right: 238, top: y, bottom: y + 34, width: 38, height: 34 };
     const control = { link, button, url };
     api.controls.set(link, control);
-    return { article, title, img, link, button, control };
+    return { article, title, summary, img, link, button, control };
   }
   return { api, document, replies, requests, addArticle };
 }
 
-test('star docks on the divider, below the image or at the right edge without an image', () => {
+test('expanded star always uses summary upper-right regardless of image', () => {
   const { api, addArticle } = harness();
   const withImage = addArticle('https://example.org/image');
   const originalHeight = withImage.article.rect.height;
   api.positionControl(withImage.control);
-  assert.equal(withImage.button.styles.left, '198px'); // Align with image right edge.
-  assert.equal(withImage.button.styles.top, '333px'); // Straddles article bottom separator.
-  assert.ok(300 + Number.parseInt(withImage.button.styles.top) > withImage.img.rect.bottom);
-  assert.equal(withImage.article.rect.height, originalHeight); // No extra layout height.
+  assert.equal(withImage.button.styles.left, '358px');
+  assert.equal(withImage.button.styles.top, '122px');
+  assert.equal(withImage.article.rect.height, originalHeight);
 
-  // An image ending at the divider must still remain completely unobscured.
-  withImage.img.rect.bottom = 645;
-  api.positionControl(withImage.control);
-  assert.equal(withImage.button.styles.top, '348px');
-
-  // Broken and absent images use the separator's far-right end, not the title.
+  // Image geometry and broken-image state must not change the anchor.
+  withImage.img.rect = { left: 120, right: 490, top: 430, bottom: 640, width: 370, height: 210 };
   withImage.img.naturalWidth = 0;
   api.positionControl(withImage.control);
-  assert.equal(withImage.button.styles.left, '356px');
-  assert.equal(withImage.button.styles.top, '333px');
-  const noImage = addArticle('https://example.org/title', { image: false });
+  assert.equal(withImage.button.styles.left, '358px');
+  assert.equal(withImage.button.styles.top, '122px');
+
+  const noImage = addArticle('https://example.org/no-image', { image: false });
   api.positionControl(noImage.control);
-  assert.equal(noImage.button.styles.left, '356px');
-  assert.equal(noImage.button.styles.top, '333px');
+  assert.equal(noImage.button.styles.left, '358px');
+  assert.equal(noImage.button.styles.top, '122px');
+});
+
+test('collapsed or hidden summary moves star to title lower-right then restores summary position', () => {
+  const { api, addArticle } = harness();
+  const row = addArticle('https://example.org/toggle');
+  api.positionControl(row.control);
+  assert.equal(row.button.styles.top, '122px');
+  row.article.collapsed = true;
+  api.positionControl(row.control);
+  assert.equal(row.button.styles.left, '318px');
+  assert.equal(row.button.styles.top, '4px');
+  row.article.collapsed = false;
+  api.positionControl(row.control);
+  assert.equal(row.button.styles.left, '358px');
+  assert.equal(row.button.styles.top, '122px');
+  row.summary.rect.width = 0; // Hidden by another stylesheet even without class.
+  api.positionControl(row.control);
+  assert.equal(row.button.styles.left, '318px');
+  assert.equal(row.button.styles.top, '4px');
 });
 
 test('three independent errors attach to visible star or top/bottom viewport corners', () => {

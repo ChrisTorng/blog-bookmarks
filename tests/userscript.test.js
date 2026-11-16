@@ -7,7 +7,7 @@ const source = readFileSync(new URL('../tampermonkey/BlogBookmarks.user.js', imp
 test('userscript installs from blog-bookmarks and parses', () => {
   assert.doesNotThrow(() => new Function(source));
   assert.match(source, /\/\/ @name\s+Blog Bookmarks\n/);
-  assert.match(source, /\/\/ @version\s+0\.5\.9\n/);
+  assert.match(source, /\/\/ @version\s+0\.5\.10\n/);
   assert.match(source, /raw\.githubusercontent\.com\/ChrisTorng\/blog-bookmarks\/main\/tampermonkey\/BlogBookmarks\.user\.js/);
   assert.match(source, /\/\/ @match\s+https:\/\/hackernews\.betacat\.io\/\*/);
   assert.doesNotMatch(source, /cloudmark-christorng|cloudmark\.site/);
@@ -26,12 +26,13 @@ test('single click toggles empty/full star without category modal', () => {
   assert.doesNotMatch(source, /openMenu/);
 });
 
-test('bookmark star docks below the image or at the summary right edge without a toolbar row', () => {
+test('bookmark star follows summary upper-right or collapsed title lower-right without a toolbar row', () => {
   assert.match(source, /article\.post-item \{ position: relative !important; \}/);
   assert.match(source, /article\.appendChild\(button\)/);
-  assert.match(source, /querySelector\('\.post-summary a\.feature-image img'\)/);
-  assert.match(source, /const dividerTop = articleRect\.bottom - articleRect\.top - height \/ 2/);
-  assert.match(source, /const belowImage = hasImage \? imageRect\.bottom - articleRect\.top \+ 3 : 0/);
+  assert.match(source, /querySelector\('\.post-summary'\)/);
+  assert.match(source, /const collapsed = article\.classList\?\.contains/);
+  assert.match(source, /rect\.top - articleRect\.top \+ 2/);
+  assert.match(source, /collapseObserver\?\.observe\(article/);
   assert.match(source, /position: absolute !important/);
   assert.match(source, /positionControl\(control\)/);
   assert.match(source, /new ResizeObserver\(schedulePositions\)/);
