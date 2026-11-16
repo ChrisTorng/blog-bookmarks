@@ -116,70 +116,79 @@ function harness() {
     api.controls.set(link, control);
     return { article, title, meta, summary, summaryText, img, link, button, control };
   }
-  return { api, document, replies, requests, addArticle };
+  return { api, document, window: sandbox.window, replies, requests, addArticle };
 }
 
-test('expanded image star straddles image bottom/right and does not move with summary top', () => {
-  const { api, addArticle } = harness();
-  const row = addArticle('https://example.org/image');
-  const initialArticleHeight = row.article.rect.height;
-  api.positionControl(row.control);
-  assert.equal(row.button.styles.left, '338px'); // Image right: 480 - 100 - 38 - 4.
-  assert.equal(row.button.styles.top, '313px'); // Image bottom: 630 - 300 - 17.
-  assert.equal(row.article.rect.height, initialArticleHeight);
-  assert.ok(300 + Number.parseInt(row.button.styles.top) < row.img.rect.bottom);
-  assert.ok(300 + Number.parseInt(row.button.styles.top) + 34 > row.img.rect.bottom);
-
-  // Changing summary height or top must not pin the star to the image top.
-  row.summary.rect.top = 400;
-  row.img.rect.bottom = 680;
-  api.positionControl(row.control);
-  assert.equal(row.button.styles.top, '363px');
-
-  // Width and height reserved by lazy images still count before loading.
-  row.img.complete = false;
-  row.img.naturalWidth = 0;
-  api.positionControl(row.control);
-  assert.equal(row.button.styles.top, '363px');
-});
-
-test('expanded image-free star fits between metadata and summary text, even when narrow', () => {
-  const { api, addArticle } = harness();
-  const row = addArticle('https://example.org/no-image', { image: false });
-  row.summaryText.rect.top = 430;
-  api.positionControl(row.control);
+test('expanded star follows viewport center but stays between title and bottom divider', () => {
+  const { api, window, addArticle } = harness();
+  const row = addArticle('https://example.org/long-article');
+  const originalHeight = row.article.rect.height;
+  const placeAt = (top, bottom) => {
+    row.article.rect.top = top;
+    row.article.rect.bottom = bottom;
+    row.article.rect.height = bottom - top;
+    row.title.rect.top = top;
+    row.title.rect.bottom = top + 40;
+    api.positionControl(row.control);
+    return Number.parseInt(row.button.styles.top);
+  };
+  // Newly entering from below: the star waits at the title's lower-right.
+  assert.equal(placeAt(600, 1250), 21);
   assert.equal(row.button.styles.left, '358px');
-  assert.equal(row.button.styles.top, '98px'); // Button bottom 432, 2px into prose at 430.
-  row.meta.rect.bottom = 428; // No space left; prioritize readable summary text.
-  api.positionControl(row.control);
-  assert.equal(row.button.styles.top, '98px');
-  assert.ok(300 + Number.parseInt(row.button.styles.top) + 34 <= row.summaryText.rect.top + 2);
 
-  // Broken image follows the no-image rule instead of using its placeholder.
-  const broken = addArticle('https://example.org/broken');
-  broken.img.naturalWidth = 0;
-  broken.summaryText.rect.top = 430;
-  api.positionControl(broken.control);
-  assert.equal(broken.button.styles.left, '358px');
-  assert.equal(broken.button.styles.top, '98px');
+  // Once the title passes the viewport midpoint, the star stays at y=380.
+  assert.equal(placeAt(300, 950), 63);
+  assert.equal(300 + 63 + 17, window.innerHeight / 2);
+  assert.equal(placeAt(100, 750), 263);
+  assert.equal(100 + 263 + 17, window.innerHeight / 2);
+
+  // Near the end, it stops just above this article's bottom separator.
+  assert.equal(placeAt(-350, 300), 612);
+  assert.equal(-350 + 612 + 34, 296);
+  assert.equal(row.article.rect.height, 650);
+  assert.equal(originalHeight, 350); // No layout sizing is written by the script.
 });
 
-test('collapse and expand move star between title lower-right and image/metadata boundary', () => {
+test('different articles retain independent star bounds when both are visible', () => {
+  const { api, addArticle } = harness();
+  const current = addArticle('https://example.org/first');
+  const following = addArticle('https://example.org/next', { image: false });
+  current.article.rect = { left: 100, right: 500, top: -300, bottom: 430, width: 400, height: 730 };
+  current.title.rect = { left: 100, right: 460, top: -300, bottom: -260, width: 360, height: 40 };
+  following.article.rect = { left: 100, right: 500, top: 430, bottom: 1200, width: 400, height: 770 };
+  following.title.rect = { left: 100, right: 460, top: 430, bottom: 470, width: 360, height: 40 };
+  api.positionControl(current.control);
+  api.positionControl(following.control);
+  assert.equal(current.button.styles.top, '663px'); // Screen center of the first.
+  assert.equal(following.button.styles.top, '21px'); // Next waits at its title.
+});
+
+test('visual viewport midpoint handles mobile browser toolbars', () => {
+  const { api, window, addArticle } = harness();
+  const row = addArticle('https://example.org/mobile');
+  row.article.rect.top = 100;
+  row.article.rect.bottom = 750;
+  row.title.rect.top = 100;
+  row.title.rect.bottom = 140;
+  window.visualViewport = { offsetTop: 40, height: 500 };
+  api.positionControl(row.control);
+  assert.equal(row.button.styles.top, '173px'); // Visual center = 40 + 250 = 290.
+});
+
+test('collapsed or visually hidden summaries always pin the star to title lower-right', () => {
   const { api, addArticle } = harness();
   const row = addArticle('https://example.org/toggle');
   api.positionControl(row.control);
-  assert.equal(row.button.styles.top, '313px');
+  assert.equal(row.button.styles.top, '63px');
   row.article.collapsed = true;
   api.positionControl(row.control);
-  assert.equal(row.button.styles.left, '318px');
+  assert.equal(row.button.styles.left, '358px');
   assert.equal(row.button.styles.top, '21px');
   row.article.collapsed = false;
   api.positionControl(row.control);
-  assert.equal(row.button.styles.left, '338px');
-  assert.equal(row.button.styles.top, '313px');
-  row.summary.rect.width = 0; // Hidden by third-party stylesheet.
+  assert.equal(row.button.styles.top, '63px');
+  row.summary.rect.width = 0;
   api.positionControl(row.control);
-  assert.equal(row.button.styles.left, '318px');
   assert.equal(row.button.styles.top, '21px');
 });
 
