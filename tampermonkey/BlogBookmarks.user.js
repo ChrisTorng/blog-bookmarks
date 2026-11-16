@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.10
-// @description  Place stars at summary upper-right or collapsed title lower-right; keep persistent errors
+// @version      0.5.11
+// @description  Float stars between image/metadata and summary, or beside collapsed title; keep errors
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
 // @downloadURL  https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -272,28 +272,53 @@
         }
     }
 
-    // Dock at the summary's upper-right corner, never at the article bottom.
-    // The collapse script hides the summary but intentionally keeps this button
-    // visible, so fall back to the title's lower-right corner while collapsed.
-    // Absolute positioning leaves the article layout and height untouched.
+    // Float the star at the edge between image/metadata and article summary text.
+    // It deliberately straddles the image's lower edge rather than covering its
+    // upper-right corner. The collapsed state uses the title's lower-right edge.
+    // The button stays a direct article child and never participates in layout.
     function positionControl(control) {
         const article = control.link.closest('article.post-item');
         if (!article || !article.isConnected) return;
+        const articleRect = article.getBoundingClientRect();
         const summary = article.querySelector('.post-summary');
         const summaryRect = summary?.getBoundingClientRect();
         const collapsed = article.classList?.contains('auto-open-new-articles-collapsed') ||
             !summaryRect || summaryRect.width <= 0 || summaryRect.height <= 0;
-        const anchor = collapsed ? article.querySelector('.post-title') : summary;
-        const rect = collapsed ? anchor?.getBoundingClientRect() : summaryRect;
-        if (!rect) return;
-        const articleRect = article.getBoundingClientRect();
         const width = control.button.offsetWidth || 38;
         const height = control.button.offsetHeight || 34;
+        let rightEdge, centerY;
+
+        if (collapsed) {
+            const titleRect = article.querySelector('.post-title')?.getBoundingClientRect();
+            if (!titleRect) return;
+            rightEdge = titleRect.right;
+            centerY = titleRect.bottom - 2;
+        } else {
+            const image = summary.querySelector('a.feature-image img');
+            const imageRect = image?.getBoundingClientRect();
+            const hasImage = imageRect && imageRect.width >= 24 && imageRect.height >= 24 &&
+                !(image.complete && image.naturalWidth === 0);
+            if (hasImage) {
+                // Half on the image, half below it; never at the image's top edge.
+                rightEdge = imageRect.right;
+                centerY = imageRect.bottom;
+            } else {
+                const metaRect = article.querySelector('.post-meta')?.getBoundingClientRect();
+                const textRect = summary.querySelector('.summary-text')?.getBoundingClientRect();
+                // Use the gap after the small metadata text, before summary prose.
+                rightEdge = metaRect?.right || summaryRect.right;
+                const afterMeta = metaRect?.bottom ?? summaryRect.top;
+                const beforeText = textRect?.top ?? summaryRect.top;
+                centerY = beforeText > afterMeta
+                    ? (afterMeta + beforeText) / 2 : beforeText;
+                // Keep the button's lower edge at most 2px into summary text.
+                centerY = Math.min(centerY, beforeText - height / 2 + 2);
+            }
+        }
+
         const maxLeft = Math.max(0, (article.clientWidth || articleRect.width) - width);
-        const left = Math.max(0, Math.min(rect.right - articleRect.left - width - 4, maxLeft));
-        const top = collapsed
-            ? Math.max(0, rect.bottom - articleRect.top - height - 2)
-            : Math.max(0, rect.top - articleRect.top + 2);
+        const left = Math.max(0, Math.min(rightEdge - articleRect.left - width - 4, maxLeft));
+        const top = Math.max(0, centerY - articleRect.top - height / 2);
         control.button.style.setProperty('left', Math.round(left) + 'px', 'important');
         control.button.style.setProperty('top', Math.round(top) + 'px', 'important');
     }
@@ -565,7 +590,13 @@
             positionObserver?.observe(article);
             positionObserver?.observe(title);
             const summary = article.querySelector('.post-summary');
-            if (summary) positionObserver?.observe(summary);
+            if (summary) {
+                positionObserver?.observe(summary);
+                const summaryText = summary.querySelector('.summary-text');
+                if (summaryText) positionObserver?.observe(summaryText);
+            }
+            const meta = article.querySelector('.post-meta');
+            if (meta) positionObserver?.observe(meta);
             collapseObserver?.observe(article, { attributes: true, attributeFilter: ['class'] });
             const image = article.querySelector('.post-summary a.feature-image img');
             if (image) {
