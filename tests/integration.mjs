@@ -110,6 +110,21 @@ try{
  const blocked=await req('/bookmarks/api/admin/'+blankId,'PATCH',{status:2},true);
  assert.equal(blocked.status,400,blocked.text);
  assert.match(blocked.body.error,/摘要/);
+ const repairPath='/bookmarks/api/admin/summary-repair';
+ assert.equal((await req(repairPath)).status,401);
+ assert.ok((await req(repairPath,'GET',undefined,true)).body.items.some(item=>item.id===blankId));
+ const description='這是從原文核對後保存的完整繁體中文摘要。';
+ const repaired=await req(repairPath,'POST',{id:blankId,description},true);
+ assert.equal(repaired.status,200,repaired.text);
+ assert.equal(repaired.body.saved,true);
+ assert.deepEqual(repaired.body.last_repair.items,[
+  {id:blankId,title:'Missing summary',title_original:null,url:'https://example.org/no-summary',summary:description}
+ ]);
+ const reloaded=await req(repairPath,'GET',undefined,true);
+ assert.deepEqual(reloaded.body.last_repair,repaired.body.last_repair);
+ assert.ok(!reloaded.body.items.some(item=>item.id===blankId));
+ assert.equal((await req(repairPath,'POST',{id:blankId,description:'另一段不應覆寫既有資料的摘要。'},true)).status,400);
+ assert.deepEqual((await req(repairPath,'GET',undefined,true)).body.last_repair,repaired.body.last_repair);
  assert.equal((await req('/bookmarks/api/admin/'+blankId,'PATCH',{summary:'手動補充一段有意義的文章摘要。',status:2},true)).body.status,2);
  assert.equal((await req('/bookmarks/api/admin/'+blankId,'DELETE',undefined,true)).body.deleted,true);
  const tagUpdate=await req('/bookmarks/api/admin/tags/ai','PATCH',{name:'AI Research',name_zh:'人工智慧'},true);
