@@ -29,7 +29,7 @@ export function bookmarkSource(url) {
     return '<span class="inline-flex max-w-full min-w-0 items-center gap-1.5" title="'+esc(label)+'">'+
       '<img src="https://www.google.com/s2/favicons?domain='+encodeURIComponent(u.hostname)+
       '&amp;sz=32" alt="" width="16" height="16" loading="lazy" decoding="async" referrerpolicy="no-referrer" class="h-4 w-4 shrink-0 rounded-sm">'+
-      '<span class="min-w-0 truncate">'+esc(label)+'</span></span>';
+      '&nbsp;<span class="min-w-0 truncate">'+esc(label)+'</span></span>';
   }catch{return ''}
 }
 export function bookmarkReferences(item) {
@@ -71,14 +71,14 @@ export function bookmarkArticleHtml(item,categories=[],relatedNotesHtml='',perma
   const original=target!==item.url
     ? '<a href="'+esc(item.url)+'" target="_blank" rel="noopener noreferrer" class="hidden max-w-full truncate underline md:inline">原始網址：'+esc(item.url)+'</a>' : '';
   const tags=bookmarkTags(item,categories).map(t=>
-    '<a class="text-primary-500" href="/bookmarks/?tag='+encodeURIComponent(t.id)+'">#'+esc(t.name)+'</a>').join('');
+    '<a class="text-primary-500" href="/bookmarks/?tag='+encodeURIComponent(t.id)+'">#'+esc(t.name)+'</a>').join(' ');
   const status=item.status===4?'<span class="text-primary-500">☆ 推薦</span>':
     item.status!==3?'<span class="text-gray-500">未公開</span>':'';
   const referenceLink=permalink
     ? '<a class="text-primary-500" href="'+esc(permalink)+'">書籤永久連結</a>' : '';
   const relatedNotes=relatedNotesHtml
     ? '<aside aria-label="引用隨筆" class="mt-3 min-w-0 rounded-r-lg border-l-4 border-primary-500 bg-gray-50/60 px-3 py-2 dark:bg-gray-800/40">'+
-      relatedNotesHtml+'</aside>' : '';
+      '<hr><p><strong>引用隨筆</strong></p>'+relatedNotesHtml+'</aside>' : '';
   return '<article class="border-b border-gray-300/40 py-4 dark:border-gray-700">'+
     '<div class="mb-2 flex items-center justify-between gap-3 text-xs">'+
     '<time class="text-gray-500" datetime="'+esc(date)+'">'+esc(date)+'</time>'+status+'</div>'+
@@ -86,6 +86,7 @@ export function bookmarkArticleHtml(item,categories=[],relatedNotesHtml='',perma
     esc(target)+'" target="_blank" rel="noopener noreferrer">'+esc(item.title)+'</a></h1>'+
     english+summary+
     '<div class="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600 dark:text-gray-300">'+
-    bookmarkSource(item.url)+original+referenceLink+'</div>'+bookmarkReferences(item)+
+    bookmarkSource(item.url)+original+'</div>'+
+    (referenceLink?'<p class="mt-2 text-xs">'+referenceLink+'</p>':'')+bookmarkReferences(item)+
     '<div class="mt-2 flex flex-wrap items-center gap-3 text-sm">'+tags+'</div>'+relatedNotes+'</article>';
 }

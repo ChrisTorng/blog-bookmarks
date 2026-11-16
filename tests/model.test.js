@@ -39,13 +39,13 @@ test('public RSS opens the local bookmark and shows original source, English tit
  assert.ok(xml.includes('說明 &amp;lt;測試&amp;gt;'))
  assert.ok(xml.includes('<content:encoded>'))
 })
-test('same-day RSS items sort with descending unique synthetic seconds', () => {
+test('same-day RSS items sort with descending visible synthetic minutes', () => {
  const items = ['3','2','1'].map(id => ({id,title:id,url:'https://example.org/'+id,status_at:'2026-11-07'}))
  const xml = rss(items, 'https://christorng.idv.tw', 'ai', '人工智慧')
  assert.ok(xml.includes('人工智慧 · 書籤 RSS | ChrisTorng 學習天地'))
  const dates = [...xml.matchAll(new RegExp('<pubDate>(.*?)</pubDate>', 'g'))].map(m => Date.parse(m[1]))
  assert.equal(dates.length, 3)
- assert.equal(dates[0]-dates[1], 1000)
- assert.equal(dates[1]-dates[2], 1000)
- assert.equal(new Date(dates[0]).toISOString(), '2026-11-06T16:00:03.000Z')
+ assert.equal(dates[0]-dates[1], 60000)
+ assert.equal(dates[1]-dates[2], 60000)
+ assert.equal(new Date(dates[0]).toISOString(), '2026-11-06T16:02:00.000Z')
 })

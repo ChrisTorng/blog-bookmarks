@@ -28,7 +28,7 @@ test('detail links original URL and has site bookmark path',()=>{
 });
 test('RSS timestamps use recommendation event not first collection',()=>{
  const xml=rss([item],'https://christorng.idv.tw');
- assert.match(xml,/Mon, 02 Nov 2026 16:00:01 GMT/);
+ assert.match(xml,/Mon, 02 Nov 2026 16:00:00 GMT/);
  assert.doesNotMatch(xml,/Tue, 01 Sep 2026/);
 });
 
