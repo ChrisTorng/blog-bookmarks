@@ -40,12 +40,13 @@ test('source and redirected URL plus original title are editable and visible',()
  assert.match(admin,/b\.preferred_url\|\|b\.redirect_url\|\|b\.url/);
 });
 
-test('BetaCat star overlays the summary top-right without creating a toolbar',()=>{
+test('BetaCat star floats at image/summary boundary without creating a toolbar',()=>{
  assert.match(script,/article\.appendChild\(button\)/);
  assert.match(script,/position: absolute !important/);
  assert.match(script,/querySelector\('\.post-summary'\)/);
  assert.match(script,/const collapsed = article\.classList\?\.contains/);
- assert.match(script,/rect\.top - articleRect\.top \+ 2/);
+ assert.match(script,/centerY = imageRect\.bottom/);
+ assert.match(script,/const afterMeta = metaRect\?\.bottom/);
  assert.match(script,/opacity: \.58 !important/);
  assert.doesNotMatch(script,/tm-betacat-article-tools|oldCollapseButton/);
 });
