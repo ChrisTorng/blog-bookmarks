@@ -110,7 +110,7 @@ test('per-URL failures persist with scroll-aware top/bottom messages and red sta
   assert.match(source, /bottomErrorStack\.appendChild\(entry\.notice\)/);
   assert.match(source, /topErrorStack\.appendChild\(entry\.notice\)/);
   assert.match(source, /window\.addEventListener\('scroll', schedulePositions/);
-  assert.match(source, /for \(const control of controls\.values\(\)\) positionControl\(control\);\s*scheduleErrorLayout\(\)/);
+  assert.match(source, /for \(const control of controls\.values\(\)\) positionControl\(control\);\s*if \(errors\.size\) scheduleErrorLayout\(\)/);
   assert.match(source, /entry\.notice\.textContent = 'Bookmarks｜' \+ entry\.title/);
   assert.match(source, /clearError\(key\)/);
   assert.doesNotMatch(source, /tm-bookmarks-error';/);
