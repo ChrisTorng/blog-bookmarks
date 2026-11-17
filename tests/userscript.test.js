@@ -7,7 +7,7 @@ const source = readFileSync(new URL('../tampermonkey/BlogBookmarks.user.js', imp
 test('userscript installs from blog-bookmarks and parses', () => {
   assert.doesNotThrow(() => new Function(source));
   assert.match(source, /\/\/ @name\s+Blog Bookmarks\n/);
-  assert.match(source, /\/\/ @version\s+0\.5\.12\n/);
+  assert.match(source, /\/\/ @version\s+0\.5\.13\n/);
   assert.match(source, /raw\.githubusercontent\.com\/ChrisTorng\/blog-bookmarks\/main\/tampermonkey\/BlogBookmarks\.user\.js/);
   assert.match(source, /\/\/ @match\s+https:\/\/hackernews\.betacat\.io\/\*/);
   assert.doesNotMatch(source, /cloudmark-christorng|cloudmark\.site/);
@@ -26,12 +26,20 @@ test('single click toggles empty/full star without category modal', () => {
   assert.doesNotMatch(source, /openMenu/);
 });
 
-test('bookmark star follows viewport center within article and collapsed title lower-right without a toolbar row', () => {
+test('bookmark star is CSS-fixed at screen-right center with absolute per-article stops', () => {
   assert.match(source, /article\.post-item \{ position: relative !important; \}/);
   assert.match(source, /article\.appendChild\(button\)/);
   assert.match(source, /querySelector\('\.post-summary'\)/);
   assert.match(source, /const collapsed = article\.classList\?\.contains/);
   assert.match(source, /const viewportMiddle = visual/);
+  assert.match(source, /const mode = collapsed/);
+  assert.match(source, /document.body.appendChild\(control.button\)/);
+  assert.match(source, /data-bookmarks-position/);
+  assert.match(source, /right: 0 !important/);
+  assert.match(source, /top: 50dvh !important/);
+  assert.match(source, /transform: translateY\(-50%\) !important/);
+  assert.match(source, /mode === 'center'\) return/);
+  assert.match(source, /control.positionLeft/);
   assert.match(source, /const titleTop = Math\.max/);
   assert.match(source, /const bottomStop = Math\.max/);
   assert.match(source, /window\.addEventListener\('scroll', schedulePositions/);
