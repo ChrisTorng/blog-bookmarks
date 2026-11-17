@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.12
-// @description  Keep expanded stars at viewport mid-right within each article; dock collapsed stars at titles
+// @version      0.5.13
+// @description  Fix expanded stars at viewport center/right edge, with title and bottom article stops
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
 // @downloadURL  https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -21,6 +21,8 @@
     const ENDPOINT = 'https://christorng.idv.tw/bookmarks/api/ingest';
     const TOKEN_KEY = 'blog-bookmarks-ingest-token';
     const BUTTON_CLASS = 'tm-blog-bookmarks-save';
+    const STAR_WIDTH = 38;
+    const STAR_HEIGHT = 34;
     const ERROR_CLASS = 'tm-bookmarks-error-notice';
     const controls = new Map();
     const saved = new Map();
@@ -249,6 +251,9 @@
     function render() {
         for (const [link, control] of controls) {
             if (!link.isConnected || !control.button.isConnected) {
+                // The fixed center star lives under body. Remove it if its
+                // source article is replaced, otherwise it becomes an orphan.
+                if (!link.isConnected) control.button.remove();
                 controls.delete(link);
                 continue;
             }
@@ -272,41 +277,58 @@
         }
     }
 
-    // Follow the visible viewport's vertical center while remaining inside
-    // the expanded article: from the title's lower-right edge down to the
-    // article's bottom divider. A collapsed article stays at the title edge.
-    // This direct-child absolute overlay does not add a row or alter layout.
+    // Let CSS position:fixed anchor the star to the visible screen center.
+    // JavaScript only changes modes at the article's title/bottom boundaries;
+    // it never writes a continuously changing top during pinned scrolling.
+    // Reparent the centered star to body so article overflow/transform cannot
+    // move or clip its viewport-fixed position. No flow height is added.
     function positionControl(control) {
         const article = control.link.closest('article.post-item');
         if (!article || !article.isConnected) return;
-        const title = article.querySelector('.post-title');
-        const titleRect = title?.getBoundingClientRect();
+        const titleRect = article.querySelector('.post-title')?.getBoundingClientRect();
         if (!titleRect) return;
         const articleRect = article.getBoundingClientRect();
         const summaryRect = article.querySelector('.post-summary')?.getBoundingClientRect();
         const collapsed = article.classList?.contains('auto-open-new-articles-collapsed') ||
             !summaryRect || summaryRect.width <= 0 || summaryRect.height <= 0;
-        const width = control.button.offsetWidth || 38;
-        const height = control.button.offsetHeight || 34;
-        const maxLeft = Math.max(0, (article.clientWidth || articleRect.width) - width);
-        const left = Math.max(0, Math.min(articleRect.right - articleRect.left - width - 4, maxLeft));
+        const titleTop = Math.max(0, titleRect.bottom - articleRect.top - STAR_HEIGHT / 2 - 2);
+        const bottomStop = Math.max(titleTop,
+            articleRect.bottom - articleRect.top - STAR_HEIGHT - 4);
+        const visual = window.visualViewport;
+        const viewportMiddle = visual
+            ? visual.offsetTop + visual.height / 2
+            : (window.innerHeight || document.documentElement.clientHeight) / 2;
+        const targetTop = viewportMiddle - articleRect.top - STAR_HEIGHT / 2;
+        const mode = collapsed || targetTop <= titleTop ? 'title'
+            : targetTop >= bottomStop ? 'bottom' : 'center';
 
-        // The upper stop matches the collapsed title-lower-right position.
-        const titleTop = Math.max(0, titleRect.bottom - articleRect.top - height / 2 - 2);
-        let top = titleTop;
-        if (!collapsed) {
-            const visual = window.visualViewport;
-            const viewportMiddle = visual
-                ? visual.offsetTop + visual.height / 2
-                : (window.innerHeight || document.documentElement.clientHeight) / 2;
-            const targetTop = viewportMiddle - articleRect.top - height / 2;
-            // Keep the entire button above this article's bottom separator.
-            const bottomStop = Math.max(titleTop, articleRect.bottom - articleRect.top - height - 4);
-            top = Math.min(bottomStop, Math.max(titleTop, targetTop));
+        if (mode !== control.positionMode) {
+            // Keep the same button/event handler; only change its layout host.
+            if (mode === 'center') document.body.appendChild(control.button);
+            else article.appendChild(control.button);
+            control.button.style.removeProperty('left');
+            control.button.style.removeProperty('top');
+            control.button.setAttribute('data-bookmarks-position', mode);
+            control.positionMode = mode;
+            control.positionLeft = undefined;
+            control.positionTop = undefined;
         }
+        if (mode === 'center') return; // CSS owns fixed right:0/top:50dvh.
 
-        control.button.style.setProperty('left', Math.round(left) + 'px', 'important');
-        control.button.style.setProperty('top', Math.round(top) + 'px', 'important');
+        // Absolute endpoints scroll with the article without any JS motion.
+        // Deliberately allow left to exceed the article's width to reach the
+        // actual viewport edge, even for a narrow/centered content column.
+        const viewportRight = document.documentElement.clientWidth || window.innerWidth;
+        const left = Math.round(viewportRight - articleRect.left - STAR_WIDTH);
+        const top = Math.round(mode === 'title' ? titleTop : bottomStop);
+        if (left !== control.positionLeft) {
+            control.button.style.setProperty('left', left + 'px', 'important');
+            control.positionLeft = left;
+        }
+        if (top !== control.positionTop) {
+            control.button.style.setProperty('top', top + 'px', 'important');
+            control.positionTop = top;
+        }
     }
 
     function schedulePositions() {
@@ -315,7 +337,7 @@
         requestAnimationFrame(() => {
             positionScheduled = false;
             for (const control of controls.values()) positionControl(control);
-            scheduleErrorLayout();
+            if (errors.size) scheduleErrorLayout();
         });
     }
 
@@ -384,7 +406,9 @@
             notice.addEventListener('click', () => {
                 const control = [...controls.values()].find(item =>
                     item.url === url && item.button.isConnected);
-                control?.button.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                // A center star is fixed in body; scroll the source article.
+                (control?.link.closest('article.post-item') || control?.button)
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
             });
             notice.addEventListener('keydown', event => {
                 if (event.key === 'Enter' || event.key === ' ') {
@@ -602,6 +626,11 @@
                 font: 600 24px/1 system-ui,sans-serif !important; color: #145486 !important;
                 background: rgba(241,247,255,.7) !important; opacity: .58 !important;
                 text-align: center !important; cursor: pointer !important; touch-action: manipulation !important;
+            }
+            .${BUTTON_CLASS}[data-bookmarks-position="center"] {
+                position: fixed !important; left: auto !important; right: 0 !important;
+                top: 50vh !important; top: 50dvh !important; bottom: auto !important;
+                transform: translateY(-50%) !important;
             }
             .${BUTTON_CLASS}:hover, .${BUTTON_CLASS}:focus-visible {
                 background: rgba(219,234,255,.9) !important; opacity: 1 !important;
