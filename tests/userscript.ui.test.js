@@ -13,7 +13,10 @@ function element(tag = 'div') {
   const el = {
     tag, children: [], parentNode: null, attrs: {}, styles: {},
     isConnected: true, offsetWidth: 300, offsetHeight: 60,
-    style: { setProperty(key, value) { el.styles[key] = value; } },
+    style: {
+      setProperty(key, value) { el.styles[key] = value; },
+      removeProperty(key) { delete el.styles[key]; }
+    },
     setAttribute(key, value) { el.attrs[key] = value; },
     removeAttribute(key) { delete el.attrs[key]; },
     addEventListener() {},
@@ -119,10 +122,9 @@ function harness() {
   return { api, document, window: sandbox.window, replies, requests, addArticle };
 }
 
-test('expanded star follows viewport center but stays between title and bottom divider', () => {
-  const { api, window, addArticle } = harness();
+test('expanded star uses native CSS fixed positioning between article stops and reaches screen edge', () => {
+  const { api, document, addArticle } = harness();
   const row = addArticle('https://example.org/long-article');
-  const originalHeight = row.article.rect.height;
   const placeAt = (top, bottom) => {
     row.article.rect.top = top;
     row.article.rect.bottom = bottom;
@@ -130,27 +132,36 @@ test('expanded star follows viewport center but stays between title and bottom d
     row.title.rect.top = top;
     row.title.rect.bottom = top + 40;
     api.positionControl(row.control);
-    return Number.parseInt(row.button.styles.top);
   };
-  // Newly entering from below: the star waits at the title's lower-right.
-  assert.equal(placeAt(600, 1250), 21);
-  assert.equal(row.button.styles.left, '358px');
+  // Entering from below: dock at the title; relative left extends to the viewport edge.
+  placeAt(600, 1250);
+  assert.equal(row.button.attrs['data-bookmarks-position'], 'title');
+  assert.equal(row.button.styles.top, '21px');
+  assert.equal(row.button.styles.left, '252px'); // viewport 390 - article left 100 - star 38
+  assert.equal(row.button.parentNode, row.article);
 
-  // Once the title passes the viewport midpoint, the star stays at y=380.
-  assert.equal(placeAt(300, 950), 63);
-  assert.equal(300 + 63 + 17, window.innerHeight / 2);
-  assert.equal(placeAt(100, 750), 263);
-  assert.equal(100 + 263 + 17, window.innerHeight / 2);
+  // The middle mode belongs to CSS, not to per-frame JS coordinate changes.
+  placeAt(300, 950);
+  assert.equal(row.button.attrs['data-bookmarks-position'], 'center');
+  assert.equal(row.button.parentNode, document.body);
+  assert.equal(row.button.styles.top, undefined);
+  assert.equal(row.button.styles.left, undefined);
+  placeAt(100, 750);
+  assert.equal(row.button.attrs['data-bookmarks-position'], 'center');
+  assert.equal(row.button.parentNode, document.body);
+  assert.equal(row.button.styles.top, undefined);
+  assert.equal(row.button.styles.left, undefined);
 
-  // Near the end, it stops just above this article's bottom separator.
-  assert.equal(placeAt(-350, 300), 612);
+  // Exiting above: reattach to article and cap before its bottom divider.
+  placeAt(-350, 300);
+  assert.equal(row.button.attrs['data-bookmarks-position'], 'bottom');
+  assert.equal(row.button.parentNode, row.article);
+  assert.equal(row.button.styles.top, '612px');
   assert.equal(-350 + 612 + 34, 296);
-  assert.equal(row.article.rect.height, 650);
-  assert.equal(originalHeight, 350); // No layout sizing is written by the script.
 });
 
-test('different articles retain independent star bounds when both are visible', () => {
-  const { api, addArticle } = harness();
+test('adjacent articles have independent fixed/title stops without competing center stars', () => {
+  const { api, document, addArticle } = harness();
   const current = addArticle('https://example.org/first');
   const following = addArticle('https://example.org/next', { image: false });
   current.article.rect = { left: 100, right: 500, top: -300, bottom: 430, width: 400, height: 730 };
@@ -159,12 +170,14 @@ test('different articles retain independent star bounds when both are visible', 
   following.title.rect = { left: 100, right: 460, top: 430, bottom: 470, width: 360, height: 40 };
   api.positionControl(current.control);
   api.positionControl(following.control);
-  assert.equal(current.button.styles.top, '663px'); // Screen center of the first.
-  assert.equal(following.button.styles.top, '21px'); // Next waits at its title.
+  assert.equal(current.button.attrs['data-bookmarks-position'], 'center');
+  assert.equal(current.button.parentNode, document.body);
+  assert.equal(following.button.attrs['data-bookmarks-position'], 'title');
+  assert.equal(following.button.styles.top, '21px');
 });
 
-test('visual viewport midpoint handles mobile browser toolbars', () => {
-  const { api, window, addArticle } = harness();
+test('visual viewport midpoint still controls article transition thresholds', () => {
+  const { api, window, document, addArticle } = harness();
   const row = addArticle('https://example.org/mobile');
   row.article.rect.top = 100;
   row.article.rect.bottom = 750;
@@ -172,24 +185,46 @@ test('visual viewport midpoint handles mobile browser toolbars', () => {
   row.title.rect.bottom = 140;
   window.visualViewport = { offsetTop: 40, height: 500 };
   api.positionControl(row.control);
-  assert.equal(row.button.styles.top, '173px'); // Visual center = 40 + 250 = 290.
+  assert.equal(row.button.attrs['data-bookmarks-position'], 'center');
+  assert.equal(row.button.parentNode, document.body);
 });
 
-test('collapsed or visually hidden summaries always pin the star to title lower-right', () => {
-  const { api, addArticle } = harness();
+test('collapsed or visually hidden summaries pin the star to the title and never the screen center', () => {
+  const { api, document, addArticle } = harness();
   const row = addArticle('https://example.org/toggle');
   api.positionControl(row.control);
-  assert.equal(row.button.styles.top, '63px');
+  assert.equal(row.button.attrs['data-bookmarks-position'], 'center');
+  assert.equal(row.button.parentNode, document.body);
   row.article.collapsed = true;
   api.positionControl(row.control);
-  assert.equal(row.button.styles.left, '358px');
+  assert.equal(row.button.attrs['data-bookmarks-position'], 'title');
+  assert.equal(row.button.styles.left, '252px');
   assert.equal(row.button.styles.top, '21px');
+  assert.equal(row.button.parentNode, row.article);
   row.article.collapsed = false;
   api.positionControl(row.control);
-  assert.equal(row.button.styles.top, '63px');
+  assert.equal(row.button.attrs['data-bookmarks-position'], 'center');
   row.summary.rect.width = 0;
   api.positionControl(row.control);
+  assert.equal(row.button.attrs['data-bookmarks-position'], 'title');
   assert.equal(row.button.styles.top, '21px');
+});
+
+test('changing viewport width recomputes absolute edge only without moving a centered star', () => {
+  const { api, document, addArticle } = harness();
+  const row = addArticle('https://example.org/narrow');
+  row.article.collapsed = true;
+  api.positionControl(row.control);
+  assert.equal(row.button.styles.left, '252px');
+  document.documentElement.clientWidth = 420;
+  api.positionControl(row.control);
+  assert.equal(row.button.styles.left, '282px');
+  row.article.collapsed = false;
+  api.positionControl(row.control);
+  assert.equal(row.button.attrs['data-bookmarks-position'], 'center');
+  document.documentElement.clientWidth = 440;
+  api.positionControl(row.control);
+  assert.equal(row.button.styles.left, undefined);
 });
 
 test('three independent errors attach to visible star or top/bottom viewport corners', () => {
