@@ -99,17 +99,25 @@ try{
  const invalid=await req('/bookmarks/api/admin/','POST',{
   url:'https://example.org/blocked-summary',title:'Blocked summary',summary:'請啟用 JS 並關閉任何廣告攔截器',tags:['AI']
  },true);
- for(const stage of [2,3,4]){
+ // Private is a rejection decision, so it must be possible with an invalid summary.
+ for(const stage of [3,4]){
   const blocked=await req('/bookmarks/api/admin/'+invalid.body.item.id,'PATCH',{status:stage},true);
   assert.equal(blocked.status,400,blocked.text);
   assert.match(blocked.body.error,/摘要/);
  }
+ assert.equal((await req('/bookmarks/api/admin/'+invalid.body.item.id,'PATCH',{status:2},true)).body.status,2);
  assert.equal((await req('/bookmarks/api/admin/'+invalid.body.item.id,'DELETE',undefined,true)).body.deleted,true);
  const blank=await req('/bookmarks/api/admin/','POST',{url:'https://example.org/no-summary',title:'Missing summary',summary:''},true);
  const blankId=blank.body.item.id;
- const blocked=await req('/bookmarks/api/admin/'+blankId,'PATCH',{status:2},true);
- assert.equal(blocked.status,400,blocked.text);
- assert.match(blocked.body.error,/摘要/);
+ const blankPrivate=await req('/bookmarks/api/admin/'+blankId,'PATCH',{status:2},true);
+ assert.equal(blankPrivate.status,200,blankPrivate.text);
+ assert.equal(blankPrivate.body.status,2);
+ const triageAuth=await req('/bookmarks/api/admin/triage');
+ assert.equal(triageAuth.status,401);
+ const triage=await req('/bookmarks/api/admin/triage','GET',undefined,true);
+ assert.equal(triage.status,200,triage.text);
+ assert.ok(Array.isArray(triage.body.items));
+ assert.ok(!triage.body.items.some(x=>x.id===blankId));
  const repairPath='/bookmarks/api/admin/summary-repair';
  assert.equal((await req(repairPath)).status,401);
  assert.ok((await req(repairPath,'GET',undefined,true)).body.items.some(item=>item.id===blankId));
