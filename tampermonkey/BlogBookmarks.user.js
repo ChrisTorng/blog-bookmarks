@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.14
+// @version      0.5.15
 // @description  Keep expanded BetaCat bookmark stars at stable screen height as Android browser toolbars hide or appear
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -307,8 +307,8 @@
         if (!Number.isFinite(screenHeight) || screenHeight <= 0 ||
             lastScreenHeight === screenHeight) return;
         lastScreenHeight = screenHeight;
-        document.documentElement.style.setProperty('--tm-bookmarks-screen-height',
-            `${screenHeight}px`);
+        document.documentElement.style.setProperty('--tm-bookmarks-screen-anchor-base',
+            `${(screenHeight * 0.12).toFixed(3)}px`);
     }
 
     function positionControl(control) {
@@ -659,7 +659,7 @@
             }
             @media (max-width: 768px) and (orientation: portrait) {
                 .${BUTTON_CLASS}[data-bookmarks-position="center"] {
-                    top: calc(0.12 * var(--tm-bookmarks-screen-height, 700px) + 32dvh) !important;
+                    top: calc(var(--tm-bookmarks-screen-anchor-base, 84px) + 32dvh) !important;
                 }
             }
             .${BUTTON_CLASS}:hover, .${BUTTON_CLASS}:focus-visible {
