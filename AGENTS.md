@@ -11,3 +11,7 @@ This is the data/API/RSS backend for **blog-bookmarks**. The public website layo
 - Public API dates are Taiwan-local calendar dates, intentionally excluding private processing/reading time. Feed pubDates use deterministic monotonic synthetic minutes for same-day order, visible in readers that omit seconds, **not** real private timestamps; never claim synthetic seconds are true posting times. Keep newest-first feed order and check stability when new bookmarks arrive.
 
 `src/views.js` is legacy, not the canonical public renderer. The public list is from `christorng.github.io/components/bookmarks/BookmarkPublicItem.tsx`; the permalink and RSS both use `src/public-content.js#bookmarkArticleHtml`. Any markup change must be mirrored and tested across all three. Never render public Markdown as plain escaped text or present an unlocalized tag label.
+
+## Pull request completion preference
+- For routine owner-requested changes, complete relevant tests and merge the PR into the default branch in the same work session. Do not leave a draft or open PR merely for an additional manual merge approval.
+- If an automated check fails, a merge conflict exists, or a substantial safety/data-loss risk is unresolved, report the blocker instead of claiming a merge. State clearly when mobile/browser behavior has only synthetic-test coverage.
