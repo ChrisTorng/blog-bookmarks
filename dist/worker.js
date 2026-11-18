@@ -32362,7 +32362,32 @@ __name(signature, "signature");
 var clamp = /* @__PURE__ */ __name((v) => Math.max(0, Math.min(100, Math.round(Number(v) || 0))), "clamp");
 var size = /* @__PURE__ */ __name((s) => [...String(s || "")].length, "size");
 var reasons = ["\u6642\u4E8B\u904E\u671F", "\u5167\u5BB9\u904E\u77ED", "\u5B78\u7FD2\u50F9\u503C\u4E0D\u8DB3", "\u8CC7\u8A0A\u91CD\u8907", "\u5C55\u793A\uFF0F\u904A\u6232", "\u95B1\u8B80\u969C\u7919", "\u5176\u4ED6"];
+function insufficientSummary(b) {
+  const s = String(b.summary || "").trim();
+  return needsSummaryRepair(s) || /(?:僅包含(?:網頁)?技術代碼|沒有(?:任何)?(?:文章)?正文|無法摘要其主要事件|未提供(?:任何)?文章正文|無法取得文章正文)/.test(s);
+}
+__name(insufficientSummary, "insufficientSummary");
+function insufficientResult(b) {
+  const dimensions2 = { learning: 50, depth: 50, durability: 50, novelty: 50, fit: 50 };
+  return {
+    version: TRIAGE_VERSION,
+    signature: signature(b),
+    score: 50,
+    dimensions: dimensions2,
+    flags: ["\u95B1\u8B80\u969C\u7919"],
+    reason: "\u76EE\u524D\u6458\u8981\u7F3A\u6F0F\u6216\u6293\u53D6\u5230\u7DB2\u9801\u7A0B\u5F0F\u78BC\uFF0C\u7121\u6CD5\u53EF\u9760\u5224\u65B7\u6587\u7AE0\u7684\u8CC7\u8A0A\u91CF\u8207\u5B78\u7FD2\u50F9\u503C\uFF1B\u61C9\u5148\u5617\u8A66\u53D6\u5F97\u5168\u6587\uFF0C\u4E0D\u53EF\u76F4\u63A5\u8996\u70BA\u4F4E\u50F9\u503C\u6587\u7AE0\u3002",
+    basis: "insufficient",
+    confidence: "none",
+    summary_chars: size(b.summary),
+    full_chars: null,
+    full_words: null,
+    read_minutes: null,
+    assessed_at: null
+  };
+}
+__name(insufficientResult, "insufficientResult");
 function previewTriage(b) {
+  if (insufficientSummary(b)) return insufficientResult(b);
   const title = (b.title_original || b.title || "").toLowerCase();
   const summary = String(b.summary || "");
   const length = size(summary);
@@ -32402,7 +32427,7 @@ async function triageList(db, includeDeferred = false) {
   const data = await db.prepare(sql).bind(TRIAGE_VERSION + ":").all();
   const items = data.results.map((x) => {
     const { saved, ...b } = x;
-    return { ...b, analysis: current(x) || previewTriage(x), assessed: !!current(x) };
+    return { ...b, analysis: insufficientSummary(b) && current(x)?.basis !== "fulltext" ? insufficientResult(b) : current(x) || previewTriage(x), assessed: !!current(x) };
   });
   return { version: TRIAGE_VERSION, total: items.length, assessed: items.filter((x) => x.assessed).length, items };
 }
@@ -32426,9 +32451,10 @@ function parseAnswer(output, items, extra = {}) {
     const x = byId.get(b.id);
     if (!x || dimensions.some((k) => !Number.isFinite(Number(x[k])))) throw Error("AI \u8A55\u5206\u9805\u76EE\u4E0D\u5B8C\u6574");
     const d = Object.fromEntries(dimensions.map((k) => [k, clamp(x[k])]));
-    const flags = [...new Set((Array.isArray(x.flags) ? x.flags : []).filter((f) => reasons.includes(f)))].slice(0, 3);
-    const score = Math.round(dimensions.reduce((sum, k) => sum + d[k] * weights[k], 0));
     const body = extra[b.id];
+    if (!body && insufficientSummary(b)) return insufficientResult(b);
+    const flags = [...new Set((Array.isArray(x.flags) ? x.flags : []).filter((f) => reasons.includes(f) && (f !== "\u5167\u5BB9\u904E\u77ED" || !!body)))].slice(0, 3);
+    const score = Math.round(dimensions.reduce((sum, k) => sum + d[k] * weights[k], 0));
     return {
       version: TRIAGE_VERSION,
       signature: signature(b),
