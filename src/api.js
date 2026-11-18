@@ -5,6 +5,7 @@ import {review,invalidSummary} from './metadata.js';
 import {lookupReference} from './references.js';
 import {needsSummaryRepair,repairCandidates,readSubmittedContent,commitArticleSummary,summarizeSubmittedArticle} from './summary-repair.js';
 import {autoReviewNewSummary} from './auto-summary.js';
+import {triageList,scoreTriage,inspectTriage,countText} from './triage.js';
 import {validIngestToken,rotateIngestToken} from './token.js';
 import {list,get,byUrl,create,patch,remove,tagsList,renameTag,reviewWindow,createAndAttachTag} from './data.js';
 import {bookmarkArticleHtml,bookmarkPermalink} from './public-content.js';
@@ -48,6 +49,34 @@ export async function api(req,env,url,ctx){
   if(p==='/bookmarks/api/admin'||p==='/bookmarks/api/admin/'){
    if(req.method==='GET')return json(await list(env.DB,opts(url,true)));
    if(req.method==='POST')return json(await createCategorized(env,await input(req),ctx),201);
+  }
+  if(p==='/bookmarks/api/admin/triage'&&req.method==='GET')
+    return json(await triageList(env.DB,url.searchParams.get('deferred')==='1'));
+  if(p==='/bookmarks/api/admin/triage/score'&&req.method==='POST'){
+    const body=await input(req);
+    return json(await scoreTriage(env,body.ids));
+  }
+  if(p==='/bookmarks/api/admin/triage/inspect'&&req.method==='POST'){
+    const body=await input(req);
+    const report=await inspectTriage(env,String(body.id||''));
+    if(!report.available)return json(report);
+    try{
+      const scored=await scoreTriage(env,[String(body.id)],{fullText:report});
+      const {text,...metrics}=report;
+      return json({...metrics,analysis:scored.updated[0]?.analysis});
+    }catch(error){
+      const {text,...metrics}=report;
+      return json({...metrics,score_error:String(error?.message||error)});
+    }
+  }
+  if(p==='/bookmarks/api/admin/triage/paste'&&req.method==='POST'){
+    const body=await readSubmittedContent(req);
+    const text=body.content.trim();
+    if(text.length<300)throw Error('請提供至少 300 字元的文章正文');
+    const report={source:'pasted-text',...countText(text),text:text.slice(0,50000)};
+    const scored=await scoreTriage(env,[body.id],{fullText:report});
+    const {text:unused,...metrics}=report;
+    return json({available:true,...metrics,analysis:scored.updated[0]?.analysis});
   }
   if(p==='/bookmarks/api/admin/quick'&&req.method==='GET')
     return json(await reviewWindow(env.DB,url.searchParams.get('size')));
