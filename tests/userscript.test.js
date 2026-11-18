@@ -7,7 +7,7 @@ const source = readFileSync(new URL('../tampermonkey/BlogBookmarks.user.js', imp
 test('userscript installs from blog-bookmarks and parses', () => {
   assert.doesNotThrow(() => new Function(source));
   assert.match(source, /\/\/ @name\s+Blog Bookmarks\n/);
-  assert.match(source, /\/\/ @version\s+0\.5\.13\n/);
+  assert.match(source, /\/\/ @version\s+0\.5\.15\n/);
   assert.match(source, /raw\.githubusercontent\.com\/ChrisTorng\/blog-bookmarks\/main\/tampermonkey\/BlogBookmarks\.user\.js/);
   assert.match(source, /\/\/ @match\s+https:\/\/hackernews\.betacat\.io\/\*/);
   assert.doesNotMatch(source, /cloudmark-christorng|cloudmark\.site/);
@@ -31,7 +31,9 @@ test('bookmark star is CSS-fixed at screen-right center with absolute per-articl
   assert.match(source, /article\.appendChild\(button\)/);
   assert.match(source, /querySelector\('\.post-summary'\)/);
   assert.match(source, /const collapsed = article\.classList\?\.contains/);
-  assert.match(source, /const viewportMiddle = visual/);
+  assert.match(source, /const targetTop = pinnedStarY\(\)/);
+  assert.match(source, /--tm-bookmarks-screen-anchor-base/);
+  assert.match(source, /32dvh/);
   assert.match(source, /const mode = collapsed/);
   assert.match(source, /document.body.appendChild\(control.button\)/);
   assert.match(source, /data-bookmarks-position/);
@@ -123,4 +125,20 @@ test('failed removal restores known server state and success clears only its own
   assert.match(source, /showError\(key, link, error\.message\)/);
   assert.match(source, /errors\.delete\(url\)/);
   assert.match(source, /if \(!statusKnown\) checked\.delete\(key\)/);
+});
+
+test('mobile screen anchor compensates Edge toolbar visibility in provided screenshots', () => {
+  const mobile = source.match(/    function useMobileScreenAnchor\(\) \{[\s\S]*?\n    \}/)?.[0];
+  const pinned = source.match(/    function pinnedStarY\(\) \{[\s\S]*?\n    \}/)?.[0];
+  assert(mobile && pinned);
+  const run = new Function('window', 'document', `${mobile}\n${pinned}\nreturn pinnedStarY();`);
+  const viewport = height => ({ screen: { height: 1536 }, visualViewport: { height, width: 709, offsetTop: 0 }, innerWidth: 709, innerHeight: height });
+  const doc = { documentElement: { clientHeight: 1080 } };
+  // Screenshot A: top translation bar shown and browser bottom bar visible.
+  const visibleBarY = 145 + run(viewport(1080), doc);
+  // Screenshot B: both bars collapsed after scrolling.
+  const hiddenBarY = 50 + run(viewport(1390), doc);
+  assert(Math.abs(visibleBarY - hiddenBarY) < 10, `Screen-position drift: ${visibleBarY} vs ${hiddenBarY}`);
+  assert(Math.abs(visibleBarY - 680) < 20);
+  assert.match(source, /top: calc\(var\(--tm-bookmarks-screen-anchor-base, 84px\) \+ 32dvh\)/);
 });
