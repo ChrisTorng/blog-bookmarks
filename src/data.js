@@ -162,7 +162,7 @@ export async function patch(db,id,raw,hasNoteReference) {
     ?(Array.isArray(raw.tags)?raw.tags.map(t=>String(t).trim()).filter(Boolean):[])
     :current.tags;
   const summary='summary' in raw?raw.summary:current.summary;
-  if([2,3,4].includes(desired) && ('status' in raw || 'summary' in raw) && needsSummaryRepair(summary))
+  if([3,4].includes(desired) && ('status' in raw || 'summary' in raw) && needsSummaryRepair(summary))
     throw new Error('摘要空白或來源無效，請先補上或貼全文重新摘要');
   if(desired>=3 && desired<=4 && !finalTags.some(tag=>String(tag).toLowerCase()!=='default'))
     throw new Error('公開或推薦必須先選擇至少一個分類');
