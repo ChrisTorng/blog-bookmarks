@@ -15,7 +15,21 @@ function signature(b) {
 const clamp=v=>Math.max(0,Math.min(100,Math.round(Number(v)||0)));
 const size=s=>[...String(s||'')].length;
 const reasons=['時事過期','內容過短','學習價值不足','資訊重複','展示／遊戲','閱讀障礙','其他'];
+function insufficientSummary(b) {
+ const s=String(b.summary||'').trim();
+ return needsSummaryRepair(s) ||
+  /(?:僅包含(?:網頁)?技術代碼|沒有(?:任何)?(?:文章)?正文|無法摘要其主要事件|未提供(?:任何)?文章正文|無法取得文章正文)/.test(s);
+}
+function insufficientResult(b) {
+ const dimensions={learning:50,depth:50,durability:50,novelty:50,fit:50};
+ return {version:TRIAGE_VERSION,signature:signature(b),score:50,dimensions,flags:['閱讀障礙'],
+  reason:'目前摘要缺漏或抓取到網頁程式碼，無法可靠判斷文章的資訊量與學習價值；應先嘗試取得全文，不可直接視為低價值文章。',
+  basis:'insufficient',confidence:'none',summary_chars:size(b.summary),full_chars:null,
+  full_words:null,read_minutes:null,assessed_at:null};
+}
+
 export function previewTriage(b){
+  if(insufficientSummary(b))return insufficientResult(b);
   const title=(b.title_original||b.title||'').toLowerCase();
   const summary=String(b.summary||'');
   const length=size(summary);
@@ -52,7 +66,7 @@ export async function triageList(db,includeDeferred=false){
   const data=await db.prepare(sql).bind(TRIAGE_VERSION+':').all();
   const items=data.results.map(x=>{
     const {saved,...b}=x;
-    return {...b,analysis:current(x)||previewTriage(x),assessed:!!current(x)};
+    return {...b,analysis:insufficientSummary(b)&&current(x)?.basis!=='fulltext' ? insufficientResult(b) : (current(x)||previewTriage(x)),assessed:!!current(x)};
   });
   return {version:TRIAGE_VERSION,total:items.length,assessed:items.filter(x=>x.assessed).length,items};
 }
@@ -74,9 +88,10 @@ function parseAnswer(output,items,extra={}){
     const x=byId.get(b.id);
     if(!x || dimensions.some(k=>!Number.isFinite(Number(x[k]))))throw Error('AI 評分項目不完整');
     const d=Object.fromEntries(dimensions.map(k=>[k,clamp(x[k])]));
-    const flags=[...new Set((Array.isArray(x.flags)?x.flags:[]).filter(f=>reasons.includes(f)))].slice(0,3);
-    const score=Math.round(dimensions.reduce((sum,k)=>sum+d[k]*weights[k],0));
     const body=extra[b.id];
+    if(!body && insufficientSummary(b))return insufficientResult(b);
+    const flags=[...new Set((Array.isArray(x.flags)?x.flags:[]).filter(f=>reasons.includes(f)&&(f!=='內容過短'||!!body)))].slice(0,3);
+    const score=Math.round(dimensions.reduce((sum,k)=>sum+d[k]*weights[k],0));
     return {version:TRIAGE_VERSION,signature:signature(b),score,dimensions:d,flags,
       reason:String(x.reason||'').slice(0,280)||'沒有提供具體理由',basis:body?'fulltext':'summary',
       confidence:body?'medium':'low',summary_chars:size(b.summary),
