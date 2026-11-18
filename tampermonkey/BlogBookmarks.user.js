@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.13
-// @description  Fix expanded stars at viewport center/right edge, with title and bottom article stops
+// @version      0.5.15
+// @description  Keep expanded BetaCat bookmark stars at stable screen height as Android browser toolbars hide or appear
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
 // @downloadURL  https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -43,6 +43,7 @@
     let collapseObserver;
     let topErrorStack;
     let bottomErrorStack;
+    let lastScreenHeight = 0;
 
     function normalize(value) {
         const url = new URL(value, location.href);
@@ -277,11 +278,39 @@
         }
     }
 
-    // Let CSS position:fixed anchor the star to the visible screen center.
-    // JavaScript only changes modes at the article's title/bottom boundaries;
-    // it never writes a continuously changing top during pinned scrolling.
-    // Reparent the centered star to body so article overflow/transform cannot
-    // move or clip its viewport-fixed position. No flow height is added.
+    // Android Edge changes 100dvh when its translation/address/bottom bars appear.
+    // Estimate a stable physical-screen Y from the constant screen height plus
+    // the changing viewport height. The 12% / 32% fit comes from the two
+    // 709x1536 device screenshots (visible page starts at roughly y=145/50).
+    // This is a device-UI heuristic, not an API for detecting browser chrome.
+    // CSS performs smooth fixed positioning; JS only changes modes at the
+    // article's title/bottom boundaries.
+    function useMobileScreenAnchor() {
+        const screenHeight = window.screen?.height;
+        const viewportWidth = window.visualViewport?.width || window.innerWidth;
+        return Number.isFinite(screenHeight) && screenHeight > 0 &&
+            viewportWidth <= 768 && screenHeight > viewportWidth;
+    }
+
+    function pinnedStarY() {
+        const visual = window.visualViewport;
+        const viewportHeight = visual?.height || window.innerHeight ||
+            document.documentElement.clientHeight;
+        if (useMobileScreenAnchor()) {
+            return 0.12 * window.screen.height + 0.32 * viewportHeight;
+        }
+        return visual ? visual.offsetTop + visual.height / 2 : viewportHeight / 2;
+    }
+
+    function updateScreenHeightVariable() {
+        const screenHeight = window.screen?.height;
+        if (!Number.isFinite(screenHeight) || screenHeight <= 0 ||
+            lastScreenHeight === screenHeight) return;
+        lastScreenHeight = screenHeight;
+        document.documentElement.style.setProperty('--tm-bookmarks-screen-anchor-base',
+            `${(screenHeight * 0.12).toFixed(3)}px`);
+    }
+
     function positionControl(control) {
         const article = control.link.closest('article.post-item');
         if (!article || !article.isConnected) return;
@@ -294,11 +323,7 @@
         const titleTop = Math.max(0, titleRect.bottom - articleRect.top - STAR_HEIGHT / 2 - 2);
         const bottomStop = Math.max(titleTop,
             articleRect.bottom - articleRect.top - STAR_HEIGHT - 4);
-        const visual = window.visualViewport;
-        const viewportMiddle = visual
-            ? visual.offsetTop + visual.height / 2
-            : (window.innerHeight || document.documentElement.clientHeight) / 2;
-        const targetTop = viewportMiddle - articleRect.top - STAR_HEIGHT / 2;
+        const targetTop = pinnedStarY() - articleRect.top - STAR_HEIGHT / 2;
         const mode = collapsed || targetTop <= titleTop ? 'title'
             : targetTop >= bottomStop ? 'bottom' : 'center';
 
@@ -313,7 +338,7 @@
             control.positionLeft = undefined;
             control.positionTop = undefined;
         }
-        if (mode === 'center') return; // CSS owns fixed right:0/top:50dvh.
+        if (mode === 'center') return; // CSS owns fixed right:0 and stable screen anchor.
 
         // Absolute endpoints scroll with the article without any JS motion.
         // Deliberately allow left to exceed the article's width to reach the
@@ -632,6 +657,11 @@
                 top: 50vh !important; top: 50dvh !important; bottom: auto !important;
                 transform: translateY(-50%) !important;
             }
+            @media (max-width: 768px) and (orientation: portrait) {
+                .${BUTTON_CLASS}[data-bookmarks-position="center"] {
+                    top: calc(var(--tm-bookmarks-screen-anchor-base, 84px) + 32dvh) !important;
+                }
+            }
             .${BUTTON_CLASS}:hover, .${BUTTON_CLASS}:focus-visible {
                 background: rgba(219,234,255,.9) !important; opacity: 1 !important;
                 outline: 2px solid #3777b7 !important;
@@ -674,11 +704,16 @@
             }
         `;
         document.head.appendChild(style);
+        updateScreenHeightVariable();
         ensureErrorStacks();
         positionObserver = typeof ResizeObserver === 'function'
             ? new ResizeObserver(schedulePositions) : null;
         collapseObserver = new MutationObserver(schedulePositions);
-        window.addEventListener('resize', schedulePositions, { passive: true });
+        window.addEventListener('resize', () => {
+            updateScreenHeightVariable();
+            schedulePositions();
+        }, { passive: true });
+        window.addEventListener('orientationchange', updateScreenHeightVariable, { passive: true });
         window.addEventListener('scroll', schedulePositions, { passive: true, capture: true });
         window.visualViewport?.addEventListener('resize', schedulePositions, { passive: true });
         window.visualViewport?.addEventListener('scroll', schedulePositions, { passive: true });
