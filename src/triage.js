@@ -34,7 +34,7 @@ export function previewTriage(b){
   if(needsSummaryRepair(summary))dimensions.depth=40;
   const flags=[];
   if(event)flags.push('時事過期');
-  if(short)flags.push('內容過短');
+  // A short summary is not evidence that the original article is short.
   if(promo)flags.push('展示／遊戲');
   if(needsSummaryRepair(summary))flags.push('閱讀障礙');
   if(!flags.length)flags.push(technical?'其他':'學習價值不足');
@@ -127,9 +127,9 @@ export async function scoreTriage(env,ids,{fullText=null}={}){
     temperature:0,max_tokens:2300
   });
   const results=parseAnswer(out,pending,full);
-  await env.DB.batch(results.map(x=>env.DB.prepare(
+  await env.DB.batch(results.map((x,i)=>env.DB.prepare(
     'INSERT INTO bookmark_settings(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at'
-  ).bind(key(x.signature?pending.find(b=>signature(b)===x.signature)?.id:undefined),JSON.stringify(x),x.assessed_at)));
+  ).bind(key(pending[i].id),JSON.stringify(x),x.assessed_at)));
   return {updated:results.map((r,i)=>({id:pending[i].id,analysis:r})),skipped:unique.length-pending.length};
 }
 function safeAddress(address){
