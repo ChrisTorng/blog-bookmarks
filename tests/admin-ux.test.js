@@ -45,7 +45,9 @@ test('BetaCat star floats near viewport center within article bounds without cre
  assert.match(script,/position: absolute !important/);
  assert.match(script,/querySelector\('\.post-summary'\)/);
  assert.match(script,/const collapsed = article\.classList\?\.contains/);
- assert.match(script,/const viewportMiddle = visual/);
+ assert.match(script,/const targetTop = pinnedStarY\(\)/);
+ assert.match(script,/--tm-bookmarks-screen-anchor-base/);
+ assert.match(script,/32dvh/);
  assert.match(script,/window\.addEventListener\('scroll', schedulePositions/);
  assert.match(script,/opacity: \.58 !important/);
  assert.doesNotMatch(script,/tm-betacat-article-tools|oldCollapseButton/);
