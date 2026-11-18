@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {previewTriage,extractArticle,countText,triageList,TRIAGE_VERSION} from '../src/triage.js';
 
-const sample={id:'11111111-1111-4111-a111-111111111111',title:'新聞：服務異常',title_original:'Service incident',summary:'今天服務出現異常，已恢復。',url:'https://example.com/incident',created_at:'2026-11-13T08:00:00Z',stage:0,deferred:0};
+const sample={id:'11111111-1111-4111-a111-111111111111',title:'新聞：服務異常',title_original:'Service incident',summary:'今天服務出現異常，已恢復，但目前只公布事件原因仍在調查中，尚無進一步技術報告。',url:'https://example.com/incident',created_at:'2026-11-13T08:00:00Z',stage:0,deferred:0};
 test('triage initial scores are bounded and do not present short summary as short article',()=>{
  const x=previewTriage(sample);
  assert.ok(x.score>=0&&x.score<=100);
@@ -45,4 +45,14 @@ test('admin triage APIs enforce admin auth and do not change state during scorin
  assert.match(api,/privateApi && !await isAdmin\(req,env\)/);
  for(const route of ['/triage','/triage/score','/triage/inspect','/triage/paste'])assert.ok(api.includes(route));
  assert.match(model,/if\(\[3,4\]\.includes\(desired\).*needsSummaryRepair/);
+});
+
+test('missing or garbled summary must not be ranked as worthless article',()=>{
+ for(const summary of ['', '由於提供的內容僅包含網頁技術代碼與樣式設定，並無任何文章正文，因此無法摘要主要事件。']){
+  const x=previewTriage({...sample,summary});
+  assert.equal(x.basis,'insufficient');
+  assert.equal(x.confidence,'none');
+  assert.deepEqual(x.flags,['閱讀障礙']);
+  assert.equal(x.score,50);
+ }
 });
