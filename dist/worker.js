@@ -25370,9 +25370,9 @@ function slugify(title, fallback = "entry") {
     if (/\p{Script=Han}/u.test(ch)) {
       let match2 = null, length = 0;
       for (let n = Math.min(5, simplified.length - i); n >= 2; n--) {
-        const key = simplified.slice(i, i + n).join("");
-        if (phrases[n]?.[key]) {
-          match2 = phrases[n][key];
+        const key2 = simplified.slice(i, i + n).join("");
+        if (phrases[n]?.[key2]) {
+          match2 = phrases[n][key2];
           length = n;
           break;
         }
@@ -25571,7 +25571,7 @@ var taipeiDay = /* @__PURE__ */ __name((date) => date ? new Intl.DateTimeFormat(
 var publicEntry = /* @__PURE__ */ __name((row) => row && {
   ...row,
   read_at: null,
-  ...Object.fromEntries(["created_at", "updated_at", "published_at", "starred_at", "status_at"].map((key) => [key, taipeiDay(row[key])]))
+  ...Object.fromEntries(["created_at", "updated_at", "published_at", "starred_at", "status_at"].map((key2) => [key2, taipeiDay(row[key2])]))
 }, "publicEntry");
 var esc = /* @__PURE__ */ __name((value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]), "esc");
 function normalUrl(input2) {
@@ -25677,14 +25677,14 @@ async function list(db, { privateList = false, filter = "pending", page = 1, tag
 }
 __name(list, "list");
 async function reviewWindow(db, requested = 3) {
-  const size = [3, 6, 10].includes(Number(requested)) ? Number(requested) : 3;
+  const size2 = [3, 6, 10].includes(Number(requested)) ? Number(requested) : 3;
   const [recent, deferred, pending, pendingCount, deferredCount] = await Promise.all([
     db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.stage IN (2,3,4)
-      ORDER BY b.updated_at DESC,b.id DESC LIMIT ?`).bind(size).all(),
+      ORDER BY b.updated_at DESC,b.id DESC LIMIT ?`).bind(size2).all(),
     db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.stage=1 AND b.deferred=1
-      ORDER BY b.created_at ASC,b.id ASC LIMIT ?`).bind(size).all(),
+      ORDER BY b.created_at ASC,b.id ASC LIMIT ?`).bind(size2).all(),
     db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.stage IN (0,1) AND b.deferred=0
-      ORDER BY b.created_at ASC,b.id ASC LIMIT ?`).bind(size + Math.max(12, size)).all(),
+      ORDER BY b.created_at ASC,b.id ASC LIMIT ?`).bind(size2 + Math.max(12, size2)).all(),
     db.prepare("SELECT COUNT(*) n FROM bookmarks WHERE stage IN (0,1) AND deferred=0").first(),
     db.prepare("SELECT COUNT(*) n FROM bookmarks WHERE stage=1 AND deferred=1").first()
   ]);
@@ -25694,7 +25694,7 @@ async function reviewWindow(db, requested = 3) {
     pending: pending.results.map(decode),
     remaining: Number(pendingCount.n),
     deferredRemaining: Number(deferredCount.n),
-    size,
+    size: size2,
     pending_order: "oldest"
   };
 }
@@ -25708,9 +25708,9 @@ async function replaceTags(db, id, tags) {
   const statements = [db.prepare("DELETE FROM bookmark_tags WHERE bookmark_id=?").bind(id)];
   for (const name of tags) {
     const existing = await db.prepare("SELECT id FROM tags WHERE name=? COLLATE NOCASE OR id=? LIMIT 1").bind(name, name.toLowerCase()).first();
-    const key = existing?.id || name.toLowerCase();
-    if (!existing) statements.push(db.prepare("INSERT OR IGNORE INTO tags(id,name) VALUES(?,?)").bind(key, name));
-    statements.push(db.prepare("INSERT INTO bookmark_tags(bookmark_id,tag_id) VALUES(?,?)").bind(id, key));
+    const key2 = existing?.id || name.toLowerCase();
+    if (!existing) statements.push(db.prepare("INSERT OR IGNORE INTO tags(id,name) VALUES(?,?)").bind(key2, name));
+    statements.push(db.prepare("INSERT INTO bookmark_tags(bookmark_id,tag_id) VALUES(?,?)").bind(id, key2));
   }
   await db.batch(statements);
 }
@@ -25727,33 +25727,33 @@ async function create(db, raw) {
 }
 __name(create, "create");
 async function patch(db, id, raw, hasNoteReference) {
-  const current = await get(db, id, true);
-  if (!current) return null;
-  const desired = "status" in raw ? Number(raw.status) : Number(current.status);
-  const finalTags = "tags" in raw ? Array.isArray(raw.tags) ? raw.tags.map((t) => String(t).trim()).filter(Boolean) : [] : current.tags;
-  const summary = "summary" in raw ? raw.summary : current.summary;
-  if ([2, 3, 4].includes(desired) && ("status" in raw || "summary" in raw) && needsSummaryRepair(summary))
+  const current2 = await get(db, id, true);
+  if (!current2) return null;
+  const desired = "status" in raw ? Number(raw.status) : Number(current2.status);
+  const finalTags = "tags" in raw ? Array.isArray(raw.tags) ? raw.tags.map((t) => String(t).trim()).filter(Boolean) : [] : current2.tags;
+  const summary = "summary" in raw ? raw.summary : current2.summary;
+  if ([3, 4].includes(desired) && ("status" in raw || "summary" in raw) && needsSummaryRepair(summary))
     throw new Error("\u6458\u8981\u7A7A\u767D\u6216\u4F86\u6E90\u7121\u6548\uFF0C\u8ACB\u5148\u88DC\u4E0A\u6216\u8CBC\u5168\u6587\u91CD\u65B0\u6458\u8981");
   if (desired >= 3 && desired <= 4 && !finalTags.some((tag) => String(tag).toLowerCase() !== "default"))
     throw new Error("\u516C\u958B\u6216\u63A8\u85A6\u5FC5\u9808\u5148\u9078\u64C7\u81F3\u5C11\u4E00\u500B\u5206\u985E");
   if ("status" in raw) {
     const requested = Number(raw.status);
     if (!Number.isInteger(requested) || requested < 0 || requested > 5) throw new Error("\u72C0\u614B\u7121\u6548");
-    const publishAsRecommendation = requested === 3 && current.status !== 3 && await hasNoteReference?.();
+    const publishAsRecommendation = requested === 3 && current2.status !== 3 && await hasNoteReference?.();
     const status = publishAsRecommendation ? 4 : requested;
     const now = (/* @__PURE__ */ new Date()).toISOString();
-    if (current.status !== status) {
+    if (current2.status !== status) {
       const stage = status === 5 ? 1 : status;
       const legacyStatus = status === 5 ? 1 : status === 2 ? 1 : status >= 3 ? status - 1 : status;
-      const readAt = status === 5 ? current.read_at : status >= 1 ? current.read_at || now : null;
-      const publishAt = [3, 4].includes(status) ? current.published_at || now : null;
-      const starredAt = status === 4 ? current.status === 4 && current.starred_at ? current.starred_at : now : null;
-      const updated = await db.prepare("UPDATE bookmarks SET stage=?,deferred=?,status=?,read_at=?,published_at=?,starred_at=?,updated_at=? WHERE id=? AND stage=? AND deferred=?").bind(stage, status === 5 ? 1 : 0, legacyStatus, readAt, publishAt, starredAt, now, id, current.status === 5 ? 1 : current.status, current.status === 5 ? 1 : 0).run();
+      const readAt = status === 5 ? current2.read_at : status >= 1 ? current2.read_at || now : null;
+      const publishAt = [3, 4].includes(status) ? current2.published_at || now : null;
+      const starredAt = status === 4 ? current2.status === 4 && current2.starred_at ? current2.starred_at : now : null;
+      const updated = await db.prepare("UPDATE bookmarks SET stage=?,deferred=?,status=?,read_at=?,published_at=?,starred_at=?,updated_at=? WHERE id=? AND stage=? AND deferred=?").bind(stage, status === 5 ? 1 : 0, legacyStatus, readAt, publishAt, starredAt, now, id, current2.status === 5 ? 1 : current2.status, current2.status === 5 ? 1 : 0).run();
       if (!updated.meta.changes) throw new Error("\u66F8\u7C64\u72C0\u614B\u5DF2\u8B8A\u66F4\uFF0C\u8ACB\u91CD\u65B0\u8F09\u5165");
     }
   }
   if (["url", "redirect_url", "title", "title_original", "title_zh", "summary", "tags", "references"].some((x) => x in raw)) {
-    const x = validate({ ...current, ...raw });
+    const x = validate({ ...current2, ...raw });
     const conflict = await db.prepare("SELECT id FROM bookmarks WHERE (normalized_url=? OR redirect_url=?) AND id<>? LIMIT 1").bind(x.normalized_url, x.normalized_url, id).first();
     if (conflict) throw new Error("\u7DB2\u5740\u5DF2\u88AB\u5176\u4ED6\u66F8\u7C64\u6536\u85CF");
     await db.prepare("UPDATE bookmarks SET url=?,normalized_url=?,redirect_url=?,title=?,title_original=?,title_zh=?,summary=?,reference_links=?,updated_at=? WHERE id=?").bind(x.url, x.normalized_url, x.redirect_url, x.title, x.title_original, x.title_zh, x.summary, JSON.stringify(x.references), (/* @__PURE__ */ new Date()).toISOString(), id).run();
@@ -25773,10 +25773,10 @@ async function remove(db, id) {
 }
 __name(remove, "remove");
 async function renameTag(db, id, value) {
-  const current = await db.prepare("SELECT id,name,name_zh FROM tags WHERE id=?").bind(id).first();
-  if (!current) return null;
-  const name = String(value.name ?? current.name).trim();
-  const nameZh = String(value.name_zh ?? current.name_zh ?? "").trim();
+  const current2 = await db.prepare("SELECT id,name,name_zh FROM tags WHERE id=?").bind(id).first();
+  if (!current2) return null;
+  const name = String(value.name ?? current2.name).trim();
+  const nameZh = String(value.name_zh ?? current2.name_zh ?? "").trim();
   if (!name || name.length > 80 || nameZh.length > 80) throw new Error("\u6A19\u7C64\u540D\u7A31\u4E0D\u53EF\u70BA\u7A7A\u6216\u8D85\u904E 80 \u5B57");
   const conflict = await db.prepare("SELECT id FROM tags WHERE name=? COLLATE NOCASE AND id<>?").bind(name, id).first();
   if (conflict) throw new Error("\u82F1\u6587\u6A19\u7C64\u540D\u7A31\u5DF2\u5B58\u5728");
@@ -25904,15 +25904,15 @@ __name(mergeBookmarkTags, "mergeBookmarkTags");
 async function recommendBookmarkForPublishedNote(env, id, { load = get, update = patch, classify = suggestBookmarkTags } = {}) {
   if (!/^[0-9a-f-]{36}$/i.test(String(id || "")))
     throw new Error("\u5F15\u7528\u66F8\u7C64 ID \u7121\u6548");
-  const current = await load(env.DB, id, true);
-  if (!current) throw new Error("\u5F15\u7528\u66F8\u7C64\u4E0D\u5B58\u5728");
-  if (current.status === 4) return { id, status: 4, changed: false };
-  let tags = (current.tags || []).filter(
+  const current2 = await load(env.DB, id, true);
+  if (!current2) throw new Error("\u5F15\u7528\u66F8\u7C64\u4E0D\u5B58\u5728");
+  if (current2.status === 4) return { id, status: 4, changed: false };
+  let tags = (current2.tags || []).filter(
     (tag) => String(tag).toLowerCase() !== "default"
   );
   if (!tags.length) {
     try {
-      tags = mergeBookmarkTags([], await classify(env, current)).filter((tag) => String(tag).toLowerCase() !== "default");
+      tags = mergeBookmarkTags([], await classify(env, current2)).filter((tag) => String(tag).toLowerCase() !== "default");
     } catch (error2) {
       throw new Error("\u5F15\u7528\u66F8\u7C64\u7F3A\u5C11\u5206\u985E\uFF0CAI \u81EA\u52D5\u5206\u985E\u5931\u6557\uFF0C\u8ACB\u5148\u8A2D\u5B9A\u5206\u985E\uFF1A" + String(error2?.message || error2));
     }
@@ -26639,19 +26639,19 @@ var EntityDecoder = class {
    */
   stateNamedEntity(str, offset) {
     const { decodeTree } = this;
-    let current = decodeTree[this.treeIndex];
-    let valueLength = (current & BinTrieFlags.VALUE_LENGTH) >> 14;
+    let current2 = decodeTree[this.treeIndex];
+    let valueLength = (current2 & BinTrieFlags.VALUE_LENGTH) >> 14;
     for (; offset < str.length; offset++, this.excess++) {
       const char = str.charCodeAt(offset);
-      this.treeIndex = determineBranch(decodeTree, current, this.treeIndex + Math.max(1, valueLength), char);
+      this.treeIndex = determineBranch(decodeTree, current2, this.treeIndex + Math.max(1, valueLength), char);
       if (this.treeIndex < 0) {
         return this.result === 0 || // If we are parsing an attribute
         this.decodeMode === DecodingMode.Attribute && // We shouldn't have consumed any characters after the entity,
         (valueLength === 0 || // And there should be no invalid characters.
         isEntityInAttributeInvalidEnd(char)) ? 0 : this.emitNotTerminatedNamedEntity();
       }
-      current = decodeTree[this.treeIndex];
-      valueLength = (current & BinTrieFlags.VALUE_LENGTH) >> 14;
+      current2 = decodeTree[this.treeIndex];
+      valueLength = (current2 & BinTrieFlags.VALUE_LENGTH) >> 14;
       if (valueLength !== 0) {
         if (char === CharCodes.SEMI) {
           return this.emitNamedEntityData(this.treeIndex, valueLength, this.consumed + this.excess);
@@ -26752,9 +26752,9 @@ function getDecoder(decodeTree) {
   }, "decodeWithTrie");
 }
 __name(getDecoder, "getDecoder");
-function determineBranch(decodeTree, current, nodeIdx, char) {
-  const branchCount = (current & BinTrieFlags.BRANCH_LENGTH) >> 7;
-  const jumpOffset = current & BinTrieFlags.JUMP_TABLE;
+function determineBranch(decodeTree, current2, nodeIdx, char) {
+  const branchCount = (current2 & BinTrieFlags.BRANCH_LENGTH) >> 7;
+  const jumpOffset = current2 & BinTrieFlags.JUMP_TABLE;
   if (branchCount === 0) {
     return jumpOffset !== 0 && char === jumpOffset ? nodeIdx : -1;
   }
@@ -26868,8 +26868,8 @@ function isString(obj) {
 }
 __name(isString, "isString");
 var _hasOwnProperty = Object.prototype.hasOwnProperty;
-function has(object, key) {
-  return _hasOwnProperty.call(object, key);
+function has(object, key2) {
+  return _hasOwnProperty.call(object, key2);
 }
 __name(has, "has");
 function assign(obj) {
@@ -26881,8 +26881,8 @@ function assign(obj) {
     if (typeof source !== "object") {
       throw new TypeError(source + "must be object");
     }
-    Object.keys(source).forEach(function(key) {
-      obj[key] = source[key];
+    Object.keys(source).forEach(function(key2) {
+      obj[key2] = source[key2];
     });
   });
   return obj;
@@ -28304,15 +28304,15 @@ function escapedSplit(str) {
   let ch = str.charCodeAt(pos);
   let isEscaped = false;
   let lastPos = 0;
-  let current = "";
+  let current2 = "";
   while (pos < max) {
     if (ch === 124) {
       if (!isEscaped) {
-        result.push(current + str.substring(lastPos, pos));
-        current = "";
+        result.push(current2 + str.substring(lastPos, pos));
+        current2 = "";
         lastPos = pos + 1;
       } else {
-        current += str.substring(lastPos, pos - 1);
+        current2 += str.substring(lastPos, pos - 1);
         lastPos = pos;
       }
     }
@@ -28320,7 +28320,7 @@ function escapedSplit(str) {
     pos++;
     ch = str.charCodeAt(pos);
   }
-  result.push(current + str.substring(lastPos));
+  result.push(current2 + str.substring(lastPos));
   return result;
 }
 __name(escapedSplit, "escapedSplit");
@@ -30722,8 +30722,8 @@ function assign2(obj) {
     if (!source) {
       return;
     }
-    Object.keys(source).forEach(function(key) {
-      obj[key] = source[key];
+    Object.keys(source).forEach(function(key2) {
+      obj[key2] = source[key2];
     });
   });
   return obj;
@@ -31862,8 +31862,8 @@ async function verifyAccessToken(token, { issuer, audience, email }) {
   const keys = await accessKeys(issuer);
   const jwk = keys.find((k) => k.kid === header.kid && k.kty === "RSA");
   if (!jwk) return false;
-  const key = await crypto.subtle.importKey("jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]);
-  return crypto.subtle.verify({ name: "RSASSA-PKCS1-v1_5" }, key, base64url(parts[2]), new TextEncoder().encode(parts[0] + "." + parts[1]));
+  const key2 = await crypto.subtle.importKey("jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]);
+  return crypto.subtle.verify({ name: "RSASSA-PKCS1-v1_5" }, key2, base64url(parts[2]), new TextEncoder().encode(parts[0] + "." + parts[1]));
 }
 __name(verifyAccessToken, "verifyAccessToken");
 async function isAdmin(req, env) {
@@ -32344,6 +32344,230 @@ async function autoReviewNewSummary(env, created, fetcher = fetch) {
 }
 __name(autoReviewNewSummary, "autoReviewNewSummary");
 
+// src/triage.js
+var TRIAGE_VERSION = "triage-2026-11-19-v1";
+var key = /* @__PURE__ */ __name((id) => TRIAGE_VERSION + ":" + id, "key");
+var dimensions = ["learning", "depth", "durability", "novelty", "fit"];
+var weights = { learning: 0.34, depth: 0.26, durability: 0.18, novelty: 0.14, fit: 0.08 };
+var candidatesSql = "SELECT b.id,b.title,b.title_original,b.title_zh,b.summary,b.url,b.redirect_url,b.created_at,b.updated_at,b.stage,b.deferred,s.value AS saved FROM bookmarks b LEFT JOIN bookmark_settings s ON s.key=?||b.id WHERE b.stage IN (0,1)";
+var sourceText = /* @__PURE__ */ __name((b) => [b.title, b.title_original, b.summary, b.url, b.redirect_url].join("\n"), "sourceText");
+function signature(b) {
+  let h = 2166136261;
+  for (const c of sourceText(b)) {
+    h = Math.imul(h ^ c.charCodeAt(0), 16777619);
+  }
+  return (h >>> 0).toString(16);
+}
+__name(signature, "signature");
+var clamp = /* @__PURE__ */ __name((v) => Math.max(0, Math.min(100, Math.round(Number(v) || 0))), "clamp");
+var size = /* @__PURE__ */ __name((s) => [...String(s || "")].length, "size");
+var reasons = ["\u6642\u4E8B\u904E\u671F", "\u5167\u5BB9\u904E\u77ED", "\u5B78\u7FD2\u50F9\u503C\u4E0D\u8DB3", "\u8CC7\u8A0A\u91CD\u8907", "\u5C55\u793A\uFF0F\u904A\u6232", "\u95B1\u8B80\u969C\u7919", "\u5176\u4ED6"];
+function previewTriage(b) {
+  const title = (b.title_original || b.title || "").toLowerCase();
+  const summary = String(b.summary || "");
+  const length = size(summary);
+  const event = /(?:outage|incident|downtime|breaking|statement|announces?|press release|breach|resigns?|funding|raised|quarterly|earnings|launches|reports|acquired|status|停機|故障|異常|公告|聲明|收購|融資|財報|爆發|調查中|停飛)/i.test(title + " " + summary.slice(0, 180));
+  const promo = /(?:show hn:|play|game|demo|landing page|pricing|signup|sign up|下載|互動遊戲|小遊戲|介紹一款)/i.test(title);
+  const technical = /(?:how to|inside|reverse engineer|explained|tutorial|benchmark|analysis|architecture|deep dive|research|實作|原理|架構|推導|實驗|研究|分析|逆向|方法|教學|證明|比較|資料)/i.test(title + " " + summary);
+  const short = length < 65;
+  const ageDays = Math.max(0, (Date.now() - Date.parse(b.created_at || 0)) / 864e5);
+  const dimensions2 = {
+    learning: clamp(technical ? 76 : promo ? 48 : event ? 38 : 62),
+    depth: clamp(short ? 32 : length < 105 ? 55 : length < 200 ? 68 : 76),
+    durability: clamp(event ? Math.max(10, 55 - ageDays * 4) : 78),
+    novelty: clamp(event ? 45 : promo ? 55 : 67),
+    fit: clamp(technical ? 75 : promo ? 56 : 60)
+  };
+  if (needsSummaryRepair(summary)) dimensions2.depth = 40;
+  const flags = [];
+  if (event) flags.push("\u6642\u4E8B\u904E\u671F");
+  if (promo) flags.push("\u5C55\u793A\uFF0F\u904A\u6232");
+  if (needsSummaryRepair(summary)) flags.push("\u95B1\u8B80\u969C\u7919");
+  if (!flags.length) flags.push(technical ? "\u5176\u4ED6" : "\u5B78\u7FD2\u50F9\u503C\u4E0D\u8DB3");
+  const score = Math.round(Object.keys(weights).reduce((s, k) => s + dimensions2[k] * weights[k], 0));
+  return { version: TRIAGE_VERSION, score, dimensions: dimensions2, flags, reason: short ? "\u6458\u8981\u5F88\u77ED\uFF0C\u7121\u6CD5\u78BA\u8A8D\u6B63\u6587\u662F\u5426\u6709\u984D\u5916\u6DF1\u5EA6\uFF1B\u5EFA\u8B70\u5148\u770B\u539F\u6587\u3002" : event ? "\u4E8B\u4EF6\u5C0E\u5411\u5167\u5BB9\uFF0C\u9700\u78BA\u8A8D\u662F\u5426\u5305\u542B\u53EF\u9577\u671F\u53C3\u8003\u7684\u5206\u6790\u3002" : promo ? "\u504F\u5411\u4ECB\u7D39\u6216\u5C55\u793A\uFF0C\u61C9\u6AA2\u67E5\u662F\u5426\u6709\u5BE6\u4F5C\u7D30\u7BC0\u3001\u539F\u7406\u6216\u53EF\u91CD\u7528\u7684\u65B9\u6CD5\u3002" : technical ? "\u6458\u8981\u5DF2\u6709\u6280\u8853\u7DDA\u7D22\uFF1B\u66AB\u6642\u4E0D\u5B9C\u76F4\u63A5\u6DD8\u6C70\u3002" : "\u50C5\u4F9D\u6458\u8981\u521D\u6B65\u8A55\u4F30\uFF1B\u5B8C\u6574\u5167\u5BB9\u53EF\u80FD\u6539\u8B8A\u7D50\u679C\u3002", basis: "rules", confidence: "low", summary_chars: length, full_chars: null, full_words: null, read_minutes: null, assessed_at: null };
+}
+__name(previewTriage, "previewTriage");
+function current(b) {
+  try {
+    const x = JSON.parse(b.saved);
+    return x.version === TRIAGE_VERSION && x.signature === signature(b) ? x : null;
+  } catch {
+    return null;
+  }
+}
+__name(current, "current");
+async function triageList(db, includeDeferred = false) {
+  const sql = candidatesSql + (includeDeferred ? "" : " AND b.deferred=0") + " ORDER BY b.created_at ASC,b.id ASC LIMIT 500";
+  const data = await db.prepare(sql).bind(TRIAGE_VERSION + ":").all();
+  const items = data.results.map((x) => {
+    const { saved, ...b } = x;
+    return { ...b, analysis: current(x) || previewTriage(x), assessed: !!current(x) };
+  });
+  return { version: TRIAGE_VERSION, total: items.length, assessed: items.filter((x) => x.assessed).length, items };
+}
+__name(triageList, "triageList");
+async function history(db) {
+  const sql = "SELECT title_original,title,substr(summary,1,210) summary FROM bookmarks WHERE stage=? ORDER BY updated_at DESC LIMIT 12";
+  const [negative, positive] = await Promise.all([
+    db.prepare(sql).bind(2).all(),
+    db.prepare("SELECT title_original,title,substr(summary,1,210) summary FROM bookmarks WHERE stage IN (3,4) ORDER BY updated_at DESC LIMIT 14").all()
+  ]);
+  const normalize3 = /* @__PURE__ */ __name((rows) => rows.results.map((x) => ({ title: x.title_original || x.title, summary: x.summary })), "normalize");
+  return { not_public: normalize3(negative), published: normalize3(positive) };
+}
+__name(history, "history");
+function parseAnswer(output, items, extra = {}) {
+  const content = output?.choices?.[0]?.message?.content ?? output?.response;
+  const parsed = typeof content === "string" ? JSON.parse(content) : content;
+  if (!Array.isArray(parsed?.items)) throw Error("AI \u672A\u56DE\u50B3\u5B8C\u6574\u8A55\u5206\u6E05\u55AE");
+  const byId = new Map(parsed.items.map((x) => [x.id, x]));
+  return items.map((b) => {
+    const x = byId.get(b.id);
+    if (!x || dimensions.some((k) => !Number.isFinite(Number(x[k])))) throw Error("AI \u8A55\u5206\u9805\u76EE\u4E0D\u5B8C\u6574");
+    const d = Object.fromEntries(dimensions.map((k) => [k, clamp(x[k])]));
+    const flags = [...new Set((Array.isArray(x.flags) ? x.flags : []).filter((f) => reasons.includes(f)))].slice(0, 3);
+    const score = Math.round(dimensions.reduce((sum, k) => sum + d[k] * weights[k], 0));
+    const body = extra[b.id];
+    return {
+      version: TRIAGE_VERSION,
+      signature: signature(b),
+      score,
+      dimensions: d,
+      flags,
+      reason: String(x.reason || "").slice(0, 280) || "\u6C92\u6709\u63D0\u4F9B\u5177\u9AD4\u7406\u7531",
+      basis: body ? "fulltext" : "summary",
+      confidence: body ? "medium" : "low",
+      summary_chars: size(b.summary),
+      full_chars: body?.chars ?? null,
+      full_words: body?.words ?? null,
+      read_minutes: body?.minutes ?? null,
+      assessed_at: (/* @__PURE__ */ new Date()).toISOString()
+    };
+  });
+}
+__name(parseAnswer, "parseAnswer");
+async function scoreTriage(env, ids, { fullText = null } = {}) {
+  if (!env.AI) throw Error("Workers AI \u5C1A\u672A\u8A2D\u5B9A");
+  if (!Array.isArray(ids) || !ids.length || ids.length > 6 || ids.some((x) => !/^[0-9a-f-]{36}$/i.test(String(x)))) throw Error("\u4E00\u6B21\u6700\u591A\u8A55\u4F30 6 \u7BC7\u6709\u6548\u66F8\u7C64");
+  const unique = [...new Set(ids)];
+  const b = await env.DB.prepare(candidatesSql + " AND b.id IN (" + unique.map(() => "?").join(",") + ")").bind(TRIAGE_VERSION + ":", ...unique).all();
+  if (b.results.length !== unique.length) throw Error("\u66F8\u7C64\u72C0\u614B\u5DF2\u8B8A\u66F4\uFF0C\u8ACB\u91CD\u65B0\u8F09\u5165");
+  const full = {};
+  if (fullText) {
+    if (unique.length !== 1) throw Error("\u5168\u6587\u8A55\u4F30\u4E00\u6B21\u50C5\u9650\u4E00\u7BC7");
+    const text2 = String(fullText.text || "");
+    if (text2.length < 300) throw Error("\u6587\u7AE0\u6B63\u6587\u4E0D\u8DB3\uFF0C\u7121\u6CD5\u53EF\u9760\u8A55\u4F30\u5168\u6587");
+    full[unique[0]] = fullText;
+  }
+  const pending = b.results.filter((item) => fullText || !current(item));
+  if (!pending.length) return { updated: [], skipped: unique.length };
+  const examples = await history(env.DB);
+  const system = [
+    "\u4F60\u662F\u300CChrisTorng \u5B78\u7FD2\u5929\u5730\u300D\u7684\u500B\u4EBA\u95B1\u8B80\u9810\u7BE9\u52A9\u7406\uFF0C\u76EE\u6A19\u662F\u5224\u65B7\u662F\u5426\u503C\u5F97\u9032\u4E00\u6B65\u8B80\u539F\u6587\u53CA\u9577\u671F\u6536\u9304\uFF0C\u4E0D\u662F\u8A55\u4F30\u6587\u7AE0\u653F\u6CBB\u7ACB\u5834\u3001\u6D41\u884C\u7A0B\u5EA6\u6216\u5206\u985E\u6A19\u7C64\u3002",
+    "\u8CA0\u9762\u8207\u6B63\u9762\u6B77\u53F2\u6C7A\u7B56\u53EA\u662F\u5F31\u8A0A\u865F\uFF0C\u4E0D\u516C\u958B\u4E5F\u53EF\u80FD\u662F\u4E3B\u984C\u4E0D\u9069\u7528\u3001\u5DF2\u8B80\u904E\u6216\u5A92\u9AD4\u9650\u5236\uFF0C\u4E0D\u80FD\u7576\u6210\u666E\u904D\u54C1\u8CEA\u6A19\u7C64\u3002\u4E0D\u8981\u56E0\u70BA\u8A9E\u8A00\u975E\u4E2D\u6587\u3001\u4E3B\u984C\u964C\u751F\u3001\u4E0D\u662F\u7A0B\u5F0F\u6280\u8853\u800C\u6263\u5206\u3002",
+    "\u904A\u6232\u6216\u4E92\u52D5\u5C55\u793A\u82E5\u6709\u6F14\u7B97\u6CD5\u3001\u8A2D\u8A08\u3001\u5BE6\u4F5C\u539F\u7406\u4ECD\u53EF\u9AD8\u5206\uFF1B\u5982\u679C\u53EA\u6709\u904A\u6232\u64CD\u4F5C\uFF0F\u767B\u5165\u624D\u80FD\u9AD4\u9A57\uFF0C\u4E14\u7F3A\u4E4F\u6280\u8853\u7D30\u7BC0\uFF0C\u624D\u5C07\u95B1\u8B80\u6210\u672C\u5217\u5165\u7406\u7531\u3002",
+    "\u4E8B\u4EF6\u65B0\u805E\u3001\u71DF\u904B\u72C0\u614B\u3001\u4F01\u696D\u8072\u660E\u82E5\u50C5\u662F\u77ED\u66AB\u901A\u77E5\u4E14\u6C92\u6709\u6280\u8853\u6839\u56E0\uFF0F\u5206\u6790\uFF0F\u53EF\u91CD\u7528\u65B9\u6CD5\uFF0C\u61C9\u964D\u4F4E\u9577\u671F\u50F9\u503C\uFF1B\u5B89\u5168\u6F0F\u6D1E\u82E5\u9644 exploit\u3001\u6839\u56E0\u3001\u88DC\u6551\u5206\u6790\u53EF\u9AD8\u5206\u3002",
+    "\u6458\u8981\u77ED\u4E0D\u7B49\u65BC\u6B63\u6587\u77ED\uFF1B\u82E5\u672A\u63D0\u4F9B\u5168\u6587\uFF0C\u4E0D\u53EF\u65B7\u8A00\u5168\u6587\u5B57\u6578\u5F88\u5C11\u3002\u82E5\u6709\u7AF6\u722D\u6216\u7368\u7279\u7684\u65B0\u4E8B\u5BE6\uFF0C\u77ED\u6587\u4E5F\u6709\u50F9\u503C\u3002",
+    "\u6BCF\u7BC7\u8A55\u4E94\u9805\u5404 0~100\uFF0C\u5206\u9AD8\u4EE3\u8868\u503C\u5F97\u8B80\uFF1Alearning=\u53EF\u5B78\u7FD2\u7684\u539F\u7406\uFF0F\u65B9\u6CD5\uFF0Cdepth=\u8CC7\u8A0A\u91CF\u8207\u5177\u9AD4\u6027\uFF0Cdurability=\u8D85\u8D8A\u77ED\u66AB\u6642\u4E8B\u7684\u6301\u4E45\u6027\uFF0Cnovelty=\u8207\u4E00\u822C\u516C\u544A\u6216\u91CD\u8907\u5831\u5C0E\u76F8\u6BD4\u7684\u65B0\u77E5\u589E\u91CF\uFF0Cfit=\u9069\u5408\u500B\u4EBA\u63A2\u7D22\u5F0F\u5B78\u7FD2\u5929\u5730\uFF08\u8DE8\u9818\u57DF\u3001\u79D1\u5B78\u3001\u97F3\u6A02\u3001\u6B77\u53F2\u3001\u6280\u8853\u5747\u53EF\uFF09\u3002",
+    "flags \u50C5\u4F7F\u7528\u300C\u6642\u4E8B\u904E\u671F\u3001\u5167\u5BB9\u904E\u77ED\u3001\u5B78\u7FD2\u50F9\u503C\u4E0D\u8DB3\u3001\u8CC7\u8A0A\u91CD\u8907\u3001\u5C55\u793A\uFF0F\u904A\u6232\u3001\u95B1\u8B80\u969C\u7919\u3001\u5176\u4ED6\u300D\uFF0C\u6700\u591A\u5169\u500B\u4E14\u5FC5\u9808\u6709\u660E\u78BA\u4F9D\u64DA\u3002\u300C\u6642\u4E8B\u904E\u671F\u300D\u6307\u5167\u5BB9\u9AD8\u5EA6\u4F9D\u8CF4\u5373\u6642\u6027\u800C\u975E\u55AE\u7D14\u4E8B\u4EF6\u767C\u751F\u5728\u904E\u53BB\uFF1B\u300C\u5167\u5BB9\u904E\u77ED\u300D\u9700\u8981\u6709\u5168\u6587\u8B49\u64DA\uFF0C\u5426\u5247\u4E0D\u8981\u6A19\u3002",
+    '\u7E41\u9AD4\u4E2D\u6587 reason 30~70 \u5B57\uFF0C\u8AAA\u660E\u6700\u4E3B\u8981\u7684\u50F9\u503C\uFF0F\u7591\u616E\uFF0C\u907F\u514D\u6CDB\u6CDB\u5F62\u5BB9\u6216\u81C6\u6E2C\u3002\u8F38\u51FA\u7D14 JSON\uFF1A{"items":[{"id":"...","learning":50,"depth":50,"durability":50,"novelty":50,"fit":50,"flags":["\u5176\u4ED6"],"reason":"..."}]}',
+    "\u4E0D\u5F97\u81EA\u52D5\u66F4\u52D5\u4EFB\u4F55\u66F8\u7C64\u516C\u958B\u72C0\u614B\u3002"
+  ].join("\n");
+  const content = {
+    current_date: (/* @__PURE__ */ new Date()).toISOString().slice(0, 10),
+    historical_examples: examples,
+    candidates: pending.map((x) => ({
+      id: x.id,
+      title: x.title_original || x.title,
+      title_zh: x.title_zh || x.title,
+      url: x.redirect_url || x.url,
+      created_at: x.created_at,
+      summary: String(x.summary || "").slice(0, 1500),
+      full_text: full[x.id] ? String(full[x.id].text).slice(0, 9500) : void 0
+    }))
+  };
+  const out = await env.AI.run(CLASSIFIER_MODEL, {
+    messages: [{ role: "system", content: system }, { role: "user", content: JSON.stringify(content) }],
+    response_format: { type: "json_object" },
+    chat_template_kwargs: { enable_thinking: false },
+    temperature: 0,
+    max_tokens: 2300
+  });
+  const results = parseAnswer(out, pending, full);
+  await env.DB.batch(results.map((x, i) => env.DB.prepare(
+    "INSERT INTO bookmark_settings(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at"
+  ).bind(key(pending[i].id), JSON.stringify(x), x.assessed_at)));
+  return { updated: results.map((r, i) => ({ id: pending[i].id, analysis: r })), skipped: unique.length - pending.length };
+}
+__name(scoreTriage, "scoreTriage");
+function safeAddress(address) {
+  try {
+    const u = new URL(address);
+    if (u.protocol !== "https:" || u.username || u.password || u.port && u.port !== "443") return false;
+    const host = u.hostname.toLowerCase().replace(/\.$/, "");
+    if (!host.includes(".") || host.includes(":") || /^[0-9.]+$/.test(host) || host === "localhost" || /\.(?:local|internal|test|localhost|invalid)$/.test(host)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+__name(safeAddress, "safeAddress");
+var decodeHtml = /* @__PURE__ */ __name((s) => s.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos|nbsp|ndash|mdash);/gi, (all, v) => {
+  const named = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", ndash: "\u2013", mdash: "\u2014" };
+  if (v[0] === "#") {
+    const n = v[1].toLowerCase() === "x" ? parseInt(v.slice(2), 16) : parseInt(v.slice(1), 10);
+    return n > 0 && n <= 1114111 ? String.fromCodePoint(n) : " ";
+  }
+  return named[v.toLowerCase()] || all;
+}), "decodeHtml");
+function extractArticle(html) {
+  const body = html.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1] || html.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i)?.[1] || html.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i)?.[1] || "";
+  if (!body) return "";
+  const clean2 = body.replace(/<!--[\s\S]*?-->/g, " ").replace(/<(script|style|noscript|svg|nav|aside|header|footer|form)\b[^>]*>[\s\S]*?<\/\1>/gi, " ").replace(/<\/(?:p|div|li|h[1-6]|section|br|tr|blockquote)>/gi, "\n").replace(/<[^>]+>/g, " ");
+  return decodeHtml(clean2).replace(/[ \t]+/g, " ").replace(/\n(?:\s*\n)+/g, "\n").trim();
+}
+__name(extractArticle, "extractArticle");
+function countText(text2) {
+  const chars = [...text2].filter((c) => !/\s/.test(c)).length;
+  const cjk = (text2.match(/[\u3400-\u9fff\u3040-\u30ff]/g) || []).length;
+  const english = (text2.match(/[a-zA-Z0-9]+(?:['-][a-zA-Z0-9]+)*/g) || []).length;
+  const words = cjk + english;
+  const minutes = Math.max(1, Math.round((cjk / 280 + english / 180) * 1.1));
+  return { chars, words, minutes };
+}
+__name(countText, "countText");
+async function inspectTriage(env, id) {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw Error("\u66F8\u7C64 ID \u7121\u6548");
+  const row = await env.DB.prepare("SELECT id,url,redirect_url,title,summary FROM bookmarks WHERE id=? AND stage IN (0,1)").bind(id).first();
+  if (!row) throw Error("\u627E\u4E0D\u5230\u5F85\u8655\u7406\u66F8\u7C64");
+  const url = row.redirect_url && safeAddress(row.redirect_url) ? row.redirect_url : row.url;
+  if (!safeAddress(url)) return { available: false, reason: "\u4F86\u6E90\u4E0D\u662F\u53EF\u5B89\u5168\u64F7\u53D6\u7684 HTTPS \u6587\u7AE0\u7DB2\u5740\uFF0C\u8ACB\u8907\u88FD\u6B63\u6587\u624B\u52D5\u8CBC\u5165\u3002" };
+  let response;
+  try {
+    response = await fetch(url, { redirect: "manual", headers: { Accept: "text/html" }, signal: AbortSignal.timeout(7500) });
+  } catch {
+    return { available: false, reason: "\u4F86\u6E90\u7AD9\u9023\u7DDA\u903E\u6642\u6216\u62D2\u7D55\u4F3A\u670D\u5668\u64F7\u53D6\uFF1B\u53EF\u6539\u7528\u8907\u88FD\u539F\u6587\u3002" };
+  }
+  if (!response.ok || !(response.headers.get("Content-Type") || "").toLowerCase().includes("text/html"))
+    return { available: false, reason: "\u4F86\u6E90\u7AD9\u672A\u63D0\u4F9B\u53EF\u64F7\u53D6\u7684 HTML \u6B63\u6587\uFF08HTTP " + response.status + "\uFF09\u3002" };
+  const declared = Number(response.headers.get("Content-Length") || 0);
+  if (declared > 13e5) return { available: false, reason: "\u4F86\u6E90\u9801\u9762\u904E\u5927\uFF0C\u7121\u6CD5\u78BA\u8A8D\u5168\u6587\u5B8C\u6574\u6027\u3002" };
+  let html;
+  try {
+    html = await response.text();
+  } catch {
+    return { available: false, reason: "\u64F7\u53D6\u6B63\u6587\u5931\u6557\u3002" };
+  }
+  if (html.length > 13e5) return { available: false, reason: "\u4F86\u6E90\u9801\u9762\u904E\u5927\uFF0C\u7121\u6CD5\u78BA\u8A8D\u5168\u6587\u5B8C\u6574\u6027\u3002" };
+  const article = extractArticle(html);
+  if (article.length < 300 || needsSummaryRepair(article.slice(0, 300)))
+    return { available: false, reason: "\u672A\u627E\u5230\u53EF\u4FE1\u7684\u6587\u7AE0\u6B63\u6587\uFF08\u53EF\u80FD\u662F\u767B\u5165\u3001\u9A57\u8B49\u3001\u5F71\u7247\u6216\u4E92\u52D5\u7DB2\u7AD9\uFF09\u3002" };
+  const stats = countText(article);
+  return { available: true, source: "web-html", ...stats, text: article.slice(0, 5e4) };
+}
+__name(inspectTriage, "inspectTriage");
+
 // src/note-references.js
 async function relatedNoteHtml(env, items) {
   if (!env.NOTE_REFERENCES || !items.length) return {};
@@ -32394,6 +32618,34 @@ async function api(req, env, url, ctx) {
     if (p === "/bookmarks/api/admin" || p === "/bookmarks/api/admin/") {
       if (req.method === "GET") return json2(await list(env.DB, opts(url, true)));
       if (req.method === "POST") return json2(await createCategorized(env, await input(req), ctx), 201);
+    }
+    if (p === "/bookmarks/api/admin/triage" && req.method === "GET")
+      return json2(await triageList(env.DB, url.searchParams.get("deferred") === "1"));
+    if (p === "/bookmarks/api/admin/triage/score" && req.method === "POST") {
+      const body = await input(req);
+      return json2(await scoreTriage(env, body.ids));
+    }
+    if (p === "/bookmarks/api/admin/triage/inspect" && req.method === "POST") {
+      const body = await input(req);
+      const report = await inspectTriage(env, String(body.id || ""));
+      if (!report.available) return json2(report);
+      try {
+        const scored = await scoreTriage(env, [String(body.id)], { fullText: report });
+        const { text: text2, ...metrics } = report;
+        return json2({ ...metrics, analysis: scored.updated[0]?.analysis });
+      } catch (error2) {
+        const { text: text2, ...metrics } = report;
+        return json2({ ...metrics, score_error: String(error2?.message || error2) });
+      }
+    }
+    if (p === "/bookmarks/api/admin/triage/paste" && req.method === "POST") {
+      const body = await readSubmittedContent(req);
+      const text2 = body.content.trim();
+      if (text2.length < 300) throw Error("\u8ACB\u63D0\u4F9B\u81F3\u5C11 300 \u5B57\u5143\u7684\u6587\u7AE0\u6B63\u6587");
+      const report = { source: "pasted-text", ...countText(text2), text: text2.slice(0, 5e4) };
+      const scored = await scoreTriage(env, [body.id], { fullText: report });
+      const { text: unused, ...metrics } = report;
+      return json2({ available: true, ...metrics, analysis: scored.updated[0]?.analysis });
     }
     if (p === "/bookmarks/api/admin/quick" && req.method === "GET")
       return json2(await reviewWindow(env.DB, url.searchParams.get("size")));
@@ -32589,8 +32841,8 @@ var worker = {
       }
       const match2 = path.match(/^\/bookmarks\/([a-z0-9-]{1,100})\/?$/);
       if (match2 && !["view", "admin", "api"].includes(match2[1])) {
-        const key = match2[1];
-        const published = /^[0-9a-f-]{36}$/.test(key) ? await get(env.DB, key) : await getBySlug(env.DB, key);
+        const key2 = match2[1];
+        const published = /^[0-9a-f-]{36}$/.test(key2) ? await get(env.DB, key2) : await getBySlug(env.DB, key2);
         if (published?.slug) {
           const canonical = "/bookmarks/" + published.slug + "/";
           if (url.pathname !== canonical)
