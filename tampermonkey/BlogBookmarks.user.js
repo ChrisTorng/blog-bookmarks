@@ -349,7 +349,6 @@
                 button.removeAttribute('aria-invalid');
             }
             const hint = exists ? '取消收藏' : '加入未讀收藏';
-            const insight=previewScores.get(url);
             const details=insight?' · 偏好傾向 收藏'+insight.interest+' 公開'+insight.publish+' 推薦'+insight.recommend+'（'+(insight.basis==='decision-ai'?'AI':'規則')+' 初評，未校準為機率）· '+insight.reason:'';
             button.title=hint+details;
             button.setAttribute('aria-label',hint+(insight?' · 公開傾向'+insight.publish:''));
@@ -707,8 +706,8 @@
             article.appendChild(button);
             const control = { link, button, scoreBadge, url: sourceAndTarget(link.href).url };
             controls.set(link, control);
-            const summary=article.querySelector('.post-summary');
-            if(summary)summaryObserver?.observe(summary);
+            const previewSummary=article.querySelector('.post-summary');
+            if(previewSummary)summaryObserver?.observe(previewSummary);
             positionControl(control);
             positionObserver?.observe(article);
             positionObserver?.observe(title);
