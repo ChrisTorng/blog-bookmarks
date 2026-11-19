@@ -6,7 +6,7 @@ import { runInNewContext } from 'node:vm';
 const source = readFileSync(new URL('../tampermonkey/BlogBookmarks.user.js', import.meta.url), 'utf8');
 const instrumented = source.replace(/\n\}\)\(\);\s*$/, `
     globalThis.__test = { controls, saved, checked, errors, positionControl,
-        toggleArticle, showError, clearError, layoutErrors };
+        toggleArticle, showError, clearError, layoutErrors, render };
 })();`);
 
 function element(tag = 'div') {
@@ -282,4 +282,31 @@ test('failed addition keeps empty red star until retry successfully saves', asyn
   assert.equal(api.errors.has(row.link.href), false);
   assert.equal(row.button.textContent, '★');
   assert.equal(row.button.attrs['data-bookmarks-error'], undefined);
+});
+
+
+test('translated glyph never duplicates stars after 100 renders and updates',()=>{
+  const {api,document,addArticle}=harness();
+  const row=addArticle('https://example.org/translation');
+  const glyph=document.createElement('span');
+  glyph.className='tm-bookmarks-glyph notranslate';
+  glyph.textContent='☆';
+  const scoreBadge=document.createElement('span');
+  scoreBadge.className='tm-bookmarks-predict notranslate';
+  scoreBadge.textContent='75';
+  row.button.append(glyph,scoreBadge);
+  row.control.glyph=glyph;
+  row.control.scoreBadge=scoreBadge;
+  // Edge translation can wrap the first text node with another HTML element.
+  // Rendering must never mistake this for a missing star and insert a new node.
+  row.button.firstChild={nodeType:1,tagName:'FONT'};
+  for(let i=0;i<100;i++){
+    if(i%2===0)api.saved.set(row.link.href,{id:'saved',status:0});
+    else api.saved.delete(row.link.href);
+    api.render();
+    assert.equal(row.button.children.length,2);
+    assert.ok(['☆','★'].includes(glyph.textContent));
+    assert.equal(row.button.children[0],glyph);
+    assert.equal(row.button.children[1],scoreBadge);
+  }
 });

@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.16
-// @description  Keep expanded BetaCat bookmark stars at stable screen height as Android browser toolbars hide or appear
+// @version      0.5.17
+// @description  Prevent duplicated bookmark stars after translation while retaining preview scores and stable positioning
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
 // @downloadURL  https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -331,12 +331,14 @@
             const { button, url } = control;
             const exists = saved.has(url);
             const label = exists ? '★' : '☆';
-            if(!control.scoreBadge) {
-                if(button.textContent!==label)button.textContent=label;
-            } else if(button.firstChild?.nodeType===3) {
-                if(button.firstChild.nodeValue!==label)button.firstChild.nodeValue=label;
-            } else {
-                button.insertBefore(document.createTextNode(label),button.firstChild);
+            // Keep the star in one permanent element. Browser translation can
+            // wrap or replace text nodes, so firstChild must never be used to
+            // decide whether to insert another star.
+            if (control.glyph) {
+                if (control.glyph.textContent !== label) control.glyph.textContent = label;
+            } else if (!control.scoreBadge && button.textContent !== label) {
+                // Existing test harness / legacy controls without a score badge.
+                button.textContent = label;
             }
             const insight=previewScores.get(url);
             const chip=control.scoreBadge;
@@ -695,12 +697,18 @@
             if (!article || !title) continue;
             const button = document.createElement('button');
             button.type = 'button';
-            button.className=BUTTON_CLASS;
-            const scoreBadge=document.createElement('span');
-            scoreBadge.className='tm-bookmarks-predict';
-            scoreBadge.textContent='…';
-            scoreBadge.setAttribute('aria-hidden','true');
-            button.append(document.createTextNode('☆'),scoreBadge);
+            button.className = BUTTON_CLASS + ' notranslate';
+            button.setAttribute('translate', 'no');
+            const glyph = document.createElement('span');
+            glyph.className = 'tm-bookmarks-glyph notranslate';
+            glyph.setAttribute('translate', 'no');
+            glyph.textContent = '☆';
+            const scoreBadge = document.createElement('span');
+            scoreBadge.className = 'tm-bookmarks-predict notranslate';
+            scoreBadge.setAttribute('translate', 'no');
+            scoreBadge.textContent = '…';
+            scoreBadge.setAttribute('aria-hidden', 'true');
+            button.append(glyph, scoreBadge);
             button.setAttribute('aria-live', 'polite');
             button.addEventListener('click', event => {
                 event.preventDefault();
@@ -708,7 +716,7 @@
                 void toggleArticle(link);
             });
             article.appendChild(button);
-            const control = { link, button, scoreBadge, url: sourceAndTarget(link.href).url };
+            const control = { link, button, glyph, scoreBadge, url: sourceAndTarget(link.href).url };
             controls.set(link, control);
             const previewSummary=article.querySelector('.post-summary');
             if(previewSummary)summaryObserver?.observe(previewSummary);
