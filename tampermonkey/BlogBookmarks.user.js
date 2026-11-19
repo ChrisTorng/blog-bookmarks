@@ -34,7 +34,7 @@
     const previewScores = new Map();
     const observedUrls = new Set();
     const viewedUrls = new Set();
-    const snapshotId = crypto.randomUUID();
+    const snapshotId = globalThis.crypto?.randomUUID?.() || '00000000-0000-4000-8000-' + Math.floor(Math.random()*281474976710656).toString(16).padStart(12,'0');
     let previewTimer,previewTask=Promise.resolve(),pollCount=0,summaryObserver;
 
     let token = GM_getValue(TOKEN_KEY, '');
@@ -331,9 +331,13 @@
             const { button, url } = control;
             const exists = saved.has(url);
             const label = exists ? '★' : '☆';
-            if(button.firstChild?.nodeType===3){
+            if(!control.scoreBadge) {
+                if(button.textContent!==label)button.textContent=label;
+            } else if(button.firstChild?.nodeType===3) {
                 if(button.firstChild.nodeValue!==label)button.firstChild.nodeValue=label;
-            }else button.insertBefore(document.createTextNode(label),button.firstChild);
+            } else {
+                button.insertBefore(document.createTextNode(label),button.firstChild);
+            }
             const insight=previewScores.get(url);
             const chip=control.scoreBadge;
             const text=insight?String(insight.publish)+(insight.recommend>=75?'★':''):'…';
