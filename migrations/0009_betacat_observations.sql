@@ -28,3 +28,12 @@ CREATE TABLE IF NOT EXISTS betacat_snapshot_items (
   PRIMARY KEY (snapshot_id,url)
 );
 CREATE INDEX IF NOT EXISTS idx_betacat_snapshot_items_url ON betacat_snapshot_items(url);
+
+CREATE TABLE IF NOT EXISTS betacat_bookmark_actions (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ snapshot_id TEXT,
+ url TEXT NOT NULL,
+ selected INTEGER NOT NULL,
+ acted_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_betacat_bookmark_actions_url ON betacat_bookmark_actions(url,acted_at);
