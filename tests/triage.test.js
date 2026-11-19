@@ -11,7 +11,7 @@ test('triage initial scores are bounded and do not present short summary as shor
  assert.equal(x.full_chars,null);
  assert.equal(x.read_minutes,null);
  assert.ok(!x.flags.includes('內容過短'));
- assert.deepEqual(Object.keys(x.dimensions).sort(),['depth','durability','fit','learning','novelty']);
+ assert.deepEqual(Object.keys(x.dimensions).sort(),['awareness','depth','durability','fit','learning','novelty']);
 });
 test('document text extraction removes scripts and navigation and keeps article body',()=>{
  const html='<html><body><nav>首頁 目錄</nav><article><h1>測試文章</h1><p>第一段&amp;第二段</p><script>ignoreMe()</script><p>第三段</p></article><footer>頁尾</footer></body></html>';
@@ -55,4 +55,16 @@ test('missing or garbled summary must not be ranked as worthless article',()=>{
   assert.deepEqual(x.flags,['閱讀障礙']);
   assert.equal(x.score,50);
  }
+});
+
+test('v2 preview values AI announcements and historical discoveries without requiring tutorials',()=>{
+ const props={...sample,created_at:'2026-11-18T00:00:00Z'};
+ const ai=previewTriage({...props,title:'Qwen4-Max model release',title_original:'Qwen4-Max',summary:'Qwen4-Max released new model improvements and benchmark comparisons, available now for developers to try.'});
+ const past=previewTriage({...props,title:'Historical manuscript discovery',title_original:'An archaeological discovery of a 200 year old manuscript',summary:'An original handwritten manuscript was discovered under old roof tiles; it illuminates historical social customs.'});
+ const notice=previewTriage({...props,title:'Airline outage',title_original:'Airline outage disruption and service restored',summary:'A temporary airline service outage was reported; service restored. No explanation or investigation is included.'});
+ assert.ok(ai.score>notice.score);
+ assert.ok(past.score>notice.score);
+ assert.ok(ai.dimensions.awareness>=90);
+ assert.ok(past.dimensions.fit>=80);
+ assert.ok(!ai.flags.includes('時事過期'));
 });
