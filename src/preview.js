@@ -75,7 +75,7 @@ async function updateScores(env,candidates){
  finally{running.delete(key);}
 }
 export async function previewInsights(env,raw,ctx){
- const mode=['snapshot','lookup','viewed'].includes(raw?.mode)?raw.mode:'snapshot';
+ const mode=['snapshot','lookup','viewed','selection'].includes(raw?.mode)?raw.mode:'snapshot';
  if(!Array.isArray(raw?.items)||!raw.items.length||raw.items.length>55)throw Error('一次最多 55 篇文章');
  const items=[...new Map(raw.items.map(v=>{const x=norm(v);return [x.url,x]})).values()];
  const snapshot=String(raw.snapshot_id||''),now=new Date().toISOString(),page=tidy(raw.page_url,400);
@@ -87,6 +87,10 @@ export async function previewInsights(env,raw,ctx){
    env.DB.prepare('INSERT INTO betacat_observations(url,title_original,summary,hn_id,source_page,first_seen_at,last_seen_at,seen_count,points,comments) VALUES(?,?,?,?,?,?,?,1,?,?) ON CONFLICT(url) DO UPDATE SET title_original=excluded.title_original,summary=excluded.summary,hn_id=COALESCE(excluded.hn_id,betacat_observations.hn_id),source_page=excluded.source_page,last_seen_at=excluded.last_seen_at,seen_count=betacat_observations.seen_count+1,points=COALESCE(excluded.points,betacat_observations.points),comments=COALESCE(excluded.comments,betacat_observations.comments)').bind(x.url,x.title,x.summary,x.hn_id,page,now,now,x.points,x.comments),
    env.DB.prepare('INSERT OR IGNORE INTO betacat_snapshot_items(snapshot_id,url,page_loaded_at,source_page,was_bookmarked) VALUES(?,?,?,?,?)').bind(snapshot,x.url,now,page,chosen.has(x.url)?1:0)
   ]));
+ }else if(mode==='selection'){
+  if(items.length!==1||typeof raw.selected!=='boolean')throw Error('星號事件格式錯誤');
+  await env.DB.prepare('INSERT INTO betacat_bookmark_actions(snapshot_id,url,selected,acted_at) VALUES(?,?,?,?)')
+   .bind(snapshot,items[0].url,raw.selected?1:0,now).run();
  }else if(mode==='viewed'){
   await env.DB.batch(items.flatMap(x=>[
    env.DB.prepare('UPDATE betacat_observations SET summary_viewed_at=?,summary_view_count=summary_view_count+1 WHERE url=?').bind(now,x.url),
@@ -96,7 +100,7 @@ export async function previewInsights(env,raw,ctx){
  const rows=await env.DB.prepare('SELECT url,title_original,summary,prediction,prediction_version FROM betacat_observations WHERE url IN ('+items.map(()=>'?').join(',')+')').bind(...items.map(x=>x.url)).all();
  const found=new Map(rows.results.map(x=>[x.url,x]));
  const predictions=items.map(x=>({url:x.url,...(cached(found.get(x.url))||previewRule(x))}));
- const missing=items.filter(x=>!cached(found.get(x.url)));
+ const missing=mode==='selection'?[]:items.filter(x=>!cached(found.get(x.url)));
  if(ctx?.waitUntil&&mode!=='viewed'&&missing.length)ctx.waitUntil(updateScores(env,missing));
  return {version:PREVIEW_VERSION,recorded:mode==='snapshot'?items.length:0,viewed:mode==='viewed'?items.length:0,predictions};
 }
