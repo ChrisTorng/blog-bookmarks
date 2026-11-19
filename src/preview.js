@@ -8,8 +8,8 @@ function norm(raw){
  u.hash='';
  return {url:u.href,title:tidy(raw.title_original||raw.title),summary:tidy(raw.summary,1500),
   hn_id:/^\d{1,15}$/.test(String(raw.hn_id||''))?String(raw.hn_id):null,
-  points:Number.isFinite(+raw.points)?clamp(raw.points)*5000/100:null,
-  comments:Number.isFinite(+raw.comments)?clamp(raw.comments)*5000/100:null};
+  points:raw.points!=null&&Number.isFinite(+raw.points)?Math.max(0,Math.min(500000,Math.round(+raw.points))):null,
+  comments:raw.comments!=null&&Number.isFinite(+raw.comments)?Math.max(0,Math.min(500000,Math.round(+raw.comments))):null};
 }
 function hash(x){let h=2166136261;for(const c of x.title+'\n'+x.summary)h=Math.imul(h^c.charCodeAt(0),16777619);return (h>>>0).toString(16)}
 const ai=/\b(?:AI|LLM|AGI|GPT[-\s]?\d|Qwen|Gemini|Claude|Anthropic|OpenAI|DeepSeek|Mistral|Llama|Kimi|Copilot|Codex|Ollama|MLX|MoE|Machine Learning|AI model|Neural Network|OpenCode|Hugging Face|transformer|diffusion)\b|人工智慧|語言模型|模型量化|推論模型/i;
@@ -31,8 +31,14 @@ export function previewRule(raw){
 function cached(row){
  try{const p=JSON.parse(row?.prediction||'null');return row.prediction_version===PREVIEW_VERSION&&p?.signature===hash({title:row.title_original,summary:row.summary})?p:null;}catch{return null;}
 }
+async function learnedExamples(db){
+ const pos=await db.prepare("SELECT title_original,title,substr(summary,1,200) summary,stage FROM bookmarks WHERE stage IN(0,1,3,4) ORDER BY CASE WHEN stage=4 THEN 0 ELSE 1 END,updated_at DESC LIMIT 16").all();
+ const rejected=await db.prepare("SELECT title_original,title,substr(summary,1,200) summary FROM bookmarks WHERE stage=2 ORDER BY updated_at DESC LIMIT 10").all();
+ const bypassed=await db.prepare("SELECT title_original,substr(summary,1,200) summary FROM betacat_observations o WHERE o.summary_viewed_at IS NOT NULL AND julianday(o.summary_viewed_at)<julianday('now','-1 day') AND NOT EXISTS(SELECT 1 FROM bookmarks b WHERE b.normalized_url=o.url) AND NOT EXISTS(SELECT 1 FROM betacat_bookmark_actions a WHERE a.url=o.url AND a.selected=1) ORDER BY o.summary_viewed_at DESC LIMIT 12").all();
+ return {starred:pos.results.map(x=>({title:x.title_original||x.title,summary:x.summary,published:x.stage>=3})),not_public_after_read:rejected.results.map(x=>({title:x.title_original||x.title,summary:x.summary})),read_preview_but_not_starred:bypassed.results};
+}
 const probability=x=>{const n=typeof x==='number'?x:x?.probability??x?.value??x?.yes;return typeof n==='number'&&n>=0&&n<=1?clamp(n*100):null};
-async function clef(aiBinding,item){
+async function clef(aiBinding,item,examples){
  const answer=await aiBinding.run('@cf/cloudflare/clef-flash',{
   model:'clef-flash',
   state:{preference:'User enjoys AI model releases, performance and product announcements, also archaeology and history, science and creative technology. Short-lived incident notices without additional explanation have less value. Languages are not a barrier. This is a preview only.',article:item},
@@ -47,9 +53,9 @@ async function clef(aiBinding,item){
  const [interest,publish,recommend]=v;
  return {...previewRule(item),interest,publish:Math.min(interest,publish),recommend:Math.min(interest,publish,recommend),basis:'decision-ai',model:'clef-flash',assessed_at:new Date().toISOString()};
 }
-async function gemma(aiBinding,items){
+async function gemma(aiBinding,items,examples){
  const instruction='預測這名使用者讀 BetaCats 標題摘要後會按星號的傾向 interest、讀正文後會公開 publish、以及特別推薦 recommend。不是一般文章品質。使用者高度重視 AI 新模型與產品公告（Qwen4-Max、Gemini 等）、AI 效能與產業新聞，對歷史、考古、科學與創意也有興趣。無實質內容的短效事件才降低分數。不能以語言、摘要短就扣分。每篇 0-100，且 recommend<=publish<=interest。只輸出 JSON {"items":[{"url":"...","interest":80,"publish":75,"recommend":40,"reason":"繁體中文簡短理由"}]}。';
- const result=await aiBinding.run(CLASSIFIER_MODEL,{messages:[{role:'system',content:instruction},{role:'user',content:JSON.stringify(items)}],response_format:{type:'json_object'},chat_template_kwargs:{enable_thinking:false},temperature:0,max_tokens:950});
+ const result=await aiBinding.run(CLASSIFIER_MODEL,{messages:[{role:'system',content:instruction},{role:'user',content:JSON.stringify({examples,items})}],response_format:{type:'json_object'},chat_template_kwargs:{enable_thinking:false},temperature:0,max_tokens:950});
  const content=result?.choices?.[0]?.message?.content??result?.response;
  const list=typeof content==='string'?JSON.parse(content):content;
  if(!Array.isArray(list?.items))throw Error('AI response invalid');
@@ -66,9 +72,10 @@ async function updateScores(env,candidates){
  const key=group.map(x=>x.url).join('|');if(running.has(key))return;
  running.add(key);
  try{
+  const examples=await learnedExamples(env.DB);
   let scores;
-  try{scores=await Promise.all(group.map(x=>clef(env.AI,x)));}
-  catch(error){console.warn('Clef fallback',String(error).slice(0,220));scores=await gemma(env.AI,group);}
+  try{scores=await Promise.all(group.map(x=>clef(env.AI,x,examples)));}
+  catch(error){console.warn('Clef fallback',String(error).slice(0,220));scores=await gemma(env.AI,group,examples);}
   const at=new Date().toISOString();
   await env.DB.batch(group.map((x,i)=>env.DB.prepare('UPDATE betacat_observations SET prediction=?,prediction_version=?,prediction_at=? WHERE url=? AND title_original=? AND summary=?').bind(JSON.stringify(scores[i]),PREVIEW_VERSION,at,x.url,x.title,x.summary)));
  }catch(error){console.warn('BetaCats prediction failed',String(error).slice(0,350));}
