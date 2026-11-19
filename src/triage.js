@@ -32,7 +32,7 @@ export function previewTriage(b){
  if(insufficientSummary(b))return insufficientResult(b);
  const title=(b.title_original||b.title||'').toLowerCase();
  const summary=String(b.summary||''),body=title+' '+summary;
- const ai=/\b(?:AI|LLM|GPT[-\s]?\d|Qwen[\\w.-]*|Gemini|Claude|Anthropic|OpenAI|DeepSeek|Mistral|Llama|Kimi|Copilot|Codex|MoE|Ollama|transformer|machine learning)\b|人工智慧|語言模型|模型發表|模型發布|AI模型/i.test(body);
+ const ai=/\b(?:AI|LLM|GPT[-\s]?\d|Qwen[0-9A-Za-z.-]*|Gemini|Claude|Anthropic|OpenAI|DeepSeek|Mistral|Llama|Kimi|Copilot|Codex|MoE|Ollama|transformer|machine learning)\b|人工智慧|語言模型|模型發表|模型發布|AI模型/i.test(body);
  const history=/\b(?:archaeolog|artifact|ancient|histori|centur|medieval|excavation|fossil|old manuscript)\b|歷史|考古|古代|出土|史料|化石/i.test(body);
  const science=/\b(?:science|research|physics|chemistry|biology|astronomy|mathematics|proof|discovery)\b|科學|研究|化學|物理|數學|實驗|發現/i.test(body);
  const method=/\b(?:how to|reverse engineer|explained|tutorial|benchmark|analysis|architecture|deep dive)\b|原理|實作|架構|推導|分析|方法|教學|比較/i.test(body);
