@@ -183,7 +183,7 @@ export async function api(req,env,url,ctx){
     :/^\/bookmarks\/api\/admin\/[0-9a-f-]{36}\/?$/.test(p)?(req.method==='PATCH'?'BOOKMARK_UPDATE':'BOOKMARK_ITEM')
     :p.includes('/triage')?'ADMIN_TRIAGE':'BOOKMARK_API';
   const ray=(req.headers.get('cf-ray')||'').slice(0,80);
-  const bad=e instanceof SyntaxError||
+  const bad=e instanceof TypeError||e instanceof SyntaxError||
    /網址|標題|摘要|標籤|分類|JSON|狀態|資料過大|格式|HTTP|原文|文章|書籤 ID|已被|模型|片段|Workers AI|參考/.test(String(e?.message));
   const status=e?.httpStatus||(bad?400:500);
   const code=e?.code||endpoint+(status>=500?'_FAILED':'_INVALID');
