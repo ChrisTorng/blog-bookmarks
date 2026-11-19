@@ -174,5 +174,21 @@ export async function api(req,env,url,ctx){
   }
   if(p==='/bookmarks/api/tags'&&req.method==='GET')return json(await tagsList(env.DB));
   return json({error:'不存在的 API'},404);
- }catch(e){const bad=e instanceof TypeError||e instanceof SyntaxError||/網址|標題|摘要|標籤|分類|JSON|狀態|資料過大|格式|HTTP|原文|文章|書籤 ID|已被|模型|片段|Workers AI|參考/.test(String(e.message));return json({error:bad?e.message:'伺服器錯誤'},bad?400:500);}
+ }catch(e){
+  // An opaque 500 prevented the administrator from knowing whether the list,
+  // tag catalog or publishing operation had failed. Keep internal details in
+  // server logs; return a stable route-specific code and Cloudflare Ray ID.
+  const endpoint=p==='/bookmarks/api/admin'||p==='/bookmarks/api/admin/'?'ADMIN_LIST'
+    :p==='/bookmarks/api/admin/tags'?'ADMIN_TAGS'
+    :/^\/bookmarks\/api\/admin\/[0-9a-f-]{36}\/?$/.test(p)?(req.method==='PATCH'?'BOOKMARK_UPDATE':'BOOKMARK_ITEM')
+    :p.includes('/triage')?'ADMIN_TRIAGE':'BOOKMARK_API';
+  const ray=(req.headers.get('cf-ray')||'').slice(0,80);
+  const bad=e instanceof SyntaxError||
+   /網址|標題|摘要|標籤|分類|JSON|狀態|資料過大|格式|HTTP|原文|文章|書籤 ID|已被|模型|片段|Workers AI|參考/.test(String(e?.message));
+  const status=e?.httpStatus||(bad?400:500);
+  const code=e?.code||endpoint+(status>=500?'_FAILED':'_INVALID');
+  console.error('Bookmark API failure',JSON.stringify({code,method:req.method,path:p,ray,message:String(e?.message||e).slice(0,600),stack:String(e?.stack||'').slice(0,1800)}));
+  const safeMessage=e?.publicMessage||(status>=500?'伺服器錯誤':String(e?.message||'請求無效'));
+  return json({error:safeMessage,code,...(ray?{ray}:{})},status);
+ }
 }
