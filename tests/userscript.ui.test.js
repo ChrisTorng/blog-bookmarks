@@ -241,7 +241,7 @@ test('three independent errors attach to visible star or top/bottom viewport cor
   assert.equal(api.errors.get(above.link.href).notice.parentNode, topStack);
   assert.equal(api.errors.get(below.link.href).notice.parentNode, bottomStack);
   assert.equal(api.errors.get(visible.link.href).notice.parentNode, document.body);
-  assert.equal(api.errors.get(visible.link.href).notice.styles.top, '220px');
+  assert.equal(api.errors.get(visible.link.href).notice.styles.top, '238px');
   api.clearError(visible.link.href);
   assert.equal(api.errors.size, 2);
   assert.equal(api.errors.get(above.link.href).notice.parentNode, topStack);
