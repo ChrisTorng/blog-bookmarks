@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.17
-// @description  Prevent duplicated bookmark stars after translation while retaining preview scores and stable positioning
+// @version      0.5.18
+// @description  Show a translucent linear-brightness score above the star in one fixed-width button
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
 // @downloadURL  https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -22,7 +22,7 @@
     const TOKEN_KEY = 'blog-bookmarks-ingest-token';
     const BUTTON_CLASS = 'tm-blog-bookmarks-save';
     const STAR_WIDTH = 38;
-    const STAR_HEIGHT = 34;
+    const STAR_HEIGHT = 52;
     const ERROR_CLASS = 'tm-bookmarks-error-notice';
     const controls = new Map();
     const saved = new Map();
@@ -319,6 +319,20 @@
             mode:'viewed',snapshot_id:snapshotId,items:[{url:control.url}]
         })).catch(error=>console.warn('BetaCats viewed summary:',error.message));
     }
+    // One continuous 0–100 brightness scale, not buckets or logarithms.
+    // Keep the backdrop translucent so article text remains visible underneath.
+    function scoreAppearance(value) {
+        const score = Number(value);
+        if (!Number.isFinite(score) || value == null)
+            return { background: 'rgba(55, 69, 84, 0.66)', foreground: '#f5f7fa' };
+        const normalized = Math.max(0, Math.min(100, score));
+        const lightness = 20 + normalized * 0.55;
+        return {
+            background: 'hsla(47, 95%, ' + lightness.toFixed(2) + '%, 0.66)',
+            foreground: normalized >= 60 ? '#17202b' : '#fffdf5'
+        };
+    }
+
     function render() {
         for (const [link, control] of controls) {
             if (!link.isConnected || !control.button.isConnected) {
@@ -342,8 +356,16 @@
             }
             const insight=previewScores.get(url);
             const chip=control.scoreBadge;
-            const text=insight?String(insight.publish)+(insight.recommend>=75?'★':''):'…';
-            if(chip&&chip.textContent!==text)chip.textContent=text;
+            const score = insight && Number.isFinite(Number(insight.publish))
+                ? Math.max(0, Math.min(100, Math.round(Number(insight.publish)))) : null;
+            const scoreText = score === null ? '…' : String(score);
+            if (chip && chip.textContent !== scoreText) chip.textContent = scoreText;
+            if (control.lastScore !== score) {
+                const appearance = scoreAppearance(score);
+                button.style.setProperty('--tm-bookmarks-score-bg', appearance.background);
+                button.style.setProperty('--tm-bookmarks-score-fg', appearance.foreground);
+                control.lastScore = score;
+            }
             button.disabled = pending.has(url);
             button.setAttribute('aria-pressed', String(exists));
             button.setAttribute('aria-busy', String(pending.has(url)));
@@ -708,7 +730,7 @@
             scoreBadge.setAttribute('translate', 'no');
             scoreBadge.textContent = '…';
             scoreBadge.setAttribute('aria-hidden', 'true');
-            button.append(glyph, scoreBadge);
+            button.append(scoreBadge, glyph);
             button.setAttribute('aria-live', 'polite');
             button.addEventListener('click', event => {
                 event.preventDefault();
@@ -744,12 +766,16 @@
                 all: unset !important; position: absolute !important;
                 left: 0 !important; top: 0 !important; right: auto !important; bottom: auto !important;
                 z-index: 2147483646 !important;
-                display: flex !important; align-items: center !important; justify-content: center !important;
-                box-sizing: border-box !important; width: 38px !important; height: 34px !important;
+                display: flex !important; flex-direction: column !important;
+                align-items: center !important; justify-content: center !important;
+                gap: 0 !important;
+                box-sizing: border-box !important; width: 38px !important; height: 52px !important;
                 margin: 0 !important; padding: 0 !important;
                 border: 1px solid rgba(135,166,194,.7) !important; border-radius: 6px !important;
-                font: 600 24px/1 system-ui,sans-serif !important; color: #145486 !important;
-                background: rgba(241,247,255,.7) !important; opacity: .58 !important;
+                font: 600 24px/1 system-ui,sans-serif !important;
+                color: var(--tm-bookmarks-score-fg, #f5f7fa) !important;
+                background: var(--tm-bookmarks-score-bg, rgba(55,69,84,.66)) !important;
+                opacity: .95 !important;
                 text-align: center !important; cursor: pointer !important; touch-action: manipulation !important;
             }
             .${BUTTON_CLASS}[data-bookmarks-position="center"] {
@@ -762,24 +788,35 @@
                     top: calc(var(--tm-bookmarks-screen-anchor-base, 84px) + 32dvh) !important;
                 }
             }
+            .tm-bookmarks-predict, .tm-bookmarks-glyph {
+                position: static !important; inset: auto !important;
+                transform: none !important; margin: 0 !important; padding: 0 !important;
+                box-sizing: border-box !important; display: block !important;
+                width: 100% !important; flex-shrink: 0 !important;
+                background: transparent !important; border: 0 !important;
+                color: inherit !important; text-align: center !important;
+                white-space: nowrap !important; pointer-events: none !important;
+                opacity: 1 !important;
+            }
             .tm-bookmarks-predict {
-                position:absolute!important;right:calc(100% + 1px)!important;
-                top:50%!important;transform:translateY(-50%)!important;
-                min-width:29px!important;box-sizing:border-box!important;
-                padding:3px 2px!important;border-radius:5px 0 0 5px!important;
-                background:rgba(19,45,70,.9)!important;color:#fff!important;
-                font:700 12px/1.3 system-ui,sans-serif!important;
-                white-space:nowrap!important;text-align:center!important;
-                pointer-events:none!important;opacity:.9!important;
+                height: 18px !important; line-height: 18px !important;
+                font: 700 13px/18px system-ui,sans-serif !important;
+                font-variant-numeric: tabular-nums !important;
+            }
+            .tm-bookmarks-glyph {
+                height: 29px !important; line-height: 29px !important;
+                font: 600 25px/29px system-ui,sans-serif !important;
             }
             .${BUTTON_CLASS}:hover, .${BUTTON_CLASS}:focus-visible {
-                background: rgba(219,234,255,.9) !important; opacity: 1 !important;
-                outline: 2px solid #3777b7 !important;
+                background: var(--tm-bookmarks-score-bg, rgba(55,69,84,.66)) !important;
+                opacity: 1 !important; outline: 2px solid #3777b7 !important;
             }
             .${BUTTON_CLASS}:disabled { opacity: .4 !important; cursor: default !important; }
             .${BUTTON_CLASS}[aria-pressed="true"] {
-                color: #b67d00 !important; border-color: rgba(209,154,6,.8) !important;
-                background: rgba(255,249,232,.8) !important; opacity: .82 !important;
+                color: var(--tm-bookmarks-score-fg, #f5f7fa) !important;
+                border-color: rgba(209,154,6,.8) !important;
+                background: var(--tm-bookmarks-score-bg, rgba(55,69,84,.66)) !important;
+                opacity: .95 !important;
             }
             .${BUTTON_CLASS}[data-bookmarks-error="true"] {
                 border: 2px solid #d21d2b !important; outline: 2px solid #d21d2b !important;
