@@ -170,8 +170,19 @@ export async function patch(db,id,raw,hasNoteReference) {
     const requested=Number(raw.status);
     if(!Number.isInteger(requested)||requested<0||requested>5)throw new Error('狀態無效');
     // Keep the result of a repeated publish request while the reference exists.
-    const publishAsRecommendation = requested===3 && current.status!==3
-      && await hasNoteReference?.();
+    let publishAsRecommendation=false;
+    if(requested===3 && current.status!==3 && hasNoteReference){
+      try {
+        publishAsRecommendation=Boolean(await hasNoteReference());
+      } catch(error){
+        const failure=new Error('隨筆引用狀態暫時無法確認；書籤尚未公開，請重試');
+        failure.code='NOTE_REFERENCE_CHECK_FAILED';
+        failure.httpStatus=503;
+        failure.publicMessage=failure.message;
+        failure.cause=error;
+        throw failure;
+      }
+    }
     const status=publishAsRecommendation?4:requested;
     const now=new Date().toISOString();
     if(current.status!==status){
