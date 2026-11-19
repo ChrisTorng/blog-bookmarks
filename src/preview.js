@@ -12,8 +12,8 @@ function norm(raw){
   comments:raw.comments!=null&&Number.isFinite(+raw.comments)?Math.max(0,Math.min(500000,Math.round(+raw.comments))):null};
 }
 function hash(x){let h=2166136261;for(const c of x.title+'\n'+x.summary)h=Math.imul(h^c.charCodeAt(0),16777619);return (h>>>0).toString(16)}
-const ai=/\b(?:AI|LLM|AGI|GPT[-\s]?\d|Qwen[\\w.-]*|Gemini|Claude|Anthropic|OpenAI|DeepSeek|Mistral|Llama|Kimi|Copilot|Codex|Ollama|MLX|MoE|Machine Learning|AI model|Neural Network|OpenCode|Hugging Face|transformer|diffusion)\b|人工智慧|語言模型|模型量化|推論模型/i;
-const past=/\b(?:archaeolog\\w*|ancient|histori\\w*|artifact|centur|medieval|excavation|museum|roman|egyptian|fossil|dinosaur)\b|考古|史料|歷史|古代|古文明|化石|出土|古蹟/i;
+const ai=/\b(?:AI|LLM|AGI|GPT[-\s]?\d|Qwen[0-9A-Za-z.-]*|Gemini|Claude|Anthropic|OpenAI|DeepSeek|Mistral|Llama|Kimi|Copilot|Codex|Ollama|MLX|MoE|Machine Learning|AI model|Neural Network|OpenCode|Hugging Face|transformer|diffusion)\b|人工智慧|語言模型|模型量化|推論模型/i;
+const past=/\b(?:archaeolog[0-9A-Za-z]*|ancient|histori[0-9A-Za-z]*|artifact|centur|medieval|excavation|museum|roman|egyptian|fossil|dinosaur)\b|考古|史料|歷史|古代|古文明|化石|出土|古蹟/i;
 const science=/\b(?:science|research|experiment|physics|chemistry|biology|astronomy|mathematics|proof|discovery|nature)\b|研究|科學|數學|化學|物理|生物|天文|實驗|證明|發現/i;
 const transient=/\b(?:outage|disruption|downtime|service restored|incident report|flight grounded|temporarily unavailable)\b|服務中斷|短暫故障|恢復正常|緊急警報|停機公告/i;
 export function previewRule(raw){
