@@ -6,7 +6,7 @@ import { runInNewContext } from 'node:vm';
 const source = readFileSync(new URL('../tampermonkey/BlogBookmarks.user.js', import.meta.url), 'utf8');
 const instrumented = source.replace(/\n\}\)\(\);\s*$/, `
     globalThis.__test = { controls, saved, checked, errors, positionControl,
-        toggleArticle, showError, clearError, layoutErrors, render };
+        toggleArticle, showError, clearError, layoutErrors, render, scoreAppearance, previewScores };
 })();`);
 
 function element(tag = 'div') {
@@ -113,8 +113,8 @@ function harness() {
     };
     const button = element('button');
     button.offsetWidth = 38;
-    button.offsetHeight = 34;
-    button.rect = { left: 200, right: 238, top: y, bottom: y + 34, width: 38, height: 34 };
+    button.offsetHeight = 52;
+    button.rect = { left: 200, right: 238, top: y, bottom: y + 52, width: 38, height: 52 };
     const control = { link, button, url };
     api.controls.set(link, control);
     return { article, title, meta, summary, summaryText, img, link, button, control };
@@ -136,7 +136,7 @@ test('expanded star uses native CSS fixed positioning between article stops and 
   // Entering from below: dock at the title; relative left extends to the viewport edge.
   placeAt(600, 1250);
   assert.equal(row.button.attrs['data-bookmarks-position'], 'title');
-  assert.equal(row.button.styles.top, '21px');
+  assert.equal(row.button.styles.top, '12px');
   assert.equal(row.button.styles.left, '252px'); // viewport 390 - article left 100 - star 38
   assert.equal(row.button.parentNode, row.article);
 
@@ -156,8 +156,8 @@ test('expanded star uses native CSS fixed positioning between article stops and 
   placeAt(-350, 300);
   assert.equal(row.button.attrs['data-bookmarks-position'], 'bottom');
   assert.equal(row.button.parentNode, row.article);
-  assert.equal(row.button.styles.top, '612px');
-  assert.equal(-350 + 612 + 34, 296);
+  assert.equal(row.button.styles.top, '594px');
+  assert.equal(-350 + 594 + 52, 296);
 });
 
 test('adjacent articles have independent fixed/title stops without competing center stars', () => {
@@ -173,7 +173,7 @@ test('adjacent articles have independent fixed/title stops without competing cen
   assert.equal(current.button.attrs['data-bookmarks-position'], 'center');
   assert.equal(current.button.parentNode, document.body);
   assert.equal(following.button.attrs['data-bookmarks-position'], 'title');
-  assert.equal(following.button.styles.top, '21px');
+  assert.equal(following.button.styles.top, '12px');
 });
 
 test('visual viewport midpoint still controls article transition thresholds', () => {
@@ -199,7 +199,7 @@ test('collapsed or visually hidden summaries pin the star to the title and never
   api.positionControl(row.control);
   assert.equal(row.button.attrs['data-bookmarks-position'], 'title');
   assert.equal(row.button.styles.left, '252px');
-  assert.equal(row.button.styles.top, '21px');
+  assert.equal(row.button.styles.top, '12px');
   assert.equal(row.button.parentNode, row.article);
   row.article.collapsed = false;
   api.positionControl(row.control);
@@ -207,7 +207,7 @@ test('collapsed or visually hidden summaries pin the star to the title and never
   row.summary.rect.width = 0;
   api.positionControl(row.control);
   assert.equal(row.button.attrs['data-bookmarks-position'], 'title');
-  assert.equal(row.button.styles.top, '21px');
+  assert.equal(row.button.styles.top, '12px');
 });
 
 test('changing viewport width recomputes absolute edge only without moving a centered star', () => {
@@ -294,7 +294,7 @@ test('translated glyph never duplicates stars after 100 renders and updates',()=
   const scoreBadge=document.createElement('span');
   scoreBadge.className='tm-bookmarks-predict notranslate';
   scoreBadge.textContent='75';
-  row.button.append(glyph,scoreBadge);
+  row.button.append(scoreBadge,glyph);
   row.control.glyph=glyph;
   row.control.scoreBadge=scoreBadge;
   // Edge translation can wrap the first text node with another HTML element.
@@ -306,7 +306,41 @@ test('translated glyph never duplicates stars after 100 renders and updates',()=
     api.render();
     assert.equal(row.button.children.length,2);
     assert.ok(['☆','★'].includes(glyph.textContent));
-    assert.equal(row.button.children[0],glyph);
-    assert.equal(row.button.children[1],scoreBadge);
+    assert.equal(row.button.children[0],scoreBadge);
+    assert.equal(row.button.children[1],glyph);
   }
+});
+
+
+test('score brightness grows linearly with percentage; score and glyph stay one click target',()=>{
+  const {api,document,addArticle}=harness();
+  const row=addArticle('https://example.org/score');
+  const glyph=document.createElement('span');
+  glyph.textContent='☆';
+  const scoreBadge=document.createElement('span');
+  scoreBadge.textContent='…';
+  row.button.append(scoreBadge,glyph);
+  row.control.glyph=glyph;
+  row.control.scoreBadge=scoreBadge;
+  const bg=value=>api.scoreAppearance(value).background;
+  const lightness=value=>Number(bg(value).match(/hsla\(47, 95%, ([0-9.]+)%/)[1]);
+  assert.equal(lightness(0),20);
+  assert.equal(lightness(50),47.5);
+  assert.equal(lightness(100),75);
+  assert.equal(lightness(50)-lightness(0),lightness(100)-lightness(50));
+  assert.match(bg(100),/0\.66\)/);
+  assert.match(bg(null),/rgba/);
+  for(const value of [0,9,50,99,100]){
+    const key=row.link.href;
+    api.previewScores.set(key,{publish:value,recommend:95,interest:100});
+    api.render();
+    assert.equal(scoreBadge.textContent,String(value));
+    assert.equal(row.button.styles['--tm-bookmarks-score-bg'],bg(value));
+    assert.equal(row.button.children.length,2);
+    assert.equal(row.button.children[0],scoreBadge);
+    assert.equal(row.button.children[1],glyph);
+  }
+  // A recommendation score must not add a second star beside the number.
+  assert.equal(scoreBadge.textContent,'100');
+  assert.equal(glyph.textContent,'☆');
 });
