@@ -26291,10 +26291,10 @@ Url.prototype.parse = function(url, slashesDenoteHost) {
       this.hostname = this.hostname.substr(1, this.hostname.length - 2);
     }
   }
-  const hash = rest.indexOf("#");
-  if (hash !== -1) {
-    this.hash = rest.substr(hash);
-    rest = rest.slice(0, hash);
+  const hash2 = rest.indexOf("#");
+  if (hash2 !== -1) {
+    this.hash = rest.substr(hash2);
+    rest = rest.slice(0, hash2);
   }
   const qm = rest.indexOf("?");
   if (qm !== -1) {
@@ -32357,10 +32357,10 @@ async function autoReviewNewSummary(env, created, fetcher = fetch) {
 __name(autoReviewNewSummary, "autoReviewNewSummary");
 
 // src/triage.js
-var TRIAGE_VERSION = "triage-2026-11-19-v1";
+var TRIAGE_VERSION = "triage-2026-11-19-v2";
 var key = /* @__PURE__ */ __name((id) => TRIAGE_VERSION + ":" + id, "key");
-var dimensions = ["learning", "depth", "durability", "novelty", "fit"];
-var weights = { learning: 0.34, depth: 0.26, durability: 0.18, novelty: 0.14, fit: 0.08 };
+var dimensions = ["learning", "awareness", "depth", "durability", "novelty", "fit"];
+var weights = { learning: 0.2, awareness: 0.27, depth: 0.11, durability: 0.08, novelty: 0.16, fit: 0.18 };
 var candidatesSql = "SELECT b.id,b.title,b.title_original,b.title_zh,b.summary,b.url,b.redirect_url,b.created_at,b.updated_at,b.stage,b.deferred,s.value AS saved FROM bookmarks b LEFT JOIN bookmark_settings s ON s.key=?||b.id WHERE b.stage IN (0,1)";
 var sourceText = /* @__PURE__ */ __name((b) => [b.title, b.title_original, b.summary, b.url, b.redirect_url].join("\n"), "sourceText");
 function signature(b) {
@@ -32380,7 +32380,7 @@ function insufficientSummary(b) {
 }
 __name(insufficientSummary, "insufficientSummary");
 function insufficientResult(b) {
-  const dimensions2 = { learning: 50, depth: 50, durability: 50, novelty: 50, fit: 50 };
+  const dimensions2 = { learning: 50, awareness: 50, depth: 50, durability: 50, novelty: 50, fit: 50 };
   return {
     version: TRIAGE_VERSION,
     signature: signature(b),
@@ -32401,28 +32401,38 @@ __name(insufficientResult, "insufficientResult");
 function previewTriage(b) {
   if (insufficientSummary(b)) return insufficientResult(b);
   const title = (b.title_original || b.title || "").toLowerCase();
-  const summary = String(b.summary || "");
-  const length = size(summary);
-  const event = /(?:outage|incident|downtime|breaking|statement|announces?|press release|breach|resigns?|funding|raised|quarterly|earnings|launches|reports|acquired|status|停機|故障|異常|公告|聲明|收購|融資|財報|爆發|調查中|停飛)/i.test(title + " " + summary.slice(0, 180));
-  const promo = /(?:show hn:|play|game|demo|landing page|pricing|signup|sign up|下載|互動遊戲|小遊戲|介紹一款)/i.test(title);
-  const technical = /(?:how to|inside|reverse engineer|explained|tutorial|benchmark|analysis|architecture|deep dive|research|實作|原理|架構|推導|實驗|研究|分析|逆向|方法|教學|證明|比較|資料)/i.test(title + " " + summary);
-  const short = length < 65;
-  const ageDays = Math.max(0, (Date.now() - Date.parse(b.created_at || 0)) / 864e5);
-  const dimensions2 = {
-    learning: clamp(technical ? 76 : promo ? 48 : event ? 38 : 62),
-    depth: clamp(short ? 32 : length < 105 ? 55 : length < 200 ? 68 : 76),
-    durability: clamp(event ? Math.max(10, 55 - ageDays * 4) : 78),
-    novelty: clamp(event ? 45 : promo ? 55 : 67),
-    fit: clamp(technical ? 75 : promo ? 56 : 60)
+  const summary = String(b.summary || ""), body = title + " " + summary;
+  const ai2 = /\b(?:AI|LLM|GPT[-\s]?\d|Qwen[0-9A-Za-z.-]*|Gemini|Claude|Anthropic|OpenAI|DeepSeek|Mistral|Llama|Kimi|Copilot|Codex|MoE|Ollama|transformer|machine learning)\b|人工智慧|語言模型|模型發表|模型發布|AI模型/i.test(body);
+  const history2 = /\b(?:archaeolog|artifact|ancient|histori|centur|medieval|excavation|fossil|old manuscript)\b|歷史|考古|古代|出土|史料|化石/i.test(body);
+  const science2 = /\b(?:science|research|physics|chemistry|biology|astronomy|mathematics|proof|discovery)\b|科學|研究|化學|物理|數學|實驗|發現/i.test(body);
+  const method = /\b(?:how to|reverse engineer|explained|tutorial|benchmark|analysis|architecture|deep dive)\b|原理|實作|架構|推導|分析|方法|教學|比較/i.test(body);
+  const event = /\b(?:outage|downtime|brief disruption|service restored|emergency alert|temporarily unavailable)\b|停機|服務中斷|臨時故障|緊急公告/i.test(body);
+  const transient2 = event && !ai2 && !history2 && !science2 && !method;
+  const len = size(summary);
+  const d = {
+    learning: clamp(method ? 81 : history2 ? 74 : science2 ? 80 : ai2 ? 69 : 60),
+    awareness: clamp(ai2 ? 93 : history2 ? 86 : science2 ? 80 : transient2 ? 25 : 64),
+    depth: clamp(len < 65 ? 52 : len < 130 ? 64 : len < 240 ? 72 : 78),
+    durability: clamp(transient2 ? 28 : ai2 ? 68 : history2 ? 88 : science2 ? 84 : 72),
+    novelty: clamp(ai2 ? 86 : history2 ? 82 : science2 ? 79 : transient2 ? 42 : 64),
+    fit: clamp(ai2 ? 91 : history2 ? 85 : science2 ? 83 : transient2 ? 32 : 67)
   };
-  if (needsSummaryRepair(summary)) dimensions2.depth = 40;
-  const flags = [];
-  if (event) flags.push("\u6642\u4E8B\u904E\u671F");
-  if (promo) flags.push("\u5C55\u793A\uFF0F\u904A\u6232");
-  if (needsSummaryRepair(summary)) flags.push("\u95B1\u8B80\u969C\u7919");
-  if (!flags.length) flags.push(technical ? "\u5176\u4ED6" : "\u5B78\u7FD2\u50F9\u503C\u4E0D\u8DB3");
-  const score = Math.round(Object.keys(weights).reduce((s, k) => s + dimensions2[k] * weights[k], 0));
-  return { version: TRIAGE_VERSION, score, dimensions: dimensions2, flags, reason: short ? "\u6458\u8981\u5F88\u77ED\uFF0C\u7121\u6CD5\u78BA\u8A8D\u6B63\u6587\u662F\u5426\u6709\u984D\u5916\u6DF1\u5EA6\uFF1B\u5EFA\u8B70\u5148\u770B\u539F\u6587\u3002" : event ? "\u4E8B\u4EF6\u5C0E\u5411\u5167\u5BB9\uFF0C\u9700\u78BA\u8A8D\u662F\u5426\u5305\u542B\u53EF\u9577\u671F\u53C3\u8003\u7684\u5206\u6790\u3002" : promo ? "\u504F\u5411\u4ECB\u7D39\u6216\u5C55\u793A\uFF0C\u61C9\u6AA2\u67E5\u662F\u5426\u6709\u5BE6\u4F5C\u7D30\u7BC0\u3001\u539F\u7406\u6216\u53EF\u91CD\u7528\u7684\u65B9\u6CD5\u3002" : technical ? "\u6458\u8981\u5DF2\u6709\u6280\u8853\u7DDA\u7D22\uFF1B\u66AB\u6642\u4E0D\u5B9C\u76F4\u63A5\u6DD8\u6C70\u3002" : "\u50C5\u4F9D\u6458\u8981\u521D\u6B65\u8A55\u4F30\uFF1B\u5B8C\u6574\u5167\u5BB9\u53EF\u80FD\u6539\u8B8A\u7D50\u679C\u3002", basis: "rules", confidence: "low", summary_chars: length, full_chars: null, full_words: null, read_minutes: null, assessed_at: null };
+  const flags = transient2 ? ["\u6642\u4E8B\u904E\u671F"] : [];
+  const reason = ai2 ? "AI \u65B0\u6A21\u578B\u3001\u7522\u54C1\u6216\u7522\u696D\u52D5\u614B\u5C6C\u65BC\u91CD\u8981\u8FFD\u8E64\u8CC7\u8A0A\uFF0C\u5373\u4F7F\u53EA\u5305\u542B\u516C\u544A\uFF0C\u4E5F\u53EF\u80FD\u503C\u5F97\u4E86\u89E3\u8207\u6536\u9304\u3002" : history2 ? "\u8003\u53E4\u3001\u53F2\u6599\u6216\u6B77\u53F2\u65B0\u767C\u73FE\u672C\u8EAB\u5177\u63A2\u7D22\u50F9\u503C\uFF0C\u4E0D\u80FD\u53EA\u56E0\u7F3A\u4E4F\u6280\u8853\u5BE6\u4F5C\u5C31\u6263\u5206\u3002" : science2 ? "\u7814\u7A76\u8207\u79D1\u5B78\u767C\u73FE\u53EF\u5E36\u4F86\u65B0\u77E5\uFF0C\u503C\u5F97\u9032\u4E00\u6B65\u78BA\u8A8D\u539F\u6587\u7684\u8B49\u64DA\u8207\u5167\u5BB9\u3002" : transient2 ? "\u504F\u5411\u77ED\u6548\u4E8B\u4EF6\u901A\u5831\uFF0C\u9700\u78BA\u8A8D\u662F\u5426\u6709\u53EF\u9577\u671F\u5B78\u7FD2\u7684\u6839\u56E0\u6216\u7368\u7279\u8CC7\u8A0A\u3002" : method ? "\u6709\u539F\u7406\u6216\u65B9\u6CD5\u7684\u7DDA\u7D22\uFF0C\u61C9\u512A\u5148\u78BA\u8A8D\u5BE6\u4F5C\u7D30\u7BC0\u3002" : "\u6458\u8981\u8CC7\u8A0A\u4E0D\u8DB3\u4EE5\u78BA\u5B9A\u8B80\u5B8C\u7684\u50F9\u503C\uFF1B\u4ECD\u61C9\u8003\u616E\u7368\u7279\u4E8B\u5BE6\u8207\u500B\u4EBA\u8208\u8DA3\u3002";
+  return {
+    version: TRIAGE_VERSION,
+    score: Math.round(dimensions.reduce((n, k) => n + d[k] * weights[k], 0)),
+    dimensions: d,
+    flags,
+    reason,
+    basis: "rules",
+    confidence: "low",
+    summary_chars: len,
+    full_chars: null,
+    full_words: null,
+    read_minutes: null,
+    assessed_at: null
+  };
 }
 __name(previewTriage, "previewTriage");
 function current(b) {
@@ -32445,10 +32455,10 @@ async function triageList(db, includeDeferred = false) {
 }
 __name(triageList, "triageList");
 async function history(db) {
-  const sql = "SELECT title_original,title,substr(summary,1,210) summary FROM bookmarks WHERE stage=? ORDER BY updated_at DESC LIMIT 12";
+  const sql = "SELECT title_original,title,substr(summary,1,210) summary FROM bookmarks WHERE stage=? ORDER BY updated_at DESC LIMIT 18";
   const [negative, positive] = await Promise.all([
     db.prepare(sql).bind(2).all(),
-    db.prepare("SELECT title_original,title,substr(summary,1,210) summary FROM bookmarks WHERE stage IN (3,4) ORDER BY updated_at DESC LIMIT 14").all()
+    db.prepare("SELECT title_original,title,substr(summary,1,210) summary FROM bookmarks WHERE stage IN (3,4) ORDER BY CASE WHEN title LIKE '%Qwen4%' OR title LIKE '%Gemini 4 Carbon%' OR title LIKE '%Nvidia \u63A5\u4E0B\u4F86%' OR title LIKE '%\u5357\u97D3\u5C07\u767C\u5E03%' THEN 0 ELSE 1 END, updated_at DESC LIMIT 26").all()
   ]);
   const normalize3 = /* @__PURE__ */ __name((rows) => rows.results.map((x) => ({ title: x.title_original || x.title, summary: x.summary })), "normalize");
   return { not_public: normalize3(negative), published: normalize3(positive) };
@@ -32502,15 +32512,16 @@ async function scoreTriage(env, ids, { fullText = null } = {}) {
   if (!pending.length) return { updated: [], skipped: unique.length };
   const examples = await history(env.DB);
   const system = [
-    "\u4F60\u662F\u300CChrisTorng \u5B78\u7FD2\u5929\u5730\u300D\u7684\u500B\u4EBA\u95B1\u8B80\u9810\u7BE9\u52A9\u7406\uFF0C\u76EE\u6A19\u662F\u5224\u65B7\u662F\u5426\u503C\u5F97\u9032\u4E00\u6B65\u8B80\u539F\u6587\u53CA\u9577\u671F\u6536\u9304\uFF0C\u4E0D\u662F\u8A55\u4F30\u6587\u7AE0\u653F\u6CBB\u7ACB\u5834\u3001\u6D41\u884C\u7A0B\u5EA6\u6216\u5206\u985E\u6A19\u7C64\u3002",
-    "\u8CA0\u9762\u8207\u6B63\u9762\u6B77\u53F2\u6C7A\u7B56\u53EA\u662F\u5F31\u8A0A\u865F\uFF0C\u4E0D\u516C\u958B\u4E5F\u53EF\u80FD\u662F\u4E3B\u984C\u4E0D\u9069\u7528\u3001\u5DF2\u8B80\u904E\u6216\u5A92\u9AD4\u9650\u5236\uFF0C\u4E0D\u80FD\u7576\u6210\u666E\u904D\u54C1\u8CEA\u6A19\u7C64\u3002\u4E0D\u8981\u56E0\u70BA\u8A9E\u8A00\u975E\u4E2D\u6587\u3001\u4E3B\u984C\u964C\u751F\u3001\u4E0D\u662F\u7A0B\u5F0F\u6280\u8853\u800C\u6263\u5206\u3002",
-    "\u904A\u6232\u6216\u4E92\u52D5\u5C55\u793A\u82E5\u6709\u6F14\u7B97\u6CD5\u3001\u8A2D\u8A08\u3001\u5BE6\u4F5C\u539F\u7406\u4ECD\u53EF\u9AD8\u5206\uFF1B\u5982\u679C\u53EA\u6709\u904A\u6232\u64CD\u4F5C\uFF0F\u767B\u5165\u624D\u80FD\u9AD4\u9A57\uFF0C\u4E14\u7F3A\u4E4F\u6280\u8853\u7D30\u7BC0\uFF0C\u624D\u5C07\u95B1\u8B80\u6210\u672C\u5217\u5165\u7406\u7531\u3002",
-    "\u4E8B\u4EF6\u65B0\u805E\u3001\u71DF\u904B\u72C0\u614B\u3001\u4F01\u696D\u8072\u660E\u82E5\u50C5\u662F\u77ED\u66AB\u901A\u77E5\u4E14\u6C92\u6709\u6280\u8853\u6839\u56E0\uFF0F\u5206\u6790\uFF0F\u53EF\u91CD\u7528\u65B9\u6CD5\uFF0C\u61C9\u964D\u4F4E\u9577\u671F\u50F9\u503C\uFF1B\u5B89\u5168\u6F0F\u6D1E\u82E5\u9644 exploit\u3001\u6839\u56E0\u3001\u88DC\u6551\u5206\u6790\u53EF\u9AD8\u5206\u3002",
-    "\u6458\u8981\u77ED\u4E0D\u7B49\u65BC\u6B63\u6587\u77ED\uFF1B\u82E5\u672A\u63D0\u4F9B\u5168\u6587\uFF0C\u4E0D\u53EF\u65B7\u8A00\u5168\u6587\u5B57\u6578\u5F88\u5C11\u3002\u82E5\u6709\u7AF6\u722D\u6216\u7368\u7279\u7684\u65B0\u4E8B\u5BE6\uFF0C\u77ED\u6587\u4E5F\u6709\u50F9\u503C\u3002",
-    "\u6BCF\u7BC7\u8A55\u4E94\u9805\u5404 0~100\uFF0C\u5206\u9AD8\u4EE3\u8868\u503C\u5F97\u8B80\uFF1Alearning=\u53EF\u5B78\u7FD2\u7684\u539F\u7406\uFF0F\u65B9\u6CD5\uFF0Cdepth=\u8CC7\u8A0A\u91CF\u8207\u5177\u9AD4\u6027\uFF0Cdurability=\u8D85\u8D8A\u77ED\u66AB\u6642\u4E8B\u7684\u6301\u4E45\u6027\uFF0Cnovelty=\u8207\u4E00\u822C\u516C\u544A\u6216\u91CD\u8907\u5831\u5C0E\u76F8\u6BD4\u7684\u65B0\u77E5\u589E\u91CF\uFF0Cfit=\u9069\u5408\u500B\u4EBA\u63A2\u7D22\u5F0F\u5B78\u7FD2\u5929\u5730\uFF08\u8DE8\u9818\u57DF\u3001\u79D1\u5B78\u3001\u97F3\u6A02\u3001\u6B77\u53F2\u3001\u6280\u8853\u5747\u53EF\uFF09\u3002",
-    "flags \u50C5\u4F7F\u7528\u300C\u6642\u4E8B\u904E\u671F\u3001\u5167\u5BB9\u904E\u77ED\u3001\u5B78\u7FD2\u50F9\u503C\u4E0D\u8DB3\u3001\u8CC7\u8A0A\u91CD\u8907\u3001\u5C55\u793A\uFF0F\u904A\u6232\u3001\u95B1\u8B80\u969C\u7919\u3001\u5176\u4ED6\u300D\uFF0C\u6700\u591A\u5169\u500B\u4E14\u5FC5\u9808\u6709\u660E\u78BA\u4F9D\u64DA\u3002\u300C\u6642\u4E8B\u904E\u671F\u300D\u6307\u5167\u5BB9\u9AD8\u5EA6\u4F9D\u8CF4\u5373\u6642\u6027\u800C\u975E\u55AE\u7D14\u4E8B\u4EF6\u767C\u751F\u5728\u904E\u53BB\uFF1B\u300C\u5167\u5BB9\u904E\u77ED\u300D\u9700\u8981\u6709\u5168\u6587\u8B49\u64DA\uFF0C\u5426\u5247\u4E0D\u8981\u6A19\u3002",
-    '\u7E41\u9AD4\u4E2D\u6587 reason 30~70 \u5B57\uFF0C\u8AAA\u660E\u6700\u4E3B\u8981\u7684\u50F9\u503C\uFF0F\u7591\u616E\uFF0C\u907F\u514D\u6CDB\u6CDB\u5F62\u5BB9\u6216\u81C6\u6E2C\u3002\u8F38\u51FA\u7D14 JSON\uFF1A{"items":[{"id":"...","learning":50,"depth":50,"durability":50,"novelty":50,"fit":50,"flags":["\u5176\u4ED6"],"reason":"..."}]}',
-    "\u4E0D\u5F97\u81EA\u52D5\u66F4\u52D5\u4EFB\u4F55\u66F8\u7C64\u516C\u958B\u72C0\u614B\u3002"
+    "\u4F60\u662F ChrisTorng \u5B78\u7FD2\u5929\u5730\u500B\u4EBA\u66F8\u7C64\u9810\u7BE9\u52A9\u624B\uFF1A\u9810\u6E2C\u4F7F\u7528\u8005\u95B1\u8B80\u5F8C\u53EF\u80FD\u516C\u958B\u6216\u63A8\u85A6\u7684\u50BE\u5411\uFF0C\u800C\u4E0D\u662F\u6587\u7AE0\u7684\u666E\u904D\u54C1\u8CEA\u6216\u6280\u8853\u6DF1\u5EA6\u8A55\u5206\u3002",
+    "\u6B64\u4F7F\u7528\u8005\u5DF2\u7D93\u5148\u5728 BetaCats \u770B\u6A19\u984C\u6458\u8981\uFF0C\u53EA\u6709\u611F\u8208\u8DA3\u7684\u624D\u6309\u661F\u865F\u6210\u70BA\u66F8\u7C64\uFF1BD1 \u4E0D\u516C\u958B\u662F\u7B2C\u4E8C\u95DC\u88AB\u6DD8\u6C70\uFF0C\u6578\u91CF\u5C11\u4E0D\u80FD\u4EE3\u8868\u4F7F\u7528\u8005\u53EA\u5C0D\u7A0B\u5F0F\u6280\u8853\u6709\u8208\u8DA3\u3002\u6C92\u6709\u6309\u661F\u865F\u7684\u8A18\u9304\u4EE5\u524D\u672A\u4FDD\u5B58\uFF0C\u4E0D\u53EF\u81C6\u9020\u8CA0\u6A23\u672C\u3002",
+    "\u7279\u5225\u91CD\u8981\u7684\u5BE6\u969B\u53CD\u4F8B\uFF1AQwen4-Max \u820A\u8A5526\u5206\u3001Gemini 4 Carbon 29\u5206\u3001\u5357\u97D3\u9AD8\u800331\u5206\u3001\u528D\u6A4B\u8A5E\u5178 Human 33\u5206\u3001Nvidia 34\u5206\uFF0C\u4F7F\u7528\u8005\u5F8C\u4F86\u5168\u90E8\u516C\u958B\u3002\u9019\u8B49\u660E AI \u65B0\u54C1\u516C\u544A\u8207\u516C\u53F8\u6280\u8853\u52D5\u5411\u672C\u8EAB\u503C\u5F97\u77E5\u9053\uFF1B\u65B0\u805E\u3001\u8A9E\u8A00\u3001\u4EBA\u6587\u73FE\u8C61\u4EA6\u53EF\u80FD\u503C\u5F97\u516C\u958B\u3002",
+    "\u5F37\u8ABF AI \u6A21\u578B\u8207\u7522\u54C1\u516C\u544A\uFF08Qwen\u3001Gemini\u3001GPT\u3001Claude \u7B49\uFF09\uFF0C\u5373\u4F7F\u6C92\u6709\u6F14\u7B97\u6CD5\u7D30\u7BC0\uFF0C\u53EA\u8981\u662F\u65B0\u7248\u672C\u3001\u80FD\u529B\u6BD4\u8F03\u6216\u91CD\u8981\u8CC7\u8A0A\uFF0C\u5C31\u61C9\u7D66\u9AD8 awareness \u548C fit\u3002\u6B77\u53F2\u3001\u8003\u53E4\u3001\u65B0\u53F2\u6599\u3001\u81EA\u7136\u79D1\u5B78\u4E5F\u662F\u9AD8\u5EA6\u8208\u8DA3\u9818\u57DF\u3002\u4E0D\u5F97\u56E0\u70BA\u6C92\u6709\u7A0B\u5F0F\u78BC\u6216\u6559\u5B78\u800C\u5224\u4F4E\u5206\u3002",
+    "\u77ED\u6548\u6642\u4E8B\u5982\u670D\u52D9\u4E2D\u65B7\u3001\u7DCA\u6025\u6545\u969C\u8CC7\u8A0A\u82E5\u5DF2\u4E0D\u9700\u8981\u53CA\u6642\u77E5\u9053\u3001\u6C92\u6709\u6839\u56E0\u3001\u5206\u6790\u6216\u7368\u7279\u898B\u89E3\uFF0C\u624D\u964D\u4F4E\u50F9\u503C\u3002\u8CC7\u5B89\u6F0F\u6D1E\u82E5\u9644\u6709\u53EF\u5B78\u65B9\u6CD5\u53EF\u4EE5\u9AD8\u5206\u3002\u4E0D\u8981\u4E00\u6982\u8996\u70BA\u4E8B\u4EF6\u65B0\u805E\u904E\u671F\u3002",
+    "\u904A\u6232\u82E5\u6709\u65B0\u89C0\u5FF5\u3001\u8A2D\u8A08\u65B9\u6CD5\u6216\u5275\u610F\u4E5F\u503C\u5F97\u4E86\u89E3\uFF1B\u53EA\u80FD\u9AD4\u9A57\u904A\u6232\u4F46\u624B\u6A5F\u7121\u6CD5\u770B\u4E14\u7121\u5176\u4ED6\u8CC7\u8A0A\uFF0C\u624D\u8003\u616E\u8F03\u4F4E\u5206\u3002\u5916\u8A9E\u4E0D\u662F\u554F\u984C\u3002",
+    "\u8A55\u516D\u500B 0~100 \u5206\u9762\u5411\uFF1Alearning=\u539F\u7406/\u65B9\u6CD5/\u65B0\u77E5\u7684\u5B78\u7FD2\uFF0Cawareness=\u503C\u5F97\u53CA\u6642\u77E5\u9053\u7684\u65B0\u6A21\u578B/\u65B0\u767C\u73FE/\u8DA8\u52E2/\u8CC7\u8A0A\u50F9\u503C\uFF0Cdepth=\u5177\u9AD4\u8CC7\u8A0A\u5167\u5BB9\uFF0Cdurability=\u9577\u671F\u7559\u5B58\u50F9\u503C\uFF0Cnovelty=\u65B0\u4E8B\u5BE6\u8207\u7368\u7279\u6027\uFF08\u516C\u544A\u4E5F\u53EF\u80FD\u6709\uFF09\uFF0Cfit=\u4F7F\u7528\u8005\u500B\u4EBA\u8208\u8DA3/\u5B78\u7FD2\u5929\u5730\u9069\u5408\u5EA6\u3002",
+    "\u6C92\u6709\u5168\u6587\u6642\u4E0D\u80FD\u628A\u6458\u8981\u5B57\u6578\u7576\u6210\u5168\u6587\u5B57\u6578\uFF0C\u4E5F\u4E0D\u5F97\u8AAA\u6B63\u6587\u5F88\u77ED\u3002flags \u50C5\u4F7F\u7528\u300C\u6642\u4E8B\u904E\u671F\u3001\u5167\u5BB9\u904E\u77ED\u3001\u5B78\u7FD2\u50F9\u503C\u4E0D\u8DB3\u3001\u8CC7\u8A0A\u91CD\u8907\u3001\u5C55\u793A\uFF0F\u904A\u6232\u3001\u95B1\u8B80\u969C\u7919\u3001\u5176\u4ED6\u300D\u6700\u591A\u5169\u500B\uFF1B\u5167\u5BB9\u904E\u77ED\u53EA\u80FD\u5728\u6709\u5168\u6587\u8B49\u64DA\u6642\u6A19\u8A18\u3002",
+    '\u7E41\u9AD4\u4E2D\u6587 reason 30~70 \u5B57\uFF0C\u5177\u9AD4\u8AAA\u660E\u5B78\u5230\u4EC0\u9EBC\u6216\u53EF\u80FD\u4E0D\u503C\u5F97\u8B80\u7684\u539F\u56E0\u3002\u53EA\u8F38\u51FA JSON\uFF1A{"items":[{"id":"...","learning":70,"awareness":75,"depth":60,"durability":70,"novelty":70,"fit":80,"flags":[],"reason":"..."}]}\u3002',
+    "\u7D55\u5C0D\u4E0D\u53EF\u4FEE\u6539\u66F8\u7C64\u516C\u958B\u72C0\u614B\u3002"
   ].join("\n");
   const content = {
     current_date: (/* @__PURE__ */ new Date()).toISOString().slice(0, 10),
@@ -32605,6 +32616,179 @@ async function inspectTriage(env, id) {
   return { available: true, source: "web-html", ...stats, text: article.slice(0, 5e4) };
 }
 __name(inspectTriage, "inspectTriage");
+
+// src/preview.js
+var PREVIEW_VERSION = "betacat-personal-2026-11-19-v1";
+var clamp2 = /* @__PURE__ */ __name((n) => Math.max(0, Math.min(100, Math.round(Number(n) || 0))), "clamp");
+var tidy = /* @__PURE__ */ __name((s, n = 500) => String(s ?? "").replace(/\s+/g, " ").trim().slice(0, n), "tidy");
+function norm(raw) {
+  const u = new URL(raw.url);
+  if (!["http:", "https:"].includes(u.protocol) || u.username || u.password || u.href.length > 4096) throw Error("\u6587\u7AE0\u7DB2\u5740\u7121\u6548");
+  u.hash = "";
+  return {
+    url: u.href,
+    title: tidy(raw.title_original || raw.title),
+    summary: tidy(raw.summary, 1500),
+    hn_id: /^\d{1,15}$/.test(String(raw.hn_id || "")) ? String(raw.hn_id) : null,
+    points: raw.points != null && Number.isFinite(+raw.points) ? Math.max(0, Math.min(5e5, Math.round(+raw.points))) : null,
+    comments: raw.comments != null && Number.isFinite(+raw.comments) ? Math.max(0, Math.min(5e5, Math.round(+raw.comments))) : null
+  };
+}
+__name(norm, "norm");
+function hash(x) {
+  let h = 2166136261;
+  for (const c of x.title + "\n" + x.summary) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
+  return (h >>> 0).toString(16);
+}
+__name(hash, "hash");
+var ai = /\b(?:AI|LLM|AGI|GPT[-\s]?\d|Qwen[0-9A-Za-z.-]*|Gemini|Claude|Anthropic|OpenAI|DeepSeek|Mistral|Llama|Kimi|Copilot|Codex|Ollama|MLX|MoE|Machine Learning|AI model|Neural Network|OpenCode|Hugging Face|transformer|diffusion)\b|人工智慧|語言模型|模型量化|推論模型/i;
+var past = /\b(?:archaeolog[0-9A-Za-z]*|ancient|histori[0-9A-Za-z]*|artifact|centur|medieval|excavation|museum|roman|egyptian|fossil|dinosaur)\b|考古|史料|歷史|古代|古文明|化石|出土|古蹟/i;
+var science = /\b(?:science|research|experiment|physics|chemistry|biology|astronomy|mathematics|proof|discovery|nature)\b|研究|科學|數學|化學|物理|生物|天文|實驗|證明|發現/i;
+var transient = /\b(?:outage|disruption|downtime|service restored|incident report|flight grounded|temporarily unavailable)\b|服務中斷|短暫故障|恢復正常|緊急警報|停機公告/i;
+function previewRule(raw) {
+  const x = norm(raw), text2 = x.title + " " + x.summary;
+  let interest = 56, publish = 52, recommend = 28, reason = "\u50C5\u4F9D\u6A19\u984C\u6458\u8981\u521D\u8A55\uFF1B\u4ECD\u9700\u78BA\u8A8D\u539F\u6587\u5167\u5BB9\u3002";
+  const a = ai.test(text2), p = past.test(text2), s = science.test(text2);
+  if (a) {
+    interest += 28;
+    publish += 27;
+    recommend += 28;
+    reason = "AI \u6A21\u578B\u8207\u7522\u696D\u52D5\u614B\u662F\u9577\u671F\u8FFD\u8E64\u8208\u8DA3\uFF0C\u516C\u544A\u4E5F\u6709\u8CC7\u8A0A\u50F9\u503C\u3002";
+  }
+  if (p) {
+    interest += 21;
+    publish += 22;
+    recommend += 18;
+    reason = "\u6B77\u53F2\u8207\u8003\u53E4\u7684\u65B0\u767C\u73FE\u672C\u8EAB\u5177\u6709\u63A2\u7D22\u53CA\u5B78\u7FD2\u50F9\u503C\u3002";
+  }
+  if (s) {
+    interest += 13;
+    publish += 14;
+    recommend += 15;
+    reason = "\u5305\u542B\u79D1\u5B78\u3001\u7814\u7A76\u8207\u65B9\u6CD5\u63A2\u7D22\u3002";
+  }
+  if (transient.test(text2) && !a && !p && !s) {
+    interest -= 26;
+    publish -= 30;
+    recommend -= 15;
+    reason = "\u5373\u6642\u4E8B\u4EF6\u8CC7\u8A0A\uFF0C\u82E5\u7F3A\u4E4F\u5F8C\u7E8C\u5206\u6790\uFF0C\u50F9\u503C\u53EF\u80FD\u96A8\u6642\u9593\u4E0B\u964D\u3002";
+  }
+  const popular = Math.min(6, Math.round((Math.log2(1 + (x.points || 0)) + Math.log2(1 + (x.comments || 0))) * 0.3));
+  interest = clamp2(interest + popular);
+  publish = Math.min(interest, clamp2(publish + popular * 0.6));
+  recommend = Math.min(publish, clamp2(recommend + popular * 0.5));
+  return { interest, publish, recommend, reason, basis: "rules", confidence: "uncalibrated", version: PREVIEW_VERSION, signature: hash(x), model: null };
+}
+__name(previewRule, "previewRule");
+function cached(row) {
+  try {
+    const p = JSON.parse(row?.prediction || "null");
+    return row.prediction_version === PREVIEW_VERSION && p?.signature === hash({ title: row.title_original, summary: row.summary }) ? p : null;
+  } catch {
+    return null;
+  }
+}
+__name(cached, "cached");
+async function learnedExamples(db) {
+  const pos = await db.prepare("SELECT title_original,title,substr(summary,1,200) summary,stage FROM bookmarks WHERE stage IN(0,1,3,4) ORDER BY CASE WHEN stage=4 THEN 0 ELSE 1 END,updated_at DESC LIMIT 16").all();
+  const rejected = await db.prepare("SELECT title_original,title,substr(summary,1,200) summary FROM bookmarks WHERE stage=2 ORDER BY updated_at DESC LIMIT 10").all();
+  const bypassed = await db.prepare("SELECT title_original,substr(summary,1,200) summary FROM betacat_observations o WHERE o.summary_viewed_at IS NOT NULL AND julianday(o.summary_viewed_at)<julianday('now','-1 day') AND NOT EXISTS(SELECT 1 FROM bookmarks b WHERE b.normalized_url=o.url) AND NOT EXISTS(SELECT 1 FROM betacat_bookmark_actions a WHERE a.url=o.url AND a.selected=1) ORDER BY o.summary_viewed_at DESC LIMIT 12").all();
+  return { starred: pos.results.map((x) => ({ title: x.title_original || x.title, summary: x.summary, published: x.stage >= 3 })), not_public_after_read: rejected.results.map((x) => ({ title: x.title_original || x.title, summary: x.summary })), read_preview_but_not_starred: bypassed.results };
+}
+__name(learnedExamples, "learnedExamples");
+var probability = /* @__PURE__ */ __name((x) => {
+  const n = typeof x === "number" ? x : x?.probability ?? x?.value ?? x?.yes;
+  return typeof n === "number" && n >= 0 && n <= 1 ? clamp2(n * 100) : null;
+}, "probability");
+async function clef(aiBinding, item, examples) {
+  const answer = await aiBinding.run("@cf/cloudflare/clef-flash", {
+    model: "clef-flash",
+    state: { preference: "User enjoys AI model releases, performance and product announcements, also archaeology and history, science and creative technology. Short-lived incident notices without additional explanation have less value. Languages are not a barrier. This is a preview only.", article: item },
+    questions: {
+      interest: { type: "noul", instructions: "Would this user bookmark this preview to read later?" },
+      publish: { type: "noul", instructions: "After reading, would this user publish it in their learning blog? AI product announcements and archaeological discoveries can be valuable in themselves." },
+      recommend: { type: "noul", instructions: "Would this user consider the article exceptionally worth recommending, not just publishing?" }
+    }
+  });
+  const v = ["interest", "publish", "recommend"].map((k) => probability(answer?.answers?.[k]));
+  if (v.some((n) => n === null)) throw Error("Clef scores missing");
+  const [interest, publish, recommend] = v;
+  return { ...previewRule(item), interest, publish: Math.min(interest, publish), recommend: Math.min(interest, publish, recommend), basis: "decision-ai", model: "clef-flash", assessed_at: (/* @__PURE__ */ new Date()).toISOString() };
+}
+__name(clef, "clef");
+async function gemma(aiBinding, items, examples) {
+  const instruction = '\u9810\u6E2C\u9019\u540D\u4F7F\u7528\u8005\u8B80 BetaCats \u6A19\u984C\u6458\u8981\u5F8C\u6703\u6309\u661F\u865F\u7684\u50BE\u5411 interest\u3001\u8B80\u6B63\u6587\u5F8C\u6703\u516C\u958B publish\u3001\u4EE5\u53CA\u7279\u5225\u63A8\u85A6 recommend\u3002\u4E0D\u662F\u4E00\u822C\u6587\u7AE0\u54C1\u8CEA\u3002\u4F7F\u7528\u8005\u9AD8\u5EA6\u91CD\u8996 AI \u65B0\u6A21\u578B\u8207\u7522\u54C1\u516C\u544A\uFF08Qwen4-Max\u3001Gemini \u7B49\uFF09\u3001AI \u6548\u80FD\u8207\u7522\u696D\u65B0\u805E\uFF0C\u5C0D\u6B77\u53F2\u3001\u8003\u53E4\u3001\u79D1\u5B78\u8207\u5275\u610F\u4E5F\u6709\u8208\u8DA3\u3002\u7121\u5BE6\u8CEA\u5167\u5BB9\u7684\u77ED\u6548\u4E8B\u4EF6\u624D\u964D\u4F4E\u5206\u6578\u3002\u4E0D\u80FD\u4EE5\u8A9E\u8A00\u3001\u6458\u8981\u77ED\u5C31\u6263\u5206\u3002\u6BCF\u7BC7 0-100\uFF0C\u4E14 recommend<=publish<=interest\u3002\u53EA\u8F38\u51FA JSON {"items":[{"url":"...","interest":80,"publish":75,"recommend":40,"reason":"\u7E41\u9AD4\u4E2D\u6587\u7C21\u77ED\u7406\u7531"}]}\u3002';
+  const result = await aiBinding.run(CLASSIFIER_MODEL, { messages: [{ role: "system", content: instruction }, { role: "user", content: JSON.stringify({ examples, items }) }], response_format: { type: "json_object" }, chat_template_kwargs: { enable_thinking: false }, temperature: 0, max_tokens: 950 });
+  const content = result?.choices?.[0]?.message?.content ?? result?.response;
+  const list3 = typeof content === "string" ? JSON.parse(content) : content;
+  if (!Array.isArray(list3?.items)) throw Error("AI response invalid");
+  const byUrl2 = new Map(list3.items.map((x) => [x.url, x]));
+  return items.map((item) => {
+    const x = byUrl2.get(item.url);
+    if (!x || ["interest", "publish", "recommend"].some((k) => !Number.isFinite(Number(x[k])))) throw Error("AI scores incomplete");
+    const interest = clamp2(x.interest), publish = Math.min(interest, clamp2(x.publish));
+    return { ...previewRule(item), interest, publish, recommend: Math.min(publish, clamp2(x.recommend)), reason: tidy(x.reason, 170), basis: "decision-ai", model: CLASSIFIER_MODEL, assessed_at: (/* @__PURE__ */ new Date()).toISOString() };
+  });
+}
+__name(gemma, "gemma");
+var running = /* @__PURE__ */ new Set();
+async function updateScores(env, candidates) {
+  const group = candidates.slice(0, 4);
+  if (!env.AI || !group.length) return;
+  const key2 = group.map((x) => x.url).join("|");
+  if (running.has(key2)) return;
+  running.add(key2);
+  try {
+    const examples = await learnedExamples(env.DB);
+    let scores;
+    try {
+      scores = await Promise.all(group.map((x) => clef(env.AI, x, examples)));
+    } catch (error2) {
+      console.warn("Clef fallback", String(error2).slice(0, 220));
+      scores = await gemma(env.AI, group, examples);
+    }
+    const at = (/* @__PURE__ */ new Date()).toISOString();
+    await env.DB.batch(group.map((x, i) => env.DB.prepare("UPDATE betacat_observations SET prediction=?,prediction_version=?,prediction_at=? WHERE url=? AND title_original=? AND summary=?").bind(JSON.stringify(scores[i]), PREVIEW_VERSION, at, x.url, x.title, x.summary)));
+  } catch (error2) {
+    console.warn("BetaCats prediction failed", String(error2).slice(0, 350));
+  } finally {
+    running.delete(key2);
+  }
+}
+__name(updateScores, "updateScores");
+async function previewInsights(env, raw, ctx) {
+  const mode = ["snapshot", "lookup", "viewed", "selection"].includes(raw?.mode) ? raw.mode : "snapshot";
+  if (!Array.isArray(raw?.items) || !raw.items.length || raw.items.length > 55) throw Error("\u4E00\u6B21\u6700\u591A 55 \u7BC7\u6587\u7AE0");
+  const items = [...new Map(raw.items.map((v) => {
+    const x = norm(v);
+    return [x.url, x];
+  })).values()];
+  const snapshot = String(raw.snapshot_id || ""), now = (/* @__PURE__ */ new Date()).toISOString(), page = tidy(raw.page_url, 400);
+  if (mode !== "lookup" && !/^[0-9a-f-]{36}$/i.test(snapshot)) throw Error("\u7121\u6548\u5FEB\u7167 ID");
+  if (mode === "snapshot") {
+    const bookmarks = await env.DB.prepare("SELECT normalized_url FROM bookmarks WHERE normalized_url IN (" + items.map(() => "?").join(",") + ")").bind(...items.map((x) => x.url)).all();
+    const chosen = new Set(bookmarks.results.map((x) => x.normalized_url));
+    await env.DB.batch(items.flatMap((x) => [
+      env.DB.prepare("INSERT INTO betacat_observations(url,title_original,summary,hn_id,source_page,first_seen_at,last_seen_at,seen_count,points,comments) VALUES(?,?,?,?,?,?,?,1,?,?) ON CONFLICT(url) DO UPDATE SET title_original=excluded.title_original,summary=excluded.summary,hn_id=COALESCE(excluded.hn_id,betacat_observations.hn_id),source_page=excluded.source_page,last_seen_at=excluded.last_seen_at,seen_count=betacat_observations.seen_count+1,points=COALESCE(excluded.points,betacat_observations.points),comments=COALESCE(excluded.comments,betacat_observations.comments)").bind(x.url, x.title, x.summary, x.hn_id, page, now, now, x.points, x.comments),
+      env.DB.prepare("INSERT OR IGNORE INTO betacat_snapshot_items(snapshot_id,url,page_loaded_at,source_page,was_bookmarked) VALUES(?,?,?,?,?)").bind(snapshot, x.url, now, page, chosen.has(x.url) ? 1 : 0)
+    ]));
+  } else if (mode === "selection") {
+    if (items.length !== 1 || typeof raw.selected !== "boolean") throw Error("\u661F\u865F\u4E8B\u4EF6\u683C\u5F0F\u932F\u8AA4");
+    await env.DB.prepare("INSERT INTO betacat_bookmark_actions(snapshot_id,url,selected,acted_at) VALUES(?,?,?,?)").bind(snapshot, items[0].url, raw.selected ? 1 : 0, now).run();
+  } else if (mode === "viewed") {
+    await env.DB.batch(items.flatMap((x) => [
+      env.DB.prepare("UPDATE betacat_observations SET summary_viewed_at=?,summary_view_count=summary_view_count+1 WHERE url=?").bind(now, x.url),
+      env.DB.prepare("UPDATE betacat_snapshot_items SET viewed_summary=1 WHERE snapshot_id=? AND url=?").bind(snapshot, x.url)
+    ]));
+  }
+  const rows = await env.DB.prepare("SELECT url,title_original,summary,prediction,prediction_version FROM betacat_observations WHERE url IN (" + items.map(() => "?").join(",") + ")").bind(...items.map((x) => x.url)).all();
+  const found = new Map(rows.results.map((x) => [x.url, x]));
+  const predictions = items.map((x) => ({ url: x.url, ...cached(found.get(x.url)) || previewRule(x) }));
+  const missing = mode === "selection" ? [] : items.filter((x) => !cached(found.get(x.url)));
+  if (ctx?.waitUntil && mode !== "viewed" && missing.length) ctx.waitUntil(updateScores(env, missing));
+  return { version: PREVIEW_VERSION, recorded: mode === "snapshot" ? items.length : 0, viewed: mode === "viewed" ? items.length : 0, predictions };
+}
+__name(previewInsights, "previewInsights");
 
 // src/note-references.js
 async function relatedNoteHtml(env, items) {
@@ -32741,6 +32925,10 @@ async function api(req, env, url, ctx) {
         ));
       }
       if (req.method === "DELETE") return json2({ deleted: await remove(env.DB, match2[1]) });
+    }
+    if (p === "/bookmarks/api/ingest/preview" && req.method === "POST") {
+      if (!await validIngestToken(req, env)) return json2({ error: "Token \u7121\u6548" }, 401);
+      return json2(await previewInsights(env, await input(req), ctx));
     }
     if (p === "/bookmarks/api/ingest/status" && req.method === "POST") return bulkStatus(req, env);
     if (p === "/bookmarks/api/ingest/remove" && req.method === "POST") {
