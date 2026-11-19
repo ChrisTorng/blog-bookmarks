@@ -25739,7 +25739,19 @@ async function patch(db, id, raw, hasNoteReference) {
   if ("status" in raw) {
     const requested = Number(raw.status);
     if (!Number.isInteger(requested) || requested < 0 || requested > 5) throw new Error("\u72C0\u614B\u7121\u6548");
-    const publishAsRecommendation = requested === 3 && current2.status !== 3 && await hasNoteReference?.();
+    let publishAsRecommendation = false;
+    if (requested === 3 && current2.status !== 3 && hasNoteReference) {
+      try {
+        publishAsRecommendation = Boolean(await hasNoteReference());
+      } catch (error2) {
+        const failure = new Error("\u96A8\u7B46\u5F15\u7528\u72C0\u614B\u66AB\u6642\u7121\u6CD5\u78BA\u8A8D\uFF1B\u66F8\u7C64\u5C1A\u672A\u516C\u958B\uFF0C\u8ACB\u91CD\u8A66");
+        failure.code = "NOTE_REFERENCE_CHECK_FAILED";
+        failure.httpStatus = 503;
+        failure.publicMessage = failure.message;
+        failure.cause = error2;
+        throw failure;
+      }
+    }
     const status = publishAsRecommendation ? 4 : requested;
     const now = (/* @__PURE__ */ new Date()).toISOString();
     if (current2.status !== status) {
@@ -32775,8 +32787,14 @@ async function api(req, env, url, ctx) {
     if (p === "/bookmarks/api/tags" && req.method === "GET") return json2(await tagsList(env.DB));
     return json2({ error: "\u4E0D\u5B58\u5728\u7684 API" }, 404);
   } catch (e) {
-    const bad = e instanceof TypeError || e instanceof SyntaxError || /網址|標題|摘要|標籤|分類|JSON|狀態|資料過大|格式|HTTP|原文|文章|書籤 ID|已被|模型|片段|Workers AI|參考/.test(String(e.message));
-    return json2({ error: bad ? e.message : "\u4F3A\u670D\u5668\u932F\u8AA4" }, bad ? 400 : 500);
+    const endpoint = p === "/bookmarks/api/admin" || p === "/bookmarks/api/admin/" ? "ADMIN_LIST" : p === "/bookmarks/api/admin/tags" ? "ADMIN_TAGS" : /^\/bookmarks\/api\/admin\/[0-9a-f-]{36}\/?$/.test(p) ? req.method === "PATCH" ? "BOOKMARK_UPDATE" : "BOOKMARK_ITEM" : p.includes("/triage") ? "ADMIN_TRIAGE" : "BOOKMARK_API";
+    const ray = (req.headers.get("cf-ray") || "").slice(0, 80);
+    const bad = e instanceof TypeError || e instanceof SyntaxError || /網址|標題|摘要|標籤|分類|JSON|狀態|資料過大|格式|HTTP|原文|文章|書籤 ID|已被|模型|片段|Workers AI|參考/.test(String(e?.message));
+    const status = e?.httpStatus || (bad ? 400 : 500);
+    const code2 = e?.code || endpoint + (status >= 500 ? "_FAILED" : "_INVALID");
+    console.error("Bookmark API failure", JSON.stringify({ code: code2, method: req.method, path: p, ray, message: String(e?.message || e).slice(0, 600), stack: String(e?.stack || "").slice(0, 1800) }));
+    const safeMessage = e?.publicMessage || (status >= 500 ? "\u4F3A\u670D\u5668\u932F\u8AA4" : String(e?.message || "\u8ACB\u6C42\u7121\u6548"));
+    return json2({ error: safeMessage, code: code2, ...ray ? { ray } : {} }, status);
   }
 }
 __name(api, "api");
