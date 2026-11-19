@@ -6,6 +6,7 @@ import {lookupReference} from './references.js';
 import {needsSummaryRepair,repairCandidates,readSubmittedContent,commitArticleSummary,summarizeSubmittedArticle} from './summary-repair.js';
 import {autoReviewNewSummary} from './auto-summary.js';
 import {triageList,scoreTriage,inspectTriage,countText} from './triage.js';
+import {previewInsights} from './preview.js';
 import {validIngestToken,rotateIngestToken} from './token.js';
 import {list,get,byUrl,create,patch,remove,tagsList,renameTag,reviewWindow,createAndAttachTag} from './data.js';
 import {bookmarkArticleHtml,bookmarkPermalink} from './public-content.js';
@@ -130,6 +131,10 @@ export async function api(req,env,url,ctx){
       () => env.NOTE_REFERENCES?.hasReference(id)));
    }
    if(req.method==='DELETE')return json({deleted:await remove(env.DB,match[1])});
+  }
+  if(p==='/bookmarks/api/ingest/preview'&&req.method==='POST'){
+    if(!await validIngestToken(req,env))return json({error:'Token 無效'},401);
+    return json(await previewInsights(env,await input(req),ctx));
   }
   if(p==='/bookmarks/api/ingest/status'&&req.method==='POST')return bulkStatus(req,env);
   if(p==='/bookmarks/api/ingest/remove'&&req.method==='POST'){

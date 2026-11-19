@@ -1,10 +1,10 @@
 import { CLASSIFIER_MODEL } from './classify.js';
 import { needsSummaryRepair } from './metadata.js';
 
-export const TRIAGE_VERSION='triage-2026-11-19-v1';
+export const TRIAGE_VERSION='triage-2026-11-19-v2';
 const key=id=>TRIAGE_VERSION+':'+id;
-const dimensions=['learning','depth','durability','novelty','fit'];
-const weights={learning:.34,depth:.26,durability:.18,novelty:.14,fit:.08};
+const dimensions=['learning','awareness','depth','durability','novelty','fit'];
+const weights={learning:.20,awareness:.27,depth:.11,durability:.08,novelty:.16,fit:.18};
 const candidatesSql="SELECT b.id,b.title,b.title_original,b.title_zh,b.summary,b.url,b.redirect_url,b.created_at,b.updated_at,b.stage,b.deferred,s.value AS saved FROM bookmarks b LEFT JOIN bookmark_settings s ON s.key=?||b.id WHERE b.stage IN (0,1)";
 const sourceText=b=>[b.title,b.title_original,b.summary,b.url,b.redirect_url].join('\n');
 function signature(b) {
@@ -21,7 +21,7 @@ function insufficientSummary(b) {
   /(?:僅包含(?:網頁)?技術代碼|沒有(?:任何)?(?:文章)?正文|無法摘要其主要事件|未提供(?:任何)?文章正文|無法取得文章正文)/.test(s);
 }
 function insufficientResult(b) {
- const dimensions={learning:50,depth:50,durability:50,novelty:50,fit:50};
+ const dimensions={learning:50,awareness:50,depth:50,durability:50,novelty:50,fit:50};
  return {version:TRIAGE_VERSION,signature:signature(b),score:50,dimensions,flags:['閱讀障礙'],
   reason:'目前摘要缺漏或抓取到網頁程式碼，無法可靠判斷文章的資訊量與學習價值；應先嘗試取得全文，不可直接視為低價值文章。',
   basis:'insufficient',confidence:'none',summary_chars:size(b.summary),full_chars:null,
@@ -29,31 +29,34 @@ function insufficientResult(b) {
 }
 
 export function previewTriage(b){
-  if(insufficientSummary(b))return insufficientResult(b);
-  const title=(b.title_original||b.title||'').toLowerCase();
-  const summary=String(b.summary||'');
-  const length=size(summary);
-  const event=/(?:outage|incident|downtime|breaking|statement|announces?|press release|breach|resigns?|funding|raised|quarterly|earnings|launches|reports|acquired|status|停機|故障|異常|公告|聲明|收購|融資|財報|爆發|調查中|停飛)/i.test(title+' '+summary.slice(0,180));
-  const promo=/(?:show hn:|play|game|demo|landing page|pricing|signup|sign up|下載|互動遊戲|小遊戲|介紹一款)/i.test(title);
-  const technical=/(?:how to|inside|reverse engineer|explained|tutorial|benchmark|analysis|architecture|deep dive|research|實作|原理|架構|推導|實驗|研究|分析|逆向|方法|教學|證明|比較|資料)/i.test(title+' '+summary);
-  const short=length<65;
-  const ageDays=Math.max(0,(Date.now()-Date.parse(b.created_at||0))/86400000);
-  const dimensions={
-    learning:clamp(technical?76:promo?48:event?38:62),
-    depth:clamp(short?32:length<105?55:length<200?68:76),
-    durability:clamp(event?Math.max(10,55-ageDays*4):78),
-    novelty:clamp(event?45:promo?55:67),
-    fit:clamp(technical?75:promo?56:60)
-  };
-  if(needsSummaryRepair(summary))dimensions.depth=40;
-  const flags=[];
-  if(event)flags.push('時事過期');
-  // A short summary is not evidence that the original article is short.
-  if(promo)flags.push('展示／遊戲');
-  if(needsSummaryRepair(summary))flags.push('閱讀障礙');
-  if(!flags.length)flags.push(technical?'其他':'學習價值不足');
-  const score=Math.round(Object.keys(weights).reduce((s,k)=>s+dimensions[k]*weights[k],0));
-  return {version:TRIAGE_VERSION,score,dimensions,flags,reason:short?'摘要很短，無法確認正文是否有額外深度；建議先看原文。':event?'事件導向內容，需確認是否包含可長期參考的分析。':promo?'偏向介紹或展示，應檢查是否有實作細節、原理或可重用的方法。':technical?'摘要已有技術線索；暫時不宜直接淘汰。':'僅依摘要初步評估；完整內容可能改變結果。',basis:'rules',confidence:'low',summary_chars:length,full_chars:null,full_words:null,read_minutes:null,assessed_at:null};
+ if(insufficientSummary(b))return insufficientResult(b);
+ const title=(b.title_original||b.title||'').toLowerCase();
+ const summary=String(b.summary||''),body=title+' '+summary;
+ const ai=/\b(?:AI|LLM|GPT[-\s]?\d|Qwen[0-9A-Za-z.-]*|Gemini|Claude|Anthropic|OpenAI|DeepSeek|Mistral|Llama|Kimi|Copilot|Codex|MoE|Ollama|transformer|machine learning)\b|人工智慧|語言模型|模型發表|模型發布|AI模型/i.test(body);
+ const history=/\b(?:archaeolog|artifact|ancient|histori|centur|medieval|excavation|fossil|old manuscript)\b|歷史|考古|古代|出土|史料|化石/i.test(body);
+ const science=/\b(?:science|research|physics|chemistry|biology|astronomy|mathematics|proof|discovery)\b|科學|研究|化學|物理|數學|實驗|發現/i.test(body);
+ const method=/\b(?:how to|reverse engineer|explained|tutorial|benchmark|analysis|architecture|deep dive)\b|原理|實作|架構|推導|分析|方法|教學|比較/i.test(body);
+ const event=/\b(?:outage|downtime|brief disruption|service restored|emergency alert|temporarily unavailable)\b|停機|服務中斷|臨時故障|緊急公告/i.test(body);
+ const transient=event&&!ai&&!history&&!science&&!method;
+ const len=size(summary);
+ const d={
+  learning:clamp(method?81:history?74:science?80:ai?69:60),
+  awareness:clamp(ai?93:history?86:science?80:transient?25:64),
+  depth:clamp(len<65?52:len<130?64:len<240?72:78),
+  durability:clamp(transient?28:ai?68:history?88:science?84:72),
+  novelty:clamp(ai?86:history?82:science?79:transient?42:64),
+  fit:clamp(ai?91:history?85:science?83:transient?32:67)
+ };
+ const flags=transient?['時事過期']:[];
+ const reason=ai?'AI 新模型、產品或產業動態屬於重要追蹤資訊，即使只包含公告，也可能值得了解與收錄。'
+  :history?'考古、史料或歷史新發現本身具探索價值，不能只因缺乏技術實作就扣分。'
+  :science?'研究與科學發現可帶來新知，值得進一步確認原文的證據與內容。'
+  :transient?'偏向短效事件通報，需確認是否有可長期學習的根因或獨特資訊。'
+  :method?'有原理或方法的線索，應優先確認實作細節。'
+  :'摘要資訊不足以確定讀完的價值；仍應考慮獨特事實與個人興趣。';
+ return {version:TRIAGE_VERSION,score:Math.round(dimensions.reduce((n,k)=>n+d[k]*weights[k],0)),
+  dimensions:d,flags,reason,basis:'rules',confidence:'low',summary_chars:len,
+  full_chars:null,full_words:null,read_minutes:null,assessed_at:null};
 }
 function current(b){
   try{
@@ -71,10 +74,10 @@ export async function triageList(db,includeDeferred=false){
   return {version:TRIAGE_VERSION,total:items.length,assessed:items.filter(x=>x.assessed).length,items};
 }
 async function history(db){
-  const sql="SELECT title_original,title,substr(summary,1,210) summary FROM bookmarks WHERE stage=? ORDER BY updated_at DESC LIMIT 12";
+  const sql="SELECT title_original,title,substr(summary,1,210) summary FROM bookmarks WHERE stage=? ORDER BY updated_at DESC LIMIT 18";
   const [negative,positive]=await Promise.all([
     db.prepare(sql).bind(2).all(),
-    db.prepare("SELECT title_original,title,substr(summary,1,210) summary FROM bookmarks WHERE stage IN (3,4) ORDER BY updated_at DESC LIMIT 14").all()
+    db.prepare("SELECT title_original,title,substr(summary,1,210) summary FROM bookmarks WHERE stage IN (3,4) ORDER BY CASE WHEN title LIKE '%Qwen4%' OR title LIKE '%Gemini 4 Carbon%' OR title LIKE '%Nvidia 接下來%' OR title LIKE '%南韓將發布%' THEN 0 ELSE 1 END, updated_at DESC LIMIT 26").all()
   ]);
   const normalize=rows=>rows.results.map(x=>({title:x.title_original||x.title,summary:x.summary}));
   return {not_public:normalize(negative),published:normalize(positive)};
@@ -117,15 +120,16 @@ export async function scoreTriage(env,ids,{fullText=null}={}){
   if(!pending.length)return {updated:[],skipped:unique.length};
   const examples=await history(env.DB);
   const system=[
-    '你是「ChrisTorng 學習天地」的個人閱讀預篩助理，目標是判斷是否值得進一步讀原文及長期收錄，不是評估文章政治立場、流行程度或分類標籤。',
-    '負面與正面歷史決策只是弱訊號，不公開也可能是主題不適用、已讀過或媒體限制，不能當成普遍品質標籤。不要因為語言非中文、主題陌生、不是程式技術而扣分。',
-    '遊戲或互動展示若有演算法、設計、實作原理仍可高分；如果只有遊戲操作／登入才能體驗，且缺乏技術細節，才將閱讀成本列入理由。',
-    '事件新聞、營運狀態、企業聲明若僅是短暫通知且沒有技術根因／分析／可重用方法，應降低長期價值；安全漏洞若附 exploit、根因、補救分析可高分。',
-    '摘要短不等於正文短；若未提供全文，不可斷言全文字數很少。若有競爭或獨特的新事實，短文也有價值。',
-    '每篇評五項各 0~100，分高代表值得讀：learning=可學習的原理／方法，depth=資訊量與具體性，durability=超越短暫時事的持久性，novelty=與一般公告或重複報導相比的新知增量，fit=適合個人探索式學習天地（跨領域、科學、音樂、歷史、技術均可）。',
-    'flags 僅使用「時事過期、內容過短、學習價值不足、資訊重複、展示／遊戲、閱讀障礙、其他」，最多兩個且必須有明確依據。「時事過期」指內容高度依賴即時性而非單純事件發生在過去；「內容過短」需要有全文證據，否則不要標。',
-    '繁體中文 reason 30~70 字，說明最主要的價值／疑慮，避免泛泛形容或臆測。輸出純 JSON：{"items":[{"id":"...","learning":50,"depth":50,"durability":50,"novelty":50,"fit":50,"flags":["其他"],"reason":"..."}]}',
-    '不得自動更動任何書籤公開狀態。'
+    '你是 ChrisTorng 學習天地個人書籤預篩助手：預測使用者閱讀後可能公開或推薦的傾向，而不是文章的普遍品質或技術深度評分。',
+    '此使用者已經先在 BetaCats 看標題摘要，只有感興趣的才按星號成為書籤；D1 不公開是第二關被淘汰，數量少不能代表使用者只對程式技術有興趣。沒有按星號的記錄以前未保存，不可臆造負樣本。',
+    '特別重要的實際反例：Qwen4-Max 舊評26分、Gemini 4 Carbon 29分、南韓高考31分、劍橋詞典 Human 33分、Nvidia 34分，使用者後來全部公開。這證明 AI 新品公告與公司技術動向本身值得知道；新聞、語言、人文現象亦可能值得公開。',
+    '強調 AI 模型與產品公告（Qwen、Gemini、GPT、Claude 等），即使沒有演算法細節，只要是新版本、能力比較或重要資訊，就應給高 awareness 和 fit。歷史、考古、新史料、自然科學也是高度興趣領域。不得因為沒有程式碼或教學而判低分。',
+    '短效時事如服務中斷、緊急故障資訊若已不需要及時知道、沒有根因、分析或獨特見解，才降低價值。資安漏洞若附有可學方法可以高分。不要一概視為事件新聞過期。',
+    '遊戲若有新觀念、設計方法或創意也值得了解；只能體驗遊戲但手機無法看且無其他資訊，才考慮較低分。外語不是問題。',
+    '評六個 0~100 分面向：learning=原理/方法/新知的學習，awareness=值得及時知道的新模型/新發現/趨勢/資訊價值，depth=具體資訊內容，durability=長期留存價值，novelty=新事實與獨特性（公告也可能有），fit=使用者個人興趣/學習天地適合度。',
+    '沒有全文時不能把摘要字數當成全文字數，也不得說正文很短。flags 僅使用「時事過期、內容過短、學習價值不足、資訊重複、展示／遊戲、閱讀障礙、其他」最多兩個；內容過短只能在有全文證據時標記。',
+    '繁體中文 reason 30~70 字，具體說明學到什麼或可能不值得讀的原因。只輸出 JSON：{"items":[{"id":"...","learning":70,"awareness":75,"depth":60,"durability":70,"novelty":70,"fit":80,"flags":[],"reason":"..."}]}。',
+    '絕對不可修改書籤公開狀態。'
   ].join('\n');
   const content={
     current_date:new Date().toISOString().slice(0,10),

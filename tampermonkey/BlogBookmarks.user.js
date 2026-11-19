@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.15
+// @version      0.5.16
 // @description  Keep expanded BetaCat bookmark stars at stable screen height as Android browser toolbars hide or appear
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -31,6 +31,12 @@
     const revisions = new Map();
     const errors = new Map();
     const originalTitles = new Map();
+    const previewScores = new Map();
+    const observedUrls = new Set();
+    const viewedUrls = new Set();
+    const snapshotId = globalThis.crypto?.randomUUID?.() || '00000000-0000-4000-8000-' + Math.floor(Math.random()*281474976710656).toString(16).padStart(12,'0');
+    let previewTimer,previewTask=Promise.resolve(),pollCount=0,summaryObserver;
+
     let token = GM_getValue(TOKEN_KEY, '');
     let originalTitleTask;
     let preloadTask;
@@ -249,6 +255,70 @@
         };
     }
 
+
+    function metaNumber(element) {
+        const match=String(element?.textContent||'').replace(/,/g,'').match(/(\d+(?:\.\d+)?)\s*([km])?/i);
+        return match?Math.round(Number(match[1])*(match[2]?.toLowerCase()==='k'?1000:match[2]?.toLowerCase()==='m'?1000000:1)):null;
+    }
+    function previewArticle(control) {
+        const article=control.link.closest('article.post-item');
+        const data=articleData(control.link);
+        let hn_id=null;
+        try {
+            const u=new URL(article?.querySelector('a[rel="comment"],.post-meta .comment a')?.href||'',location.href);
+            if(u.hostname==='news.ycombinator.com')hn_id=u.searchParams.get('id');
+        }catch{}
+        return {url:control.url,title:data.title,title_original:data.title_original||data.title,
+            summary:data.summary,hn_id,points:metaNumber(article?.querySelector('.post-meta .score')),
+            comments:metaNumber(article?.querySelector('.post-meta .comment'))};
+    }
+    function useScores(items){
+        for(const item of items||[])if(item?.url)previewScores.set(item.url,item);
+        render();
+    }
+    function scheduleSnapshot(){
+        if(!token||previewTimer)return;
+        previewTimer=setTimeout(()=>{
+            previewTimer=null;
+            previewTask=previewTask.catch(()=>{}).then(async()=>{
+                await originalTitleTask?.catch(()=>{});
+                const articles=[];
+                for(const control of controls.values()){
+                    if(observedUrls.has(control.url))continue;
+                    try{articles.push(previewArticle(control));}catch{}
+                }
+                for(let i=0;i<articles.length;i+=50){
+                    const batch=articles.slice(i,i+50);
+                    try{
+                        const response=await request('/preview','POST',{mode:'snapshot',snapshot_id:snapshotId,page_url:location.href,items:batch});
+                        batch.forEach(x=>observedUrls.add(x.url));
+                        useScores(response.predictions);
+                    }catch(error){console.warn('BetaCats observation:',error.message);}
+                }
+                if(articles.length && pollCount===0)scheduleScorePoll();
+            });
+        },450);
+    }
+    function scheduleScorePoll(){
+        if(!token||pollCount>=5)return;
+        pollCount++;
+        setTimeout(async()=>{
+            const articles=[];
+            for(const control of controls.values())try{articles.push(previewArticle(control));}catch{}
+            for(let i=0;i<articles.length;i+=50)try{
+                const response=await request('/preview','POST',{mode:'lookup',items:articles.slice(i,i+50)});
+                useScores(response.predictions);
+            }catch(error){console.warn('BetaCats score update:',error.message);}
+            if(document.visibilityState==='visible')scheduleScorePoll();
+        },7000);
+    }
+    function recordViewed(control){
+        if(!token||viewedUrls.has(control.url))return;
+        viewedUrls.add(control.url);
+        void previewTask.catch(()=>{}).then(()=>request('/preview','POST',{
+            mode:'viewed',snapshot_id:snapshotId,items:[{url:control.url}]
+        })).catch(error=>console.warn('BetaCats viewed summary:',error.message));
+    }
     function render() {
         for (const [link, control] of controls) {
             if (!link.isConnected || !control.button.isConnected) {
@@ -261,7 +331,17 @@
             const { button, url } = control;
             const exists = saved.has(url);
             const label = exists ? '★' : '☆';
-            if (button.textContent !== label) button.textContent = label;
+            if(!control.scoreBadge) {
+                if(button.textContent!==label)button.textContent=label;
+            } else if(button.firstChild?.nodeType===3) {
+                if(button.firstChild.nodeValue!==label)button.firstChild.nodeValue=label;
+            } else {
+                button.insertBefore(document.createTextNode(label),button.firstChild);
+            }
+            const insight=previewScores.get(url);
+            const chip=control.scoreBadge;
+            const text=insight?String(insight.publish)+(insight.recommend>=75?'★':''):'…';
+            if(chip&&chip.textContent!==text)chip.textContent=text;
             button.disabled = pending.has(url);
             button.setAttribute('aria-pressed', String(exists));
             button.setAttribute('aria-busy', String(pending.has(url)));
@@ -273,8 +353,9 @@
                 button.removeAttribute('aria-invalid');
             }
             const hint = exists ? '取消收藏' : '加入未讀收藏';
-            button.title = hint;
-            button.setAttribute('aria-label', hint);
+            const details=insight?' · 偏好傾向 收藏'+insight.interest+' 公開'+insight.publish+' 推薦'+insight.recommend+'（'+(insight.basis==='decision-ai'?'AI':'規則')+' 初評，未校準為機率）· '+insight.reason:'';
+            button.title=hint+details;
+            button.setAttribute('aria-label',hint+(insight?' · 公開傾向'+insight.publish:''));
         }
     }
 
@@ -493,6 +574,8 @@
                 saved.set(key, { id: item.id, status: item.status, tags: item.tags || [] });
             }
             clearError(key);
+            void request('/preview','POST',{mode:'selection',snapshot_id:snapshotId,items:[{url:key}],selected:!serverEntry})
+                .catch(error=>console.warn('BetaCats star event:',error.message));
         } catch (error) {
             // A first status check might reveal an existing server-side bookmark.
             // Restore that authoritative state when the subsequent removal fails.
@@ -593,6 +676,7 @@
                 render();
                 close();
                 schedulePreload();
+                scheduleSnapshot();
                 if (resumeLink?.isConnected) void toggleArticle(resumeLink);
             } catch (e) {
                 error.textContent = e.message;
@@ -611,7 +695,12 @@
             if (!article || !title) continue;
             const button = document.createElement('button');
             button.type = 'button';
-            button.className = BUTTON_CLASS;
+            button.className=BUTTON_CLASS;
+            const scoreBadge=document.createElement('span');
+            scoreBadge.className='tm-bookmarks-predict';
+            scoreBadge.textContent='…';
+            scoreBadge.setAttribute('aria-hidden','true');
+            button.append(document.createTextNode('☆'),scoreBadge);
             button.setAttribute('aria-live', 'polite');
             button.addEventListener('click', event => {
                 event.preventDefault();
@@ -619,8 +708,10 @@
                 void toggleArticle(link);
             });
             article.appendChild(button);
-            const control = { link, button, url: sourceAndTarget(link.href).url };
+            const control = { link, button, scoreBadge, url: sourceAndTarget(link.href).url };
             controls.set(link, control);
+            const previewSummary=article.querySelector('.post-summary');
+            if(previewSummary)summaryObserver?.observe(previewSummary);
             positionControl(control);
             positionObserver?.observe(article);
             positionObserver?.observe(title);
@@ -633,6 +724,7 @@
         if (added) {
             schedulePositions();
             schedulePreload();
+            scheduleSnapshot();
         }
     }
 
@@ -661,6 +753,16 @@
                 .${BUTTON_CLASS}[data-bookmarks-position="center"] {
                     top: calc(var(--tm-bookmarks-screen-anchor-base, 84px) + 32dvh) !important;
                 }
+            }
+            .tm-bookmarks-predict {
+                position:absolute!important;right:calc(100% + 1px)!important;
+                top:50%!important;transform:translateY(-50%)!important;
+                min-width:29px!important;box-sizing:border-box!important;
+                padding:3px 2px!important;border-radius:5px 0 0 5px!important;
+                background:rgba(19,45,70,.9)!important;color:#fff!important;
+                font:700 12px/1.3 system-ui,sans-serif!important;
+                white-space:nowrap!important;text-align:center!important;
+                pointer-events:none!important;opacity:.9!important;
             }
             .${BUTTON_CLASS}:hover, .${BUTTON_CLASS}:focus-visible {
                 background: rgba(219,234,255,.9) !important; opacity: 1 !important;
@@ -709,6 +811,21 @@
         positionObserver = typeof ResizeObserver === 'function'
             ? new ResizeObserver(schedulePositions) : null;
         collapseObserver = new MutationObserver(schedulePositions);
+        summaryObserver=typeof IntersectionObserver==='function'
+            ?new IntersectionObserver(entries=>{
+                for(const entry of entries){
+                    if(!entry.isIntersecting||entry.intersectionRatio<.35)continue;
+                    const summary=entry.target,article=summary.closest('article.post-item');
+                    if(!article||article.classList.contains('auto-open-new-articles-collapsed'))continue;
+                    const control=[...controls.values()].find(v=>v.link.closest('article.post-item')===article);
+                    if(!control||viewedUrls.has(control.url))continue;
+                    setTimeout(()=>{
+                        if(!summary.isConnected||article.classList.contains('auto-open-new-articles-collapsed'))return;
+                        const rect=summary.getBoundingClientRect(),h=window.visualViewport?.height||innerHeight;
+                        if(rect.height>0&&rect.bottom>h*.15&&rect.top<h*.85)recordViewed(control);
+                    },1600);
+                }
+            },{threshold:[.35]}):null;
         window.addEventListener('resize', () => {
             updateScreenHeightVariable();
             schedulePositions();
