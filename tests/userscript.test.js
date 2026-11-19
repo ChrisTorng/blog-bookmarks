@@ -50,7 +50,7 @@ test('bookmark star is CSS-fixed at screen-right center with absolute per-articl
   assert.match(source, /position: absolute !important/);
   assert.match(source, /positionControl\(control\)/);
   assert.match(source, /new ResizeObserver\(schedulePositions\)/);
-  assert.match(source, /opacity: \.58 !important/);
+  assert.match(source, /background: var\(--tm-bookmarks-score-bg, rgba\(55,69,84,\.66\)\) !important/);
   assert.match(source, /touch-action: manipulation !important/);
   assert.doesNotMatch(source, /tm-betacat-article-tools|oldCollapseButton/);
   assert.match(source, /GM_registerMenuCommand\('Blog Bookmarks 設定'/);
