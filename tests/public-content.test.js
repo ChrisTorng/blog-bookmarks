@@ -46,3 +46,17 @@ test('unsafe Markdown cannot inject scripts or javascript links into public HTML
 test('external relative Markdown links resolve relative to bookmarked source',()=>{
   assert.ok(renderSummary('[read](/blog/post)','https://example.org/parent').includes('href="https://example.org/blog/post"'))
 })
+
+test('remote thumbnail appears once in permalink, RSS and embedded HTML; mobile follows title',()=>{
+  const withImage={...item,image_url:'https://hackernews.betacat.io/image/sample.webp'};
+  const html=bookmarkArticleHtml(withImage,categories);
+  const rssXml=rss([withImage],'https://christorng.idv.tw','','',categories);
+  assert.match(html, /src="https:\/\/hackernews\.betacat\.io\/image\/sample\.webp"/);
+  assert.match(html, /md:grid-cols-\[minmax\(0,1fr\)_11rem\]/);
+  assert.ok(html.indexOf('<h1') < html.indexOf('sample.webp'));
+  assert.ok(html.indexOf('sample.webp') < html.indexOf('my-2 text-gray-700'));
+  assert.ok(rssXml.includes('<content:encoded><![CDATA['+html+']]></content:encoded>'));
+  assert.equal((html.match(/sample\.webp/g)||[]).length,1);
+  assert.doesNotMatch(bookmarkArticleHtml({...item,image_url:null},categories),/md:grid-cols-|sample.webp/);
+  assert.doesNotMatch(bookmarkArticleHtml({...item,image_url:'javascript:alert(1)'},categories),/javascript:alert/);
+});
