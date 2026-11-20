@@ -237,7 +237,7 @@
 
     function imageUrlForArticle(article) {
         const image = article?.querySelector('.post-summary .feature-image img');
-        const source = image?.getAttribute('src');
+        const source = image?.getAttribute?.('src') || image?.src;
         if (!source) return null;
         try {
             const url = new URL(source, location.href);
