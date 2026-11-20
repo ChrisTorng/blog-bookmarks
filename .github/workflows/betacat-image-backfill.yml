@@ -1,0 +1,21 @@
+name: Index historical BetaCat bookmark thumbnails
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/betacat-historical-image-backfill]
+    paths:
+      - 'scripts/betacat-image-backfill-index.mjs'
+      - '.github/workflows/betacat-image-backfill.yml'
+permissions:
+  contents: read
+jobs:
+  index:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Read public daily archives and log image URLs
+        run: node scripts/betacat-image-backfill-index.mjs
