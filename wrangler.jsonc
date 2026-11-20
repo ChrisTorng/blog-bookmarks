@@ -6,6 +6,7 @@
   "workers_dev": false,
   "preview_urls": false,
   "ai": {"binding": "AI"},
+  "triggers": {"crons": ["15 */3 * * *"]},
   "services": [{"binding": "NOTE_REFERENCES", "service": "blog-notes", "entrypoint": "BookmarkReferences"}],
   "d1_databases": [
     {
