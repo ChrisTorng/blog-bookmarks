@@ -25828,6 +25828,22 @@ async function createAndAttachTag(db, raw) {
   return { tag: { id, name, name_zh }, item: await get(db, bookmarkId, true) };
 }
 __name(createAndAttachTag, "createAndAttachTag");
+async function publicFeedItems(db, tag = "") {
+  const filter = tag ? " AND EXISTS (SELECT 1 FROM bookmark_tags bt WHERE bt.bookmark_id=b.id AND bt.tag_id=?)" : "";
+  const statement = db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.stage>=3${filter} ORDER BY status_at DESC,b.id DESC LIMIT 100`);
+  const rows = await (tag ? statement.bind(tag.toLowerCase()) : statement).all();
+  return rows.results.map(decode).map(publicEntry);
+}
+__name(publicFeedItems, "publicFeedItems");
+async function publicSitemapEntries(db) {
+  const { results } = await db.prepare(`SELECT b.slug,
+    date(CASE WHEN b.stage=4 THEN COALESCE(b.starred_at,b.published_at,b.created_at)
+              ELSE COALESCE(b.published_at,b.created_at) END, '+8 hours') AS status_at
+    FROM bookmarks b WHERE b.stage>=3 AND b.slug IS NOT NULL AND b.slug <> ''
+    ORDER BY b.id`).all();
+  return results;
+}
+__name(publicSitemapEntries, "publicSitemapEntries");
 
 // src/classify.js
 var CATEGORY_GUIDANCE = Object.freeze({
@@ -33054,6 +33070,28 @@ var reply = /* @__PURE__ */ __name((body, type = "text/plain; charset=utf-8", st
   "X-Content-Type-Options": "nosniff",
   "Cache-Control": "no-store"
 } }), "reply");
+async function cachedXml(req, env, ctx, ttl, produce) {
+  const cache = env.AUTH_MODE !== "local" && typeof caches !== "undefined" ? caches.default : null;
+  const url = new URL(req.url);
+  const keyUrl = url.origin + url.pathname + (url.searchParams.has("tag") ? "?tag=" + encodeURIComponent(url.searchParams.get("tag") || "") : "");
+  const key2 = cache ? new Request(keyUrl) : null;
+  if (cache) {
+    try {
+      const hit = await cache.match(key2);
+      if (hit) return hit;
+    } catch (error2) {
+      console.warn("Public XML cache read failed", String(error2));
+    }
+  }
+  const generated = await produce();
+  if (!cache || !generated.ok || !ctx?.waitUntil) return generated;
+  const headers = new Headers(generated.headers);
+  headers.set("Cache-Control", `public, max-age=0, s-maxage=${ttl}`);
+  const response = new Response(generated.body, { status: generated.status, headers });
+  ctx.waitUntil(cache.put(key2, response.clone()).catch((error2) => console.warn("Public XML cache write failed", String(error2))));
+  return response;
+}
+__name(cachedXml, "cachedXml");
 var worker = {
   async fetch(req, env, ctx) {
     if (req.method === "HEAD") {
@@ -33063,33 +33101,27 @@ var worker = {
     const url = new URL(req.url), path = url.pathname;
     if (path === "/bookmarks/api" || path === "/bookmarks/api/" || path.startsWith("/bookmarks/api/")) return api(req, env, url, ctx);
     if (path === "/bookmarks/feed.xml" && req.method === "GET") {
-      try {
-        const tag = url.searchParams.get("tag") || "";
-        const [first, tags] = await Promise.all([
-          list(env.DB, { tag, filter: "published" }),
-          tagsList(env.DB)
-        ]);
-        const selected = tags.find((t) => t.id === tag);
-        const tagLabel = selected?.name_zh || selected?.name || tag;
-        const items = [...first.items];
-        for (let n = 2; n <= Math.min(first.pages, 5); n++) {
-          const page = await list(env.DB, { tag, filter: "published", page: n });
-          items.push(...page.items);
+      return cachedXml(req, env, ctx, 60, async () => {
+        try {
+          const tag = url.searchParams.get("tag") || "";
+          const [items, tags] = await Promise.all([publicFeedItems(env.DB, tag), tagsList(env.DB)]);
+          const selected = tags.find((t) => t.id === tag);
+          const tagLabel = selected?.name_zh || selected?.name || tag;
+          const notes = await relatedNoteHtml(env, items);
+          return reply(rss(items, env.SITE_URL || "https://christorng.idv.tw", tag, tagLabel, tags, notes), "application/rss+xml; charset=utf-8");
+        } catch (error2) {
+          console.error("Bookmark RSS failed", String(error2));
+          return reply("RSS \u66AB\u6642\u7121\u6CD5\u53D6\u5F97", "text/plain; charset=utf-8", 500);
         }
-        const notes = await relatedNoteHtml(env, items);
-        return reply(rss(items, env.SITE_URL || "https://christorng.idv.tw", tag, tagLabel, tags, notes), "application/rss+xml; charset=utf-8");
-      } catch {
-        return reply("RSS \u66AB\u6642\u7121\u6CD5\u53D6\u5F97", "text/plain; charset=utf-8", 500);
-      }
+      });
     }
     if (path === "/bookmarks/sitemap.xml" && req.method === "GET") {
-      const first = await list(env.DB, { filter: "published" });
-      const pages = [first];
-      for (let n = 2; n <= first.pages; n++) pages.push(await list(env.DB, { filter: "published", page: n }));
-      const base2 = (env.SITE_URL || "https://christorng.idv.tw").replace(/\/$/, "");
-      const records = pages.flatMap((p) => p.items).filter((b) => b.slug);
-      const xml = '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + records.map((b) => "<url><loc>" + esc(base2 + "/bookmarks/" + encodeURIComponent(b.slug) + "/") + "</loc><lastmod>" + esc((b.status_at || b.published_at || b.created_at).slice(0, 10)) + "</lastmod></url>").join("") + "</urlset>";
-      return reply(xml, "application/xml; charset=utf-8");
+      return cachedXml(req, env, ctx, 300, async () => {
+        const records = await publicSitemapEntries(env.DB);
+        const base2 = (env.SITE_URL || "https://christorng.idv.tw").replace(/\/$/, "");
+        const xml = '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + records.map((b) => "<url><loc>" + esc(base2 + "/bookmarks/" + encodeURIComponent(b.slug) + "/") + "</loc><lastmod>" + esc(b.status_at) + "</lastmod></url>").join("") + "</urlset>";
+        return reply(xml, "application/xml; charset=utf-8");
+      });
     }
     if (req.method === "GET") {
       const legacy = path === "/bookmarks/view/" || path === "/bookmarks/view";
