@@ -49,6 +49,6 @@ test('BetaCat star floats near viewport center within article bounds without cre
  assert.match(script,/--tm-bookmarks-screen-anchor-base/);
  assert.match(script,/32dvh/);
  assert.match(script,/window\.addEventListener\('scroll', schedulePositions/);
- assert.match(script,/background: var\(--tm-bookmarks-score-bg, rgba\(55,69,84,\.66\)\) !important/);
+ assert.match(script,/background: var\(--tm-bookmarks-score-bg, rgba\(63,63,48,\.82\)\) !important/);
  assert.doesNotMatch(script,/tm-betacat-article-tools|oldCollapseButton/);
 });

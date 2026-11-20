@@ -7,7 +7,7 @@ const source = readFileSync(new URL('../tampermonkey/BlogBookmarks.user.js', imp
 test('userscript installs from blog-bookmarks and parses', () => {
   assert.doesNotThrow(() => new Function(source));
   assert.match(source, /\/\/ @name\s+Blog Bookmarks\n/);
-  assert.match(source, /\/\/ @version\s+0\.5\.18\n/);
+  assert.match(source, /\/\/ @version\s+0\.5\.19\n/);
   assert.match(source, /raw\.githubusercontent\.com\/ChrisTorng\/blog-bookmarks\/main\/tampermonkey\/BlogBookmarks\.user\.js/);
   assert.match(source, /\/\/ @match\s+https:\/\/hackernews\.betacat\.io\/\*/);
   assert.doesNotMatch(source, /cloudmark-christorng|cloudmark\.site/);
@@ -50,7 +50,7 @@ test('bookmark star is CSS-fixed at screen-right center with absolute per-articl
   assert.match(source, /position: absolute !important/);
   assert.match(source, /positionControl\(control\)/);
   assert.match(source, /new ResizeObserver\(schedulePositions\)/);
-  assert.match(source, /background: var\(--tm-bookmarks-score-bg, rgba\(55,69,84,\.66\)\) !important/);
+  assert.match(source, /background: var\(--tm-bookmarks-score-bg, rgba\(63,63,48,\.82\)\) !important/);
   assert.match(source, /touch-action: manipulation !important/);
   assert.doesNotMatch(source, /tm-betacat-article-tools|oldCollapseButton/);
   assert.match(source, /GM_registerMenuCommand\('Blog Bookmarks 設定'/);
@@ -151,8 +151,11 @@ test('single vertical score and star share the same 38px translucent button', ()
   assert.match(source, /width: 38px !important; height: 52px !important/);
   assert.match(source, /button\.append\(scoreBadge, glyph\)/);
   assert.doesNotMatch(source, /right:calc\(100% \+ 1px\)/);
-  assert.match(source, /lightness = 20 \+ normalized \* 0\.55/);
-  assert.match(source, /hsla\(47, 95%/);
-  assert.match(source, /var\(--tm-bookmarks-score-bg/);
+  assert.match(source, /const red = Math\.round\(70 \+ 185 \* ratio\)/);
+  assert.match(source, /const green = Math\.round\(52 \+ 168 \* ratio\)/);
+  assert.match(source, /background: var\(--tm-bookmarks-score-bg/);
+  assert.match(source, /rgba\(20,166,79,\.84\)/);
+  assert.match(source, /\.tm-bookmarks-glyph \{[\s\S]*?rgba\(37,68,50,\.80\)/);
+  assert.match(source, /overflow: hidden !important/);
   assert.match(source, /translate', 'no'/);
 });
