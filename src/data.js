@@ -1,7 +1,7 @@
 import { preferredRedirect, primaryUrl } from './redirect.js';
 import { ensureSlug } from './slug.js';
 import { needsSummaryRepair } from './metadata.js';
-const fields = "b.id,b.slug,b.url,b.normalized_url,b.redirect_url,b.title,b.title_original,b.title_zh,b.summary,b.source,b.reference_links,CASE WHEN b.stage=1 AND b.deferred=1 THEN 5 ELSE b.stage END AS status,b.created_at,b.updated_at,b.read_at,b.published_at,b.starred_at, CASE WHEN b.stage=4 THEN COALESCE(b.starred_at,b.published_at,b.created_at) WHEN b.stage=3 THEN COALESCE(b.published_at,b.created_at) ELSE b.created_at END AS status_at,COALESCE((SELECT json_group_array(t.name) FROM bookmark_tags bt JOIN tags t ON t.id=bt.tag_id WHERE bt.bookmark_id=b.id),'[]') AS tags";
+const fields = "b.id,b.slug,b.url,b.normalized_url,b.redirect_url,b.title,b.title_original,b.title_zh,b.summary,b.image_url,b.source,b.reference_links,CASE WHEN b.stage=1 AND b.deferred=1 THEN 5 ELSE b.stage END AS status,b.created_at,b.updated_at,b.read_at,b.published_at,b.starred_at, CASE WHEN b.stage=4 THEN COALESCE(b.starred_at,b.published_at,b.created_at) WHEN b.stage=3 THEN COALESCE(b.published_at,b.created_at) ELSE b.created_at END AS status_at,COALESCE((SELECT json_group_array(t.name) FROM bookmark_tags bt JOIN tags t ON t.id=bt.tag_id WHERE bt.bookmark_id=b.id),'[]') AS tags";
 const decode = row => {
   if(!row)return row;
   const {reference_links,...rest}=row;
@@ -24,6 +24,15 @@ export function normalUrl(input) {
   if (!['https:', 'http:'].includes(u.protocol) || u.username || u.password) throw new Error('僅接受 HTTP(S) 網址');
   u.hash = '';
   return u.href;
+}
+// Keep only the remote image URL; no image bytes are stored in D1 or R2.
+export function normalizeImageUrl(input) {
+  if (input == null || String(input).trim() === '') return null;
+  const url = new URL(String(input).trim());
+  if (url.protocol !== 'https:' || url.username || url.password || url.href.length > 4096)
+    throw new Error('圖片網址必須是有效 HTTPS 網址且長度不超過 4096');
+  url.hash = '';
+  return url.href;
 }
 export function normalizeReferences(input) {
   if (!Array.isArray(input)) throw new Error('參考網址格式無效');
@@ -61,12 +70,13 @@ export function validate(raw) {
     throw new Error('重導向網址無效');
   if (title_original.length>500 || title_zh.length>500) throw new Error('標題過長');
   const summary=raw.summary == null ? null : String(raw.summary).trim();
+  const image_url=normalizeImageUrl(raw.image_url);
   if (title.length > 500 || (summary && summary.length > 5000)) throw new Error('標題或摘要過長');
   const tagNames=Array.isArray(raw.tags) ? raw.tags.map(x=>String(x).trim()).filter(Boolean) : [];
   const tagMap=new Map();for(const name of tagNames)if(!tagMap.has(name.toLowerCase()))tagMap.set(name.toLowerCase(),name);
   const tags=[...tagMap.values()];
   if(tags.length>30 || tags.some(x=>x.length>80)) throw new Error('標籤過多或過長');
-  return {url,normalized_url,redirect_url:normalizedRedirect,title,title_original:title_original||null,title_zh:title_zh||null,summary,tags,references:normalizeReferences(raw.references||[])};
+  return {url,normalized_url,redirect_url:normalizedRedirect,title,title_original:title_original||null,title_zh:title_zh||null,summary,image_url,tags,references:normalizeReferences(raw.references||[])};
 }
 export async function get(db,id,includePrivate=false) {
   const row=await db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.id=?${includePrivate?'':' AND b.stage>=3'}`).bind(id).first();
@@ -157,7 +167,7 @@ export async function create(db,raw) {
   if(exists) return {item:exists,alreadyExists:true};
   const now=new Date().toISOString(), id=crypto.randomUUID();
   const source=String(raw.source||'manual').slice(0,80);
-  await db.prepare('INSERT INTO bookmarks(id,url,normalized_url,redirect_url,title,title_original,title_zh,summary,source,reference_links,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,0,?,?)').bind(id,x.url,x.normalized_url,x.redirect_url,x.title,x.title_original,x.title_zh,x.summary,source,JSON.stringify(x.references),now,now).run();
+  await db.prepare('INSERT INTO bookmarks(id,url,normalized_url,redirect_url,title,title_original,title_zh,summary,image_url,source,reference_links,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,0,?,?)').bind(id,x.url,x.normalized_url,x.redirect_url,x.title,x.title_original,x.title_zh,x.summary,x.image_url,source,JSON.stringify(x.references),now,now).run();
   await replaceTags(db,id,x.tags);
   return {item:await get(db,id,true),alreadyExists:false};
 }
@@ -203,11 +213,11 @@ export async function patch(db,id,raw,hasNoteReference) {
       if(!updated.meta.changes)throw new Error('書籤狀態已變更，請重新載入');
     }
   }
-  if(['url','redirect_url','title','title_original','title_zh','summary','tags','references'].some(x=>x in raw)){
+  if(['url','redirect_url','title','title_original','title_zh','summary','image_url','tags','references'].some(x=>x in raw)){
     const x=validate({...current,...raw});
     const conflict=await db.prepare('SELECT id FROM bookmarks WHERE (normalized_url=? OR redirect_url=?) AND id<>? LIMIT 1').bind(x.normalized_url,x.normalized_url,id).first();
     if(conflict)throw new Error('網址已被其他書籤收藏');
-    await db.prepare('UPDATE bookmarks SET url=?,normalized_url=?,redirect_url=?,title=?,title_original=?,title_zh=?,summary=?,reference_links=?,updated_at=? WHERE id=?').bind(x.url,x.normalized_url,x.redirect_url,x.title,x.title_original,x.title_zh,x.summary,JSON.stringify(x.references),new Date().toISOString(),id).run();
+    await db.prepare('UPDATE bookmarks SET url=?,normalized_url=?,redirect_url=?,title=?,title_original=?,title_zh=?,summary=?,image_url=?,reference_links=?,updated_at=? WHERE id=?').bind(x.url,x.normalized_url,x.redirect_url,x.title,x.title_original,x.title_zh,x.summary,x.image_url,JSON.stringify(x.references),new Date().toISOString(),id).run();
     if('tags' in raw)await replaceTags(db,id,x.tags);
   }
   const result=await get(db,id,true);
