@@ -25779,7 +25779,9 @@ async function patch(db, id, raw, hasNoteReference) {
     const x = validate({ ...current2, ...raw });
     const conflict = await db.prepare("SELECT id FROM bookmarks WHERE (normalized_url=? OR redirect_url=?) AND id<>? LIMIT 1").bind(x.normalized_url, x.normalized_url, id).first();
     if (conflict) throw new Error("\u7DB2\u5740\u5DF2\u88AB\u5176\u4ED6\u66F8\u7C64\u6536\u85CF");
-    await db.prepare("UPDATE bookmarks SET url=?,normalized_url=?,redirect_url=?,title=?,title_original=?,title_zh=?,summary=?,image_url=?,reference_links=?,updated_at=? WHERE id=?").bind(x.url, x.normalized_url, x.redirect_url, x.title, x.title_original, x.title_zh, x.summary, x.image_url, JSON.stringify(x.references), (/* @__PURE__ */ new Date()).toISOString(), id).run();
+    const imageChanged = "image_url" in raw && (current2.image_url || null) !== (x.image_url || null);
+    const suppressImage = imageChanged && !x.image_url ? 1 : 0;
+    await db.prepare("UPDATE bookmarks SET url=?,normalized_url=?,redirect_url=?,title=?,title_original=?,title_zh=?,summary=?,image_url=?,reference_links=?,updated_at=?,image_suppressed=CASE WHEN ?=1 THEN ? ELSE image_suppressed END WHERE id=?").bind(x.url, x.normalized_url, x.redirect_url, x.title, x.title_original, x.title_zh, x.summary, x.image_url, JSON.stringify(x.references), (/* @__PURE__ */ new Date()).toISOString(), imageChanged ? 1 : 0, suppressImage, id).run();
     if ("tags" in raw) await replaceTags(db, id, x.tags);
   }
   const result = await get(db, id, true);
@@ -32400,6 +32402,148 @@ async function autoReviewNewSummary(env, created, fetcher = fetch) {
 }
 __name(autoReviewNewSummary, "autoReviewNewSummary");
 
+// src/auto-image.js
+var clean2 = /* @__PURE__ */ __name((value) => String(value || "").replace(/&amp;/gi, "&").replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n))).trim(), "clean");
+function readSocialImages(html, articleUrl) {
+  const metas = {};
+  for (const [tag] of String(html).matchAll(/<meta\b[^>]*>/gi)) {
+    const attrs = {};
+    for (const m of tag.matchAll(/([\w:-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/g))
+      attrs[m[1].toLowerCase()] = clean2(m[2] ?? m[3] ?? m[4]);
+    const name = (attrs.property || attrs.name || "").toLowerCase();
+    if (name && attrs.content && !(name in metas)) metas[name] = attrs.content;
+  }
+  const raw = metas["og:image:secure_url"] || metas["og:image"] || metas["twitter:image"] || "";
+  if (!raw) return null;
+  let image2;
+  try {
+    image2 = normalizeImageUrl(new URL(raw, articleUrl).href);
+  } catch {
+    return null;
+  }
+  if (!safeArticleUrl(image2) || /(?:favicon|logo|avatar|placeholder|spacer|pixel|transparent\.gif)/i.test(new URL(image2).pathname)) return null;
+  const width = Number(metas["og:image:width"] || 0), height = Number(metas["og:image:height"] || 0);
+  if (width && width < 260 || height && height < 125) return null;
+  const title = metas["og:title"] || "";
+  if (/^(?:just a moment|access denied|sign in|captcha|login|404|403)/i.test(title)) return null;
+  return { image_url: image2, source_title: title, width, height, canonical: metas["og:url"] || "" };
+}
+__name(readSocialImages, "readSocialImages");
+function samePath(a, b) {
+  try {
+    const x = new URL(a), y = new URL(b);
+    return x.hostname.replace(/^www\./, "") === y.hostname.replace(/^www\./, "") && x.pathname.replace(/\/+$/, "") === y.pathname.replace(/\/+$/, "");
+  } catch {
+    return false;
+  }
+}
+__name(samePath, "samePath");
+function similarTitle(a, b) {
+  const word = /* @__PURE__ */ __name((s) => new Set(String(s || "").toLowerCase().match(/[a-z0-9]{4,}/g) || []), "word");
+  const left = word(a), right = word(b);
+  if (left.size < 2 || right.size < 2) return false;
+  return [...left].filter((x) => right.has(x)).length >= Math.min(2, left.size);
+}
+__name(similarTitle, "similarTitle");
+async function pageSource(item, fetcher) {
+  for (const value of [...new Set([item.url, item.redirect_url].filter(Boolean))]) {
+    const url = safeArticleUrl(value);
+    if (!url) continue;
+    try {
+      const res = await fetcher(url, { redirect: "manual", headers: { Accept: "text/html" }, signal: AbortSignal.timeout(7e3) });
+      if (!res.ok || !/(?:text\/html|application\/xhtml\+xml)/i.test(res.headers.get("content-type") || "")) continue;
+      if (Number(res.headers.get("content-length") || 0) > 15e5) continue;
+      const reader = res.body?.getReader(), decoder = new TextDecoder();
+      let html = "", size2 = 0;
+      if (reader) {
+        try {
+          while (size2 < 35e4) {
+            const { done, value: value2 } = await reader.read();
+            if (done) break;
+            const chunk = value2.slice(0, 35e4 - size2);
+            size2 += chunk.byteLength;
+            html += decoder.decode(chunk, { stream: true });
+            if (chunk.length !== value2.length) break;
+          }
+        } finally {
+          await reader.cancel().catch(() => {
+          });
+        }
+      } else html = (await res.text()).slice(0, 35e4);
+      const candidate = readSocialImages(html, url);
+      if (!candidate) continue;
+      if (candidate.canonical && !samePath(url, new URL(candidate.canonical, url).href)) continue;
+      const expected = item.title_original || item.title || "";
+      if (candidate.source_title && /[a-z]{4,}/i.test(expected) && !similarTitle(candidate.source_title, expected) && candidate.width === 0 && candidate.height === 0) continue;
+      return candidate;
+    } catch (error2) {
+      console.warn("Bookmark image metadata unavailable", String(error2).slice(0, 200));
+    }
+  }
+  return null;
+}
+__name(pageSource, "pageSource");
+async function selectPublisherImage(env, item, fetcher = fetch) {
+  const candidate = await pageSource(item, fetcher);
+  if (!candidate) return null;
+  if (env.AI) {
+    try {
+      const prompt = "Article title: " + String(item.title_original || item.title || "").slice(0, 180) + ". Article summary: " + String(item.summary || "").slice(0, 400) + ". Does the supplied picture meaningfully illustrate this article (photo, chart, graphic or illustrative artwork), rather than a generic website logo, unrelated ad, avatar or placeholder? Answer YES or NO only.";
+      const result = await env.AI.run("@cf/moondream/moondream3.1-9B-A2B", {
+        task: "query",
+        image: candidate.image_url,
+        question: prompt,
+        reasoning: false,
+        max_tokens: 70
+      });
+      const verdict = String(result?.answer || "").trim().toUpperCase();
+      if (/^NO\b/.test(verdict)) return null;
+      if (/^YES\b/.test(verdict)) return candidate.image_url;
+    } catch (error2) {
+      console.warn("Bookmark image visual comparison unavailable", String(error2).slice(0, 200));
+    }
+  }
+  if (candidate.width >= 260 && candidate.height >= 125) return candidate.image_url;
+  if (candidate.source_title && similarTitle(candidate.source_title, item.title_original || item.title))
+    return candidate.image_url;
+  return null;
+}
+__name(selectPublisherImage, "selectPublisherImage");
+async function autoCompleteImage(env, item, fetcher = fetch) {
+  if (!item?.id || item.image_url) return { saved: false, reason: "already-has-image" };
+  const image2 = await selectPublisherImage(env, item, fetcher).catch((error2) => {
+    console.warn("Bookmark fallback image lookup failed", String(error2));
+    return null;
+  });
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const sql = image2 ? "UPDATE bookmarks SET image_url=?,image_checked_at=? WHERE id=? AND (image_url IS NULL OR image_url='') AND image_suppressed=0" : "UPDATE bookmarks SET image_checked_at=? WHERE id=? AND (image_url IS NULL OR image_url='') AND image_suppressed=0";
+  const result = image2 ? await env.DB.prepare(sql).bind(image2, now, item.id).run() : await env.DB.prepare(sql).bind(now, item.id).run();
+  return { saved: !!image2 && !!result.meta?.changes, image_url: result.meta?.changes ? image2 : null, reason: image2 ? "image-found" : "no-suitable-image" };
+}
+__name(autoCompleteImage, "autoCompleteImage");
+async function backfillMissingImages(env, limit = 8) {
+  const max = Math.max(1, Math.min(10, Number(limit) || 8));
+  const rows = (await env.DB.prepare(`SELECT id FROM bookmarks
+  WHERE (image_url IS NULL OR image_url='') AND image_suppressed=0
+  AND (image_checked_at IS NULL OR image_checked_at < strftime('%Y-%m-%dT%H:%M:%fZ','now','-30 days'))
+  ORDER BY image_checked_at IS NOT NULL,created_at ASC LIMIT ?`).bind(max).all()).results || [];
+  let saved = 0, checked = 0;
+  for (const row of rows) {
+    const item = await get(env.DB, row.id, true);
+    if (!item || item.image_url) continue;
+    try {
+      const result = await autoCompleteImage(env, item);
+      checked++;
+      if (result.saved) saved++;
+    } catch (error2) {
+      console.warn("Scheduled bookmark image enrichment failed", row.id, String(error2));
+    }
+  }
+  console.log("Bookmark image enrichment", JSON.stringify({ checked, saved }));
+  return { checked, saved };
+}
+__name(backfillMissingImages, "backfillMissingImages");
+
 // src/triage.js
 var TRIAGE_VERSION = "triage-2026-11-19-v2";
 var key = /* @__PURE__ */ __name((id) => TRIAGE_VERSION + ":" + id, "key");
@@ -32617,8 +32761,8 @@ var decodeHtml = /* @__PURE__ */ __name((s) => s.replace(/&(#x[0-9a-f]+|#\d+|amp
 function extractArticle(html) {
   const body = html.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1] || html.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i)?.[1] || html.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i)?.[1] || "";
   if (!body) return "";
-  const clean2 = body.replace(/<!--[\s\S]*?-->/g, " ").replace(/<(script|style|noscript|svg|nav|aside|header|footer|form)\b[^>]*>[\s\S]*?<\/\1>/gi, " ").replace(/<\/(?:p|div|li|h[1-6]|section|br|tr|blockquote)>/gi, "\n").replace(/<[^>]+>/g, " ");
-  return decodeHtml(clean2).replace(/[ \t]+/g, " ").replace(/\n(?:\s*\n)+/g, "\n").trim();
+  const clean3 = body.replace(/<!--[\s\S]*?-->/g, " ").replace(/<(script|style|noscript|svg|nav|aside|header|footer|form)\b[^>]*>[\s\S]*?<\/\1>/gi, " ").replace(/<\/(?:p|div|li|h[1-6]|section|br|tr|blockquote)>/gi, "\n").replace(/<[^>]+>/g, " ");
+  return decodeHtml(clean3).replace(/[ \t]+/g, " ").replace(/\n(?:\s*\n)+/g, "\n").trim();
 }
 __name(extractArticle, "extractArticle");
 function countText(text2) {
@@ -32869,6 +33013,9 @@ async function createCategorized(env, raw, ctx) {
   }
   const tags = mergeBookmarkTags(raw.tags, inferred);
   const saved = await create(env.DB, { ...raw, tags: tags.length ? tags : ["default"] });
+  if (!saved.alreadyExists && !saved.item.image_url && ctx?.waitUntil) {
+    ctx.waitUntil(autoCompleteImage(env, saved.item).catch((e) => console.warn("New bookmark image enrichment failed", String(e))));
+  }
   if (!saved.alreadyExists && ctx?.waitUntil && (env.AI || needsSummaryRepair(saved.item.summary))) {
     ctx.waitUntil(autoReviewNewSummary(env, saved.item).catch((e) => console.warn("New bookmark summary review failed", String(e))));
   }
@@ -32912,6 +33059,10 @@ async function api(req, env, url, ctx) {
       const scored = await scoreTriage(env, [body.id], { fullText: report });
       const { text: unused, ...metrics } = report;
       return json2({ available: true, ...metrics, analysis: scored.updated[0]?.analysis });
+    }
+    if (p === "/bookmarks/api/admin/image/backfill" && req.method === "POST") {
+      const body = await input(req);
+      return json2(await backfillMissingImages(env, Math.min(10, Math.max(1, Number(body.limit) || 5))));
     }
     if (p === "/bookmarks/api/admin/quick" && req.method === "GET")
       return json2(await reviewWindow(env.DB, url.searchParams.get("size")));
@@ -33093,6 +33244,9 @@ async function cachedXml(req, env, ctx, ttl, produce) {
 }
 __name(cachedXml, "cachedXml");
 var worker = {
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(backfillMissingImages(env, 6).catch((error2) => console.error("Bookmark scheduled image enrichment failed", String(error2))));
+  },
   async fetch(req, env, ctx) {
     if (req.method === "HEAD") {
       const response = await worker.fetch(new Request(req, { method: "GET" }), env, ctx);
