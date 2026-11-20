@@ -323,13 +323,28 @@ test('score brightness grows linearly with percentage; score and glyph stay one 
   row.control.glyph=glyph;
   row.control.scoreBadge=scoreBadge;
   const bg=value=>api.scoreAppearance(value).background;
-  const lightness=value=>Number(bg(value).match(/hsla\(47, 95%, ([0-9.]+)%/)[1]);
-  assert.equal(lightness(0),20);
-  assert.equal(lightness(50),47.5);
-  assert.equal(lightness(100),75);
-  assert.equal(lightness(50)-lightness(0),lightness(100)-lightness(50));
-  assert.match(bg(100),/0\.66\)/);
-  assert.match(bg(null),/rgba/);
+  const channels=value=>{
+    const match=bg(value).match(/^rgba\((\d+), (\d+), (\d+), 0\.82\)$/);
+    assert.ok(match,'opaque or invalid score color: '+bg(value));
+    return match.slice(1).map(Number);
+  };
+  assert.deepEqual(channels(0),[70,52,2]);
+  assert.deepEqual(channels(50),[163,136,4]);
+  assert.deepEqual(channels(100),[255,220,6]);
+  assert.match(bg(null),/rgba\(63, 63, 48, 0\.82\)/);
+  // The same score must be more vivid at every level, including on dark pages.
+  // Composite the semitransparent color against both black and white backgrounds.
+  const brightness=(value,underlay)=>{
+    const rgb=channels(value).map(v=>v*.82+underlay*.18);
+    return rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722;
+  };
+  for(const underlay of [0,255]){
+    assert.ok(brightness(0,underlay)<brightness(50,underlay));
+    assert.ok(brightness(50,underlay)<brightness(80,underlay));
+    assert.ok(brightness(80,underlay)<brightness(100,underlay));
+  }
+  assert.equal(api.scoreAppearance(0).foreground,'#ffffff');
+  assert.equal(api.scoreAppearance(80).foreground,'#15190e');
   for(const value of [0,9,50,99,100]){
     const key=row.link.href;
     api.previewScores.set(key,{publish:value,recommend:95,interest:100});
@@ -343,4 +358,32 @@ test('score brightness grows linearly with percentage; score and glyph stay one 
   // A recommendation score must not add a second star beside the number.
   assert.equal(scoreBadge.textContent,'100');
   assert.equal(glyph.textContent,'☆');
+});
+
+
+test('saved and unsaved stars differ while score tint remains independent',()=>{
+  const {api,document,addArticle}=harness();
+  const row=addArticle('https://example.org/saved-color');
+  const badge=document.createElement('span'),glyph=document.createElement('span');
+  badge.textContent='…';glyph.textContent='☆';
+  row.button.append(badge,glyph);
+  row.control.scoreBadge=badge;
+  row.control.glyph=glyph;
+  api.previewScores.set(row.link.href,{publish:80,recommend:15,interest:90});
+  api.render();
+  const color=row.button.styles['--tm-bookmarks-score-bg'];
+  assert.equal(row.button.attrs['aria-pressed'],'false');
+  assert.equal(glyph.textContent,'☆');
+  api.saved.set(row.link.href,{id:'saved',status:0});
+  api.render();
+  assert.equal(row.button.attrs['aria-pressed'],'true');
+  assert.equal(glyph.textContent,'★');
+  assert.equal(row.button.styles['--tm-bookmarks-score-bg'],color,
+    'Saved state must not alter the yellow score or its brightness');
+  api.saved.delete(row.link.href);
+  api.render();
+  assert.equal(row.button.attrs['aria-pressed'],'false');
+  assert.equal(glyph.textContent,'☆');
+  assert.equal(row.button.children.length,2,
+    'Translation and rerenders must not create extra glyphs');
 });
