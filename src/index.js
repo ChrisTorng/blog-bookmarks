@@ -3,6 +3,7 @@ import { publicBookmarkPage } from './public-page.js';
 import { api, opts } from './api.js';
 import { rss } from './feeds.js';
 import { relatedNoteHtml } from './note-references.js';
+import { backfillMissingImages } from './auto-image.js';
 
 // The HTML, JS and CSS live exclusively on GitHub Pages.
 // This Worker serves the API and the dynamic RSS feed only.
@@ -37,6 +38,9 @@ async function cachedXml(req, env, ctx, ttl, produce) {
 }
 
 const worker = {
+ async scheduled(event,env,ctx){
+  ctx.waitUntil(backfillMissingImages(env,6).catch(error=>console.error('Bookmark scheduled image enrichment failed',String(error))));
+ },
  async fetch(req, env, ctx) {
   if (req.method === 'HEAD') {
    const response = await worker.fetch(new Request(req,{method:'GET'}),env,ctx);

@@ -217,7 +217,9 @@ export async function patch(db,id,raw,hasNoteReference) {
     const x=validate({...current,...raw});
     const conflict=await db.prepare('SELECT id FROM bookmarks WHERE (normalized_url=? OR redirect_url=?) AND id<>? LIMIT 1').bind(x.normalized_url,x.normalized_url,id).first();
     if(conflict)throw new Error('網址已被其他書籤收藏');
-    await db.prepare('UPDATE bookmarks SET url=?,normalized_url=?,redirect_url=?,title=?,title_original=?,title_zh=?,summary=?,image_url=?,reference_links=?,updated_at=? WHERE id=?').bind(x.url,x.normalized_url,x.redirect_url,x.title,x.title_original,x.title_zh,x.summary,x.image_url,JSON.stringify(x.references),new Date().toISOString(),id).run();
+    const imageChanged='image_url' in raw && (current.image_url||null)!==(x.image_url||null);
+    const suppressImage=imageChanged&&!x.image_url?1:0;
+    await db.prepare('UPDATE bookmarks SET url=?,normalized_url=?,redirect_url=?,title=?,title_original=?,title_zh=?,summary=?,image_url=?,reference_links=?,updated_at=?,image_suppressed=CASE WHEN ?=1 THEN ? ELSE image_suppressed END WHERE id=?').bind(x.url,x.normalized_url,x.redirect_url,x.title,x.title_original,x.title_zh,x.summary,x.image_url,JSON.stringify(x.references),new Date().toISOString(),imageChanged?1:0,suppressImage,id).run();
     if('tags' in raw)await replaceTags(db,id,x.tags);
   }
   const result=await get(db,id,true);

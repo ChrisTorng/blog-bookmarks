@@ -5,6 +5,7 @@ import {review,invalidSummary} from './metadata.js';
 import {lookupReference} from './references.js';
 import {needsSummaryRepair,repairCandidates,readSubmittedContent,commitArticleSummary,summarizeSubmittedArticle} from './summary-repair.js';
 import {autoReviewNewSummary} from './auto-summary.js';
+import {autoCompleteImage,backfillMissingImages} from './auto-image.js';
 import {triageList,scoreTriage,inspectTriage,countText} from './triage.js';
 import {previewInsights} from './preview.js';
 import {validIngestToken,rotateIngestToken} from './token.js';
@@ -36,6 +37,9 @@ async function createCategorized(env,raw,ctx) {
   // Preserve manual tags. The placeholder allows the user to revisit AI failures.
   const tags=mergeBookmarkTags(raw.tags,inferred);
   const saved=await create(env.DB,{...raw,tags:tags.length?tags:['default']});
+  if(!saved.alreadyExists&&!saved.item.image_url&&ctx?.waitUntil){
+    ctx.waitUntil(autoCompleteImage(env,saved.item).catch(e=>console.warn('New bookmark image enrichment failed',String(e))));
+  }
   if(!saved.alreadyExists&&ctx?.waitUntil&&(env.AI||needsSummaryRepair(saved.item.summary))){
     ctx.waitUntil(autoReviewNewSummary(env,saved.item).catch(e=>console.warn('New bookmark summary review failed',String(e))));
   }
@@ -78,6 +82,10 @@ export async function api(req,env,url,ctx){
     const scored=await scoreTriage(env,[body.id],{fullText:report});
     const {text:unused,...metrics}=report;
     return json({available:true,...metrics,analysis:scored.updated[0]?.analysis});
+  }
+  if(p==='/bookmarks/api/admin/image/backfill'&&req.method==='POST'){
+    const body=await input(req);
+    return json(await backfillMissingImages(env,Math.min(10,Math.max(1,Number(body.limit)||5))));
   }
   if(p==='/bookmarks/api/admin/quick'&&req.method==='GET')
     return json(await reviewWindow(env.DB,url.searchParams.get('size')));
