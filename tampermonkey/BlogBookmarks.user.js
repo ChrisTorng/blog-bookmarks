@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.19
+// @version      0.5.20
 // @description  Show saturated yellow score above a distinct green saved star, with dark-mode-safe translucent backgrounds
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -235,6 +235,17 @@
     }
 
 
+    function imageUrlForArticle(article) {
+        const image = article?.querySelector('.post-summary .feature-image img');
+        const source = image?.getAttribute('src');
+        if (!source) return null;
+        try {
+            const url = new URL(source, location.href);
+            return url.protocol === 'https:' && url.hostname === 'hackernews.betacat.io'
+                && url.pathname.startsWith('/image/') ? url.href : null;
+        } catch { return null; }
+    }
+
     function articleData(link) {
         const article = link.closest('article.post-item');
         if (!article) throw new Error('找不到文章');
@@ -251,6 +262,7 @@
             title_zh: /[\u3400-\u9fff]/.test(visibleTitle) ? visibleTitle : null,
             title_original: sourceTitle || null,
             summary: text(article.querySelector('.summary-text')?.textContent).slice(0, 5000),
+            image_url: imageUrlForArticle(article),
             tags: []
         };
     }
@@ -633,7 +645,13 @@
             for (let i = 0; i < urls.length; i += 75) {
                 const batch = urls.slice(i, i + 75);
                 const versions = new Map(batch.map(url => [url, revisions.get(url) || 0]));
-                const found = await request('/status', 'POST', { urls: batch }, currentToken);
+                const images = [...controls.values()]
+                    .filter(control => batch.includes(control.url))
+                    .map(control => ({
+                        url: control.url,
+                        image_url: imageUrlForArticle(control.link.closest('article.post-item'))
+                    })).filter(item => item.image_url);
+                const found = await request('/status', 'POST', { urls: batch, images }, currentToken);
                 if (token !== currentToken) return;
                 for (const url of batch)
                     if ((revisions.get(url) || 0) === versions.get(url)) checked.add(url);
