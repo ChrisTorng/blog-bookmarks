@@ -37,13 +37,17 @@ async function getPage(day) {
   const url='https://hackernews.betacat.io/daily/'+day+'/';
   for(let attempt=1;attempt<=4;attempt++){
     try {
-      const response=await fetch(url,{
+      const options={
         headers: {
           'User-Agent':'Mozilla/5.0 (compatible; ChrisTorng-personal-bookmark-backfill/1.0)',
           'Accept':'text/html,application/xhtml+xml'
         },
         signal:AbortSignal.timeout(25000),
-      });
+      };
+      let response=await fetch(url,options);
+      // Today's daily archive may not yet exist. BetaCat's homepage contains its current feed.
+      if(response.status===404 && day===days.at(-1))
+        response=await fetch('https://hackernews.betacat.io/',options);
       if (!response.ok) throw Error('HTTP '+response.status);
       const html=await response.text();
       if (!html.includes('class="post-item"'))
