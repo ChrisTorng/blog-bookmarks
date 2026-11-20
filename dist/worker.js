@@ -25551,7 +25551,7 @@ function needsSummaryRepair(summary) {
 __name(needsSummaryRepair, "needsSummaryRepair");
 
 // src/data.js
-var fields = "b.id,b.slug,b.url,b.normalized_url,b.redirect_url,b.title,b.title_original,b.title_zh,b.summary,b.source,b.reference_links,CASE WHEN b.stage=1 AND b.deferred=1 THEN 5 ELSE b.stage END AS status,b.created_at,b.updated_at,b.read_at,b.published_at,b.starred_at, CASE WHEN b.stage=4 THEN COALESCE(b.starred_at,b.published_at,b.created_at) WHEN b.stage=3 THEN COALESCE(b.published_at,b.created_at) ELSE b.created_at END AS status_at,COALESCE((SELECT json_group_array(t.name) FROM bookmark_tags bt JOIN tags t ON t.id=bt.tag_id WHERE bt.bookmark_id=b.id),'[]') AS tags";
+var fields = "b.id,b.slug,b.url,b.normalized_url,b.redirect_url,b.title,b.title_original,b.title_zh,b.summary,b.image_url,b.source,b.reference_links,CASE WHEN b.stage=1 AND b.deferred=1 THEN 5 ELSE b.stage END AS status,b.created_at,b.updated_at,b.read_at,b.published_at,b.starred_at, CASE WHEN b.stage=4 THEN COALESCE(b.starred_at,b.published_at,b.created_at) WHEN b.stage=3 THEN COALESCE(b.published_at,b.created_at) ELSE b.created_at END AS status_at,COALESCE((SELECT json_group_array(t.name) FROM bookmark_tags bt JOIN tags t ON t.id=bt.tag_id WHERE bt.bookmark_id=b.id),'[]') AS tags";
 var decode = /* @__PURE__ */ __name((row) => {
   if (!row) return row;
   const { reference_links, ...rest } = row;
@@ -25581,6 +25581,15 @@ function normalUrl(input2) {
   return u.href;
 }
 __name(normalUrl, "normalUrl");
+function normalizeImageUrl(input2) {
+  if (input2 == null || String(input2).trim() === "") return null;
+  const url = new URL(String(input2).trim());
+  if (url.protocol !== "https:" || url.username || url.password || url.href.length > 4096)
+    throw new Error("\u5716\u7247\u7DB2\u5740\u5FC5\u9808\u662F\u6709\u6548 HTTPS \u7DB2\u5740\u4E14\u9577\u5EA6\u4E0D\u8D85\u904E 4096");
+  url.hash = "";
+  return url.href;
+}
+__name(normalizeImageUrl, "normalizeImageUrl");
 function normalizeReferences(input2) {
   if (!Array.isArray(input2)) throw new Error("\u53C3\u8003\u7DB2\u5740\u683C\u5F0F\u7121\u6548");
   if (input2.length > 12) throw new Error("\u53C3\u8003\u7DB2\u5740\u6700\u591A 12 \u7B46");
@@ -25615,13 +25624,14 @@ function validate(raw) {
     throw new Error("\u91CD\u5C0E\u5411\u7DB2\u5740\u7121\u6548");
   if (title_original.length > 500 || title_zh.length > 500) throw new Error("\u6A19\u984C\u904E\u9577");
   const summary = raw.summary == null ? null : String(raw.summary).trim();
+  const image_url = normalizeImageUrl(raw.image_url);
   if (title.length > 500 || summary && summary.length > 5e3) throw new Error("\u6A19\u984C\u6216\u6458\u8981\u904E\u9577");
   const tagNames = Array.isArray(raw.tags) ? raw.tags.map((x) => String(x).trim()).filter(Boolean) : [];
   const tagMap = /* @__PURE__ */ new Map();
   for (const name of tagNames) if (!tagMap.has(name.toLowerCase())) tagMap.set(name.toLowerCase(), name);
   const tags = [...tagMap.values()];
   if (tags.length > 30 || tags.some((x) => x.length > 80)) throw new Error("\u6A19\u7C64\u904E\u591A\u6216\u904E\u9577");
-  return { url, normalized_url, redirect_url: normalizedRedirect, title, title_original: title_original || null, title_zh: title_zh || null, summary, tags, references: normalizeReferences(raw.references || []) };
+  return { url, normalized_url, redirect_url: normalizedRedirect, title, title_original: title_original || null, title_zh: title_zh || null, summary, image_url, tags, references: normalizeReferences(raw.references || []) };
 }
 __name(validate, "validate");
 async function get(db, id, includePrivate = false) {
@@ -25722,7 +25732,7 @@ async function create(db, raw) {
   if (exists) return { item: exists, alreadyExists: true };
   const now = (/* @__PURE__ */ new Date()).toISOString(), id = crypto.randomUUID();
   const source = String(raw.source || "manual").slice(0, 80);
-  await db.prepare("INSERT INTO bookmarks(id,url,normalized_url,redirect_url,title,title_original,title_zh,summary,source,reference_links,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,0,?,?)").bind(id, x.url, x.normalized_url, x.redirect_url, x.title, x.title_original, x.title_zh, x.summary, source, JSON.stringify(x.references), now, now).run();
+  await db.prepare("INSERT INTO bookmarks(id,url,normalized_url,redirect_url,title,title_original,title_zh,summary,image_url,source,reference_links,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,0,?,?)").bind(id, x.url, x.normalized_url, x.redirect_url, x.title, x.title_original, x.title_zh, x.summary, x.image_url, source, JSON.stringify(x.references), now, now).run();
   await replaceTags(db, id, x.tags);
   return { item: await get(db, id, true), alreadyExists: false };
 }
@@ -25765,11 +25775,11 @@ async function patch(db, id, raw, hasNoteReference) {
       if (!updated.meta.changes) throw new Error("\u66F8\u7C64\u72C0\u614B\u5DF2\u8B8A\u66F4\uFF0C\u8ACB\u91CD\u65B0\u8F09\u5165");
     }
   }
-  if (["url", "redirect_url", "title", "title_original", "title_zh", "summary", "tags", "references"].some((x) => x in raw)) {
+  if (["url", "redirect_url", "title", "title_original", "title_zh", "summary", "image_url", "tags", "references"].some((x) => x in raw)) {
     const x = validate({ ...current2, ...raw });
     const conflict = await db.prepare("SELECT id FROM bookmarks WHERE (normalized_url=? OR redirect_url=?) AND id<>? LIMIT 1").bind(x.normalized_url, x.normalized_url, id).first();
     if (conflict) throw new Error("\u7DB2\u5740\u5DF2\u88AB\u5176\u4ED6\u66F8\u7C64\u6536\u85CF");
-    await db.prepare("UPDATE bookmarks SET url=?,normalized_url=?,redirect_url=?,title=?,title_original=?,title_zh=?,summary=?,reference_links=?,updated_at=? WHERE id=?").bind(x.url, x.normalized_url, x.redirect_url, x.title, x.title_original, x.title_zh, x.summary, JSON.stringify(x.references), (/* @__PURE__ */ new Date()).toISOString(), id).run();
+    await db.prepare("UPDATE bookmarks SET url=?,normalized_url=?,redirect_url=?,title=?,title_original=?,title_zh=?,summary=?,image_url=?,reference_links=?,updated_at=? WHERE id=?").bind(x.url, x.normalized_url, x.redirect_url, x.title, x.title_original, x.title_zh, x.summary, x.image_url, JSON.stringify(x.references), (/* @__PURE__ */ new Date()).toISOString(), id).run();
     if ("tags" in raw) await replaceTags(db, id, x.tags);
   }
   const result = await get(db, id, true);
@@ -31767,13 +31777,20 @@ __name(renderSummary, "renderSummary");
 function bookmarkArticleHtml(item, categories = [], relatedNotesHtml = "", permalink = "") {
   const target = bookmarkTarget(item), date = bookmarkDate(item);
   const english = item.title_original && item.title_original !== item.title ? '<p lang="en" class="mt-1 text-sm leading-snug text-gray-600 dark:text-gray-300">' + esc(item.title_original) + "</p>" : "";
+  let image2 = null;
+  try {
+    const uri = new URL(item.image_url || "");
+    if (uri.protocol === "https:" && !uri.username && !uri.password) image2 = uri.href;
+  } catch {
+  }
+  const thumbnail = image2 ? '<a href="' + esc(target) + '" target="_blank" rel="noopener noreferrer" class="mt-2 block w-full max-w-56 md:col-start-2 md:row-span-2 md:mt-0 md:max-w-none" aria-label="\u958B\u555F\u539F\u59CB\u6587\u7AE0"><img src="' + esc(image2) + '" alt="" width="176" loading="lazy" decoding="async" referrerpolicy="no-referrer" class="max-h-40 w-full rounded-md object-contain" style="max-width:100%;height:auto;max-height:160px;object-fit:contain"></a>' : "";
   const summary = item.summary ? '<div class="my-2 text-gray-700 dark:text-gray-200"><div class="prose max-w-none text-sm dark:prose-invert">' + renderSummary(item.summary, item.url) + "</div></div>" : "";
   const original = target !== item.url ? '<a href="' + esc(item.url) + '" target="_blank" rel="noopener noreferrer" class="hidden max-w-full truncate underline md:inline">\u539F\u59CB\u7DB2\u5740\uFF1A' + esc(item.url) + "</a>" : "";
   const tags = bookmarkTags(item, categories).map((t) => '<a class="text-primary-500" href="/bookmarks/?tag=' + encodeURIComponent(t.id) + '">#' + esc(t.name) + "</a>").join(" ");
   const status = item.status === 4 ? '<span class="text-primary-500">\u2606 \u63A8\u85A6</span>' : item.status !== 3 ? '<span class="text-gray-500">\u672A\u516C\u958B</span>' : "";
   const referenceLink = permalink ? '<a class="text-primary-500" href="' + esc(permalink) + '">\u66F8\u7C64\u6C38\u4E45\u9023\u7D50</a>' : "";
   const relatedNotes = relatedNotesHtml ? '<aside aria-label="\u5F15\u7528\u96A8\u7B46" class="mt-3 min-w-0 rounded-r-lg border-l-4 border-primary-500 bg-gray-50/60 px-3 py-2 dark:bg-gray-800/40"><hr><p><strong>\u5F15\u7528\u96A8\u7B46</strong></p>' + relatedNotesHtml + "</aside>" : "";
-  return '<article class="border-b border-gray-300/40 py-4 dark:border-gray-700"><div class="mb-2 flex items-center justify-between gap-3 text-xs"><time class="text-gray-500" datetime="' + esc(date) + '">' + esc(date) + "</time>" + status + '</div><h1 class="text-xl leading-snug font-bold"><a class="text-primary-500 hover:text-primary-600 dark:hover:text-primary-400" href="' + esc(target) + '" target="_blank" rel="noopener noreferrer">' + esc(item.title) + "</a></h1>" + english + summary + '<div class="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600 dark:text-gray-300">' + bookmarkSource(item.url) + original + "</div>" + (referenceLink ? '<p class="mt-2 text-xs">' + referenceLink + "</p>" : "") + bookmarkReferences(item) + '<div class="mt-2 flex flex-wrap items-center gap-3 text-sm">' + tags + "</div>" + relatedNotes + "</article>";
+  return '<article class="border-b border-gray-300/40 py-4 dark:border-gray-700"><div class="mb-2 flex items-center justify-between gap-3 text-xs"><time class="text-gray-500" datetime="' + esc(date) + '">' + esc(date) + "</time>" + status + '</div><div class="' + (image2 ? "grid grid-cols-1 gap-x-4 md:grid-cols-[minmax(0,1fr)_11rem]" : "block") + '"><div class="min-w-0"><h1 class="text-xl leading-snug font-bold"><a class="text-primary-500 hover:text-primary-600 dark:hover:text-primary-400" href="' + esc(target) + '" target="_blank" rel="noopener noreferrer">' + esc(item.title) + "</a></h1>" + english + "</div>" + thumbnail + (summary ? '<div class="min-w-0">' + summary + "</div>" : "") + '</div><div class="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600 dark:text-gray-300">' + bookmarkSource(item.url) + original + "</div>" + (referenceLink ? '<p class="mt-2 text-xs">' + referenceLink + "</p>" : "") + bookmarkReferences(item) + '<div class="mt-2 flex flex-wrap items-center gap-3 text-sm">' + tags + "</div>" + relatedNotes + "</article>";
 }
 __name(bookmarkArticleHtml, "bookmarkArticleHtml");
 
@@ -31786,7 +31803,7 @@ async function publicBookmarkPage(request, item, categories = [], relatedNotesHt
   const title = item.title + " | " + siteTitle;
   const description = String(item.summary || item.title).replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/[*_~#]/g, "").slice(0, 180);
   const body = '<section class="w-full py-5 pb-12"><a class="text-primary-500 text-sm" href="/bookmarks/">\u2190 \u66F8\u7C64\u5217\u8868</a><div class="mt-4">' + bookmarkArticleHtml(item, categories, relatedNotesHtml) + "</div></section>";
-  const meta = '<meta name="description" content="' + esc(description) + '"><meta name="robots" content="index,follow"><link rel="canonical" href="' + esc(canonical) + '"><meta property="og:type" content="article"><meta property="og:title" content="' + esc(item.title) + '"><meta property="og:url" content="' + esc(canonical) + '"><meta property="og:description" content="' + esc(description) + '"><link rel="alternate" type="application/rss+xml" title="\u6240\u6709\u66F8\u7C64 RSS | ' + siteTitle + '" href="/bookmarks/feed.xml">';
+  const meta = '<meta name="description" content="' + esc(description) + '"><meta name="robots" content="index,follow"><link rel="canonical" href="' + esc(canonical) + '"><meta property="og:type" content="article"><meta property="og:title" content="' + esc(item.title) + '"><meta property="og:url" content="' + esc(canonical) + '"><meta property="og:description" content="' + esc(description) + '">' + (item.image_url && /^https:\/\/[^/]+/i.test(item.image_url) ? '<meta property="og:image" content="' + esc(item.image_url) + '">' : "") + '<link rel="alternate" type="application/rss+xml" title="\u6240\u6709\u66F8\u7C64 RSS | ' + siteTitle + '" href="/bookmarks/feed.xml">';
   const response = await fetch(siteUrl + "/notes-shell/", { headers: { Accept: "text/html" } });
   if (!response.ok) return new Response("\u7DB2\u7AD9\u7248\u578B\u66AB\u6642\u7121\u6CD5\u53D6\u5F97", { status: 503 });
   let rewrite = new HTMLRewriter().on("#notes-content", { element(el) {
@@ -31928,9 +31945,19 @@ async function bulkStatus(req, env) {
   const body = await req.json(), urls = Array.isArray(body.urls) ? body.urls : [];
   if (urls.length > 100) return json({ error: "\u7DB2\u5740\u6578\u91CF\u904E\u591A" }, 400);
   const normalized = [...new Set(urls.map(normalUrl))];
+  const images = /* @__PURE__ */ new Map();
+  if (Array.isArray(body.images)) for (const entry of body.images.slice(0, 100)) {
+    try {
+      const url = normalUrl(entry.url), image2 = normalizeImageUrl(entry.image_url);
+      if (image2) images.set(url, image2);
+    } catch {
+    }
+  }
   if (!normalized.length) return json([]);
   const marks = normalized.map(() => "?").join(",");
-  const rows = await env.DB.prepare("SELECT id,normalized_url,CASE WHEN stage=1 AND deferred=1 THEN 5 ELSE stage END AS status FROM bookmarks WHERE normalized_url IN (" + marks + ")").bind(...normalized).all();
+  const rows = await env.DB.prepare("SELECT id,normalized_url,image_url,CASE WHEN stage=1 AND deferred=1 THEN 5 ELSE stage END AS status FROM bookmarks WHERE normalized_url IN (" + marks + ")").bind(...normalized).all();
+  const updates = rows.results.filter((item) => !item.image_url && images.has(item.normalized_url)).map((item) => env.DB.prepare("UPDATE bookmarks SET image_url=? WHERE id=? AND (image_url IS NULL OR image_url='')").bind(images.get(item.normalized_url), item.id));
+  if (updates.length) await env.DB.batch(updates);
   const result = [];
   for (const item of rows.results) {
     const complete = await get(env.DB, item.id, true);
