@@ -19,6 +19,8 @@ export async function publicBookmarkPage(request,item,categories=[],relatedNotes
     '<meta property="og:type" content="article"><meta property="og:title" content="'+esc(item.title)+'">'+
     '<meta property="og:url" content="'+esc(canonical)+'">'+
     '<meta property="og:description" content="'+esc(description)+'">'+
+    (item.image_url && /^https:\/\/[^/]+/i.test(item.image_url)
+      ? '<meta property="og:image" content="'+esc(item.image_url)+'">' : '')+
     '<link rel="alternate" type="application/rss+xml" title="所有書籤 RSS | '+siteTitle+'" href="/bookmarks/feed.xml">';
   // A static GitHub Pages shell provides the same navigation, typography, color
   // scheme and responsive layout used by the bookmark list.
