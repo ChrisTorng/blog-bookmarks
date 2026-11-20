@@ -1,4 +1,4 @@
-import { list, tagsList, get, getBySlug, esc } from './data.js';
+import { list, tagsList, get, getBySlug, esc, publicFeedItems, publicSitemapEntries } from './data.js';
 import { publicBookmarkPage } from './public-page.js';
 import { api, opts } from './api.js';
 import { rss } from './feeds.js';
@@ -13,6 +13,29 @@ const reply = (body, type='text/plain; charset=utf-8', status=200) =>
     'Cache-Control':'no-store'
   }});
 
+// Cache only public, anonymous XML. Keep the browser side revalidating while
+// allowing the edge to reuse expensive generated XML for a bounded period.
+// Cache API is per-POP: publication may take up to the TTL to reach every POP.
+async function cachedXml(req, env, ctx, ttl, produce) {
+  const cache = env.AUTH_MODE !== 'local' && typeof caches !== 'undefined' ? caches.default : null;
+  const url = new URL(req.url);
+  const keyUrl = url.origin + url.pathname + (url.searchParams.has('tag')
+    ? '?tag=' + encodeURIComponent(url.searchParams.get('tag') || '') : '');
+  const key = cache ? new Request(keyUrl) : null;
+  if (cache) {
+    try { const hit = await cache.match(key); if (hit) return hit; }
+    catch (error) { console.warn('Public XML cache read failed', String(error)); }
+  }
+  const generated = await produce();
+  if (!cache || !generated.ok || !ctx?.waitUntil) return generated;
+  const headers = new Headers(generated.headers);
+  headers.set('Cache-Control', `public, max-age=0, s-maxage=${ttl}`);
+  const response = new Response(generated.body, {status:generated.status,headers});
+  ctx.waitUntil(cache.put(key, response.clone()).catch(error =>
+    console.warn('Public XML cache write failed', String(error))));
+  return response;
+}
+
 const worker = {
  async fetch(req, env, ctx) {
   if (req.method === 'HEAD') {
@@ -22,34 +45,30 @@ const worker = {
   const url=new URL(req.url), path=url.pathname;
   if (path==='/bookmarks/api' || path==='/bookmarks/api/' || path.startsWith('/bookmarks/api/')) return api(req,env,url,ctx);
   if (path==='/bookmarks/feed.xml' && req.method==='GET') {
-   try {
-    const tag=url.searchParams.get('tag')||'';
-    const [first,tags]=await Promise.all([
-     list(env.DB,{tag,filter:'published'}),tagsList(env.DB)
-    ]);
-    const selected=tags.find(t=>t.id===tag);
-    const tagLabel=selected?.name_zh||selected?.name||tag;
-    const items=[...first.items];
-    for(let n=2;n<=Math.min(first.pages,5);n++){
-     const page=await list(env.DB,{tag,filter:'published',page:n});
-     items.push(...page.items);
-    }
-    const notes=await relatedNoteHtml(env,items);
-    return reply(rss(items,env.SITE_URL||'https://christorng.idv.tw',tag,tagLabel,tags,notes),'application/rss+xml; charset=utf-8');
-   }catch{return reply('RSS 暫時無法取得','text/plain; charset=utf-8',500);}
+    return cachedXml(req,env,ctx,60,async () => {
+      try {
+        const tag=url.searchParams.get('tag')||'';
+        const [items,tags]=await Promise.all([publicFeedItems(env.DB,tag),tagsList(env.DB)]);
+        const selected=tags.find(t=>t.id===tag);
+        const tagLabel=selected?.name_zh||selected?.name||tag;
+        const notes=await relatedNoteHtml(env,items);
+        return reply(rss(items,env.SITE_URL||'https://christorng.idv.tw',tag,tagLabel,tags,notes),'application/rss+xml; charset=utf-8');
+      }catch(error){
+        console.error('Bookmark RSS failed',String(error));
+        return reply('RSS 暫時無法取得','text/plain; charset=utf-8',500);
+      }
+    });
   }
   if (path === '/bookmarks/sitemap.xml' && req.method === 'GET') {
-    const first = await list(env.DB, {filter:'published'});
-    const pages = [first];
-    for(let n=2;n<=first.pages;n++) pages.push(await list(env.DB,{filter:'published',page:n}));
-    const base = (env.SITE_URL || 'https://christorng.idv.tw').replace(/\/$/,'');
-    const records = pages.flatMap(p=>p.items).filter(b=>b.slug);
-    const xml = '<?xml version="1.0" encoding="UTF-8"?>' +
-      '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' +
-      records.map(b=>'<url><loc>'+esc(base+'/bookmarks/'+encodeURIComponent(b.slug)+'/')+
-        '</loc><lastmod>'+esc((b.status_at||b.published_at||b.created_at).slice(0,10))+
-        '</lastmod></url>').join('') + '</urlset>';
-    return reply(xml,'application/xml; charset=utf-8');
+    return cachedXml(req,env,ctx,300,async () => {
+      const records = await publicSitemapEntries(env.DB);
+      const base = (env.SITE_URL || 'https://christorng.idv.tw').replace(/\/$/,'');
+      const xml = '<?xml version="1.0" encoding="UTF-8"?>' +
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' +
+        records.map(b=>'<url><loc>'+esc(base+'/bookmarks/'+encodeURIComponent(b.slug)+'/')+
+          '</loc><lastmod>'+esc(b.status_at)+'</lastmod></url>').join('') + '</urlset>';
+      return reply(xml,'application/xml; charset=utf-8');
+    });
   }
   // The catch-all Worker route forwards existing static GitHub Pages content
   // to the origin. Only single-segment public slugs are handled dynamically.
