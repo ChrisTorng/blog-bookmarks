@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.18
-// @description  Show a translucent linear-brightness score above the star in one fixed-width button
+// @version      0.5.19
+// @description  Show saturated yellow score above a distinct green saved star, with dark-mode-safe translucent backgrounds
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
 // @downloadURL  https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -319,17 +319,22 @@
             mode:'viewed',snapshot_id:snapshotId,items:[{url:control.url}]
         })).catch(error=>console.warn('BetaCats viewed summary:',error.message));
     }
-    // One continuous 0–100 brightness scale, not buckets or logarithms.
-    // Keep the backdrop translucent so article text remains visible underneath.
+    // 0–100 maps linearly from dark ochre to saturated bright yellow.
+    // Increasing HSL lightness toward white washed out high scores in dark
+    // mode. RGB components rise linearly without losing yellow saturation.
+    // Alpha belongs to each background, not the whole button, preserving text
+    // contrast and the distinct saved-state star on dark or light pages.
     function scoreAppearance(value) {
         const score = Number(value);
-        if (!Number.isFinite(score) || value == null)
-            return { background: 'rgba(55, 69, 84, 0.66)', foreground: '#f5f7fa' };
-        const normalized = Math.max(0, Math.min(100, score));
-        const lightness = 20 + normalized * 0.55;
+        if (value == null || !Number.isFinite(score))
+            return { background: 'rgba(63, 63, 48, 0.82)', foreground: '#ffffff' };
+        const ratio = Math.max(0, Math.min(100, score)) / 100;
+        const red = Math.round(70 + 185 * ratio);
+        const green = Math.round(52 + 168 * ratio);
+        const blue = Math.round(2 + 4 * ratio);
         return {
-            background: 'hsla(47, 95%, ' + lightness.toFixed(2) + '%, 0.66)',
-            foreground: normalized >= 60 ? '#17202b' : '#fffdf5'
+            background: 'rgba(' + red + ', ' + green + ', ' + blue + ', 0.82)',
+            foreground: ratio >= 0.58 ? '#15190e' : '#ffffff'
         };
     }
 
@@ -773,9 +778,10 @@
                 margin: 0 !important; padding: 0 !important;
                 border: 1px solid rgba(135,166,194,.7) !important; border-radius: 6px !important;
                 font: 600 24px/1 system-ui,sans-serif !important;
-                color: var(--tm-bookmarks-score-fg, #f5f7fa) !important;
-                background: var(--tm-bookmarks-score-bg, rgba(55,69,84,.66)) !important;
-                opacity: .95 !important;
+                color: #ffffff !important;
+                background: rgba(35,45,39,.35) !important;
+                overflow: hidden !important;
+                opacity: 1 !important;
                 text-align: center !important; cursor: pointer !important; touch-action: manipulation !important;
             }
             .${BUTTON_CLASS}[data-bookmarks-position="center"] {
@@ -793,8 +799,8 @@
                 transform: none !important; margin: 0 !important; padding: 0 !important;
                 box-sizing: border-box !important; display: block !important;
                 width: 100% !important; flex-shrink: 0 !important;
-                background: transparent !important; border: 0 !important;
-                color: inherit !important; text-align: center !important;
+                border: 0 !important;
+                text-align: center !important;
                 white-space: nowrap !important; pointer-events: none !important;
                 opacity: 1 !important;
             }
@@ -802,21 +808,26 @@
                 height: 18px !important; line-height: 18px !important;
                 font: 700 13px/18px system-ui,sans-serif !important;
                 font-variant-numeric: tabular-nums !important;
+                color: var(--tm-bookmarks-score-fg, #ffffff) !important;
+                background: var(--tm-bookmarks-score-bg, rgba(63,63,48,.82)) !important;
             }
             .tm-bookmarks-glyph {
-                height: 29px !important; line-height: 29px !important;
-                font: 600 25px/29px system-ui,sans-serif !important;
+                height: 32px !important; line-height: 32px !important;
+                font: 600 26px/32px system-ui,sans-serif !important;
+                color: #b9f4c9 !important;
+                background: rgba(37,68,50,.80) !important;
+            }
+            .${BUTTON_CLASS}[aria-pressed="true"] .tm-bookmarks-glyph {
+                background: rgba(20,166,79,.84) !important;
+                color: #ffffff !important;
             }
             .${BUTTON_CLASS}:hover, .${BUTTON_CLASS}:focus-visible {
-                background: var(--tm-bookmarks-score-bg, rgba(55,69,84,.66)) !important;
                 opacity: 1 !important; outline: 2px solid #3777b7 !important;
             }
-            .${BUTTON_CLASS}:disabled { opacity: .4 !important; cursor: default !important; }
+            .${BUTTON_CLASS}:disabled { opacity: .80 !important; cursor: default !important; }
             .${BUTTON_CLASS}[aria-pressed="true"] {
-                color: var(--tm-bookmarks-score-fg, #f5f7fa) !important;
-                border-color: rgba(209,154,6,.8) !important;
-                background: var(--tm-bookmarks-score-bg, rgba(55,69,84,.66)) !important;
-                opacity: .95 !important;
+                border-color: rgba(48,206,106,.92) !important;
+                opacity: 1 !important;
             }
             .${BUTTON_CLASS}[data-bookmarks-error="true"] {
                 border: 2px solid #d21d2b !important; outline: 2px solid #d21d2b !important;
