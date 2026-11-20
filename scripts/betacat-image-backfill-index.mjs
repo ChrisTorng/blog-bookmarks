@@ -17,6 +17,10 @@ function parseDatePage(html,date) {
     const picture=article.match(/<a\b[^>]*class="feature-image"[^>]*href="(\/image\/[^"?#]+)"/i);
     if (!link) continue;
     if (picture) imageCount++;
+    const titleMatch=article.match(/<a\b[^>]*class="post-url"[^>]*href="[^"]+"[^>]*>([\s\S]*?)<\/a>/i);
+    const title=(titleMatch?.[1]||'').replace(/<[^>]+>/g,'').replace(/&amp;/g,'&')
+      .replace(/&quot;/g,'"').replace(/&#(?:39|x27);/gi,"'").replace(/&lt;/g,'<')
+      .replace(/&gt;/g,'>').replace(/\s+/g,' ').trim();
     let url;
     try {
       const normalized=new URL(link[1].replaceAll('&amp;','&'));
@@ -27,6 +31,7 @@ function parseDatePage(html,date) {
     entries.push({
       url,
       image_url:picture?'https://hackernews.betacat.io'+picture[1]:null,
+      title,
       date
     });
   }
