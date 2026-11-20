@@ -62,7 +62,7 @@ const worker = {
   if (path === '/bookmarks/sitemap.xml' && req.method === 'GET') {
     return cachedXml(req,env,ctx,300,async () => {
       const records = await publicSitemapEntries(env.DB);
-      const base = (env.SITE_URL || 'https://christorng.idv.tw').replace(/\\/$/,'');
+      const base = (env.SITE_URL || 'https://christorng.idv.tw').replace(/\/$/,'');
       const xml = '<?xml version="1.0" encoding="UTF-8"?>' +
         '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' +
         records.map(b=>'<url><loc>'+esc(base+'/bookmarks/'+encodeURIComponent(b.slug)+'/')+
