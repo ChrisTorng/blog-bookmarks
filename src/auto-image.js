@@ -18,7 +18,7 @@ export function readSocialImages(html,articleUrl){
  if(!raw)return null;
  let image;
  try{ image=normalizeImageUrl(new URL(raw,articleUrl).href); }catch{return null;}
- if(!safeArticleUrl(image)||/(?:favicon|(?:site|brand)[-_.]?logo|avatar|placeholder|spacer|pixel|transparent\.gif)/i.test(new URL(image).pathname))return null;
+ if(!safeArticleUrl(image)||/(?:favicon|logo|avatar|placeholder|spacer|pixel|transparent\.gif)/i.test(new URL(image).pathname))return null;
  const width=Number(metas['og:image:width']||0),height=Number(metas['og:image:height']||0);
  if((width&&width<260)||(height&&height<125))return null;
  const title=metas['og:title']||'';
