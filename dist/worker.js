@@ -25656,8 +25656,9 @@ async function list(db, { privateList = false, filter = "pending", page = 1, tag
     params.push(tag.toLowerCase());
   }
   if (q) {
-    conditions.push("(b.title LIKE ? OR b.title_original LIKE ? OR b.title_zh LIKE ? OR b.url LIKE ? OR b.redirect_url LIKE ? OR b.summary LIKE ?)");
-    params.push(...Array(6).fill("%" + q.slice(0, 100) + "%"));
+    const searchable = ["title", "title_original", "title_zh", "url", "redirect_url", "summary"];
+    conditions.push("(" + searchable.map((col) => `INSTR(LOWER(COALESCE(b.${col},'')),LOWER(?))>0`).join(" OR ") + ")");
+    params.push(...Array(searchable.length).fill(q.slice(0, 100)));
   }
   const dateExpression = privateList ? "b.created_at" : `CASE WHEN b.stage=4 THEN COALESCE(b.starred_at,b.published_at,b.created_at) WHEN b.stage=3 THEN COALESCE(b.published_at,b.created_at) ELSE b.created_at END`;
   if (/^\d{4}-\d{2}-\d{2}$/.test(from)) {
