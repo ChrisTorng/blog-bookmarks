@@ -269,3 +269,23 @@ export async function createAndAttachTag(db,raw) {
  ]);
  return {tag:{id,name,name_zh},item:await get(db,bookmarkId,true)};
 }
+
+// Feeds need the first 100 public records, not a COUNT plus five full 20-item
+// page queries. Use the same projection, ordering and privacy conversion as list().
+export async function publicFeedItems(db, tag = '') {
+  const filter = tag ? ' AND EXISTS (SELECT 1 FROM bookmark_tags bt WHERE bt.bookmark_id=b.id AND bt.tag_id=?)' : '';
+  const statement = db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.stage>=3${filter} ORDER BY status_at DESC,b.id DESC LIMIT 100`);
+  const rows = await (tag ? statement.bind(tag.toLowerCase()) : statement).all();
+  return rows.results.map(decode).map(publicEntry);
+}
+
+// Sitemap needs only the permanent slug and public Taiwan-local status date.
+// Do not hydrate summaries, references and per-bookmark tags for every URL.
+export async function publicSitemapEntries(db) {
+  const { results } = await db.prepare(`SELECT b.slug,
+    date(CASE WHEN b.stage=4 THEN COALESCE(b.starred_at,b.published_at,b.created_at)
+              ELSE COALESCE(b.published_at,b.created_at) END, '+8 hours') AS status_at
+    FROM bookmarks b WHERE b.stage>=3 AND b.slug IS NOT NULL AND b.slug <> ''
+    ORDER BY b.id`).all();
+  return results;
+}
