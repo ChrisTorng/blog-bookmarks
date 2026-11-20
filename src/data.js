@@ -93,7 +93,14 @@ export async function list(db, {privateList=false,filter='pending',page=1,tag=''
   else if(filter==='published') conditions.push('b.stage>=3');
   else if(filter==='starred') conditions.push('b.stage=4');
   if(tag){conditions.push("EXISTS(SELECT 1 FROM bookmark_tags t WHERE t.bookmark_id=b.id AND t.tag_id=?)");params.push(tag.toLowerCase());}
-  if(q){conditions.push('(b.title LIKE ? OR b.title_original LIKE ? OR b.title_zh LIKE ? OR b.url LIKE ? OR b.redirect_url LIKE ? OR b.summary LIKE ?)');params.push(...Array(6).fill('%'+q.slice(0,100)+'%'));}
+  if(q){
+    // D1/SQLite can reject long Unicode LIKE patterns with "LIKE or GLOB pattern too complex".
+    // INSTR has no pattern-complexity limit, and LOWER preserves LIKE's ASCII-insensitive matching.
+    // It also treats % and _ as literal search characters rather than wildcard operators.
+    const searchable=['title','title_original','title_zh','url','redirect_url','summary'];
+    conditions.push('('+searchable.map(col=>`INSTR(LOWER(COALESCE(b.${col},'')),LOWER(?))>0`).join(' OR ')+')');
+    params.push(...Array(searchable.length).fill(q.slice(0,100)));
+  }
   const dateExpression=privateList?'b.created_at':`CASE WHEN b.stage=4 THEN COALESCE(b.starred_at,b.published_at,b.created_at) WHEN b.stage=3 THEN COALESCE(b.published_at,b.created_at) ELSE b.created_at END`;
   // SQLite applies the Taipei offset before extracting the public calendar date.
   if(/^\d{4}-\d{2}-\d{2}$/.test(from)){
