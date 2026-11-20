@@ -163,6 +163,10 @@ try{
  assert.equal(published.body.status,3);
  assert.equal((await req('/bookmarks/api/')).body.total,1);
  assert.match((await req('/bookmarks/feed.xml')).text,/Sample article/);
+ const sitemapPublished=await req('/bookmarks/sitemap.xml');
+ assert.equal(sitemapPublished.status,200);
+ assert.match(sitemapPublished.text,/<loc>https:\/\/christorng\.idv\.tw\/bookmarks\/sample-article\/<\/loc>/);
+ assert.match(sitemapPublished.text,/<lastmod>\\d{4}-\\d{2}-\\d{2}<\/lastmod>/);
  assert.match((await req('/bookmarks/feed.xml?tag=ai')).text,/人工智慧 · 書籤 RSS/);
  const publicApi=(await req('/bookmarks/api/')).body;
  assert.equal(publicApi.items.length,1);
@@ -201,6 +205,7 @@ try{
  assert.equal(hidden.body.status,0);
  assert.equal((await req('/bookmarks/api/')).body.total,0);
  assert.equal((await req('/bookmarks/feed.xml')).text.includes('Sample article'),false);
+ assert.doesNotMatch((await req('/bookmarks/sitemap.xml')).text,/sample-article/);
  const deleted=await req('/bookmarks/api/admin/'+id,'DELETE',undefined,true);
  assert.equal(deleted.body.deleted,true);
  console.log('Integration tests passed: auth, private queue, status transitions, URL de-duplication, RSS and ingest token.');
