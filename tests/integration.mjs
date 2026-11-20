@@ -166,7 +166,7 @@ try{
  const sitemapPublished=await req('/bookmarks/sitemap.xml');
  assert.equal(sitemapPublished.status,200);
  assert.match(sitemapPublished.text,/<loc>https:\/\/christorng\.idv\.tw\/bookmarks\/sample-article\/<\/loc>/);
- assert.match(sitemapPublished.text,/<lastmod>\\d{4}-\\d{2}-\\d{2}<\/lastmod>/);
+ assert.match(sitemapPublished.text,/<lastmod>\d{4}-\d{2}-\d{2}<\/lastmod>/);
  assert.match((await req('/bookmarks/feed.xml?tag=ai')).text,/人工智慧 · 書籤 RSS/);
  const publicApi=(await req('/bookmarks/api/')).body;
  assert.equal(publicApi.items.length,1);
