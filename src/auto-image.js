@@ -15,6 +15,7 @@ export function readSocialImages(html,articleUrl){
   if(name&&attrs.content&&!(name in metas))metas[name]=attrs.content;
  }
  const raw=metas['og:image:secure_url']||metas['og:image']||metas['twitter:image']||'';
+ if(!raw)return null;
  let image;
  try{ image=normalizeImageUrl(new URL(raw,articleUrl).href); }catch{return null;}
  if(!safeArticleUrl(image)||/(?:favicon|(?:site|brand)[-_.]?logo|avatar|placeholder|spacer|pixel|transparent\.gif)/i.test(new URL(image).pathname))return null;
