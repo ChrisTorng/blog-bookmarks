@@ -65,6 +65,17 @@ export function bookmarkArticleHtml(item,categories=[],relatedNotesHtml='',perma
   const target=bookmarkTarget(item),date=bookmarkDate(item);
   const english=item.title_original && item.title_original!==item.title
     ? '<p lang="en" class="mt-1 text-sm leading-snug text-gray-600 dark:text-gray-300">'+esc(item.title_original)+'</p>' : '';
+  let image=null;
+  try {
+    const uri=new URL(item.image_url||'');
+    if(uri.protocol==='https:' && !uri.username && !uri.password)image=uri.href;
+  }catch{}
+  const thumbnail=image
+    ? '<a href="'+esc(target)+'" target="_blank" rel="noopener noreferrer" '+
+      'class="mt-2 block w-full max-w-56 md:col-start-2 md:row-span-2 md:mt-0 md:max-w-none" aria-label="開啟原始文章">'+
+      '<img src="'+esc(image)+'" alt="" width="176" loading="lazy" decoding="async" referrerpolicy="no-referrer" '+
+      'class="max-h-40 w-full rounded-md object-contain" style="max-width:100%;height:auto;max-height:160px;object-fit:contain"></a>'
+    : '';
   const summary=item.summary
     ? '<div class="my-2 text-gray-700 dark:text-gray-200"><div class="prose max-w-none text-sm dark:prose-invert">'+
       renderSummary(item.summary,item.url)+'</div></div>' : '';
@@ -82,9 +93,10 @@ export function bookmarkArticleHtml(item,categories=[],relatedNotesHtml='',perma
   return '<article class="border-b border-gray-300/40 py-4 dark:border-gray-700">'+
     '<div class="mb-2 flex items-center justify-between gap-3 text-xs">'+
     '<time class="text-gray-500" datetime="'+esc(date)+'">'+esc(date)+'</time>'+status+'</div>'+
-    '<h1 class="text-xl leading-snug font-bold"><a class="text-primary-500 hover:text-primary-600 dark:hover:text-primary-400" href="'+
+    '<div class="'+(image?'grid grid-cols-1 gap-x-4 md:grid-cols-[minmax(0,1fr)_11rem]':'block')+'">'+
+    '<div class="min-w-0"><h1 class="text-xl leading-snug font-bold"><a class="text-primary-500 hover:text-primary-600 dark:hover:text-primary-400" href="'+
     esc(target)+'" target="_blank" rel="noopener noreferrer">'+esc(item.title)+'</a></h1>'+
-    english+summary+
+    english+'</div>'+thumbnail+(summary?'<div class="min-w-0">'+summary+'</div>':'')+'</div>'+
     '<div class="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600 dark:text-gray-300">'+
     bookmarkSource(item.url)+original+'</div>'+
     (referenceLink?'<p class="mt-2 text-xs">'+referenceLink+'</p>':'')+bookmarkReferences(item)+
