@@ -42,7 +42,7 @@ export function rss(items, siteUrl, tag = '', tagLabel = '', categories = [], no
    const labels = bookmarkTags(item, categories);
    // A migrated bookmark keeps its original GUID to avoid RSS duplicates.
    return '<item><title>' + esc(item.title) + '</title><link>' + esc(url) + '</link>'
-    + '<guid isPermaLink="true">' + esc(guid) + '</guid><pubDate> + dates[index] + '</pubDate>'
+    + '<guid isPermaLink="true">' + esc(guid) + '</guid><pubDate>' + dates[index] + '</pubDate>'
     + labels.map(t => '<category>' + esc(t.name) + '</category>').join('')
     + '<description>' + esc(content) + '</description>'
     + '<content:encoded><![CDATA[' + content.replaceAll(']]>', ']]]]><![CDATA[>') + ']]></content:encoded>'
