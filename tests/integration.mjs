@@ -6,7 +6,9 @@ const password='bookmarks-local-ci-auth-token-2026';
 const devVars='.dev.vars';
 const testConfig='.wrangler-integration.jsonc';
 // This suite runs only the Bookmarks Worker. Cross-Worker behavior is exercised separately.
-writeFileSync(testConfig,readFileSync('wrangler.jsonc','utf8').replace(/^  "services": .*\n/m,''));
+const localConfig=JSON.parse(readFileSync('wrangler.jsonc','utf8'));
+delete localConfig.services; // No cross-Worker service binding in isolated CI.
+writeFileSync(testConfig,JSON.stringify(localConfig,null,2));
 writeFileSync(devVars,'AUTH_MODE=local\nLOCAL_ADMIN_TOKEN='+password+'\nBLOG_SHELL_URL=\n');
 const windows=process.platform==='win32';
 const child=spawn(windows?'npx.cmd':'npx',['wrangler','dev','--config',testConfig,'--local','--ip','127.0.0.1','--port','8788','--infer-origin-from-routes=false','--var','AUTH_MODE:local','--var','LOCAL_ADMIN_TOKEN:'+password,'--var','BLOG_SHELL_URL:'],{stdio:['ignore','pipe','pipe'],detached:!windows,shell:windows});
