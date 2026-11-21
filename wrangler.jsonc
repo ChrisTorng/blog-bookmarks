@@ -55,7 +55,7 @@
     }
   ],
   "cache": {
-    "enabled": true
+    "enabled": false
   },
   "exports": {
     "default": {
@@ -68,6 +68,12 @@
       "type": "worker",
       "cache": {
         "enabled": true
+      }
+    },
+    "NoteEditor": {
+      "type": "worker",
+      "cache": {
+        "enabled": false
       }
     }
   }
