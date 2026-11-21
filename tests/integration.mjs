@@ -140,6 +140,8 @@ try{
  assert.equal(tagUpdate.body.id,'ai');
  const tags=await req('/bookmarks/api/admin/tags','GET',undefined,true);
  assert.equal(tags.body.find(t=>t.id==='ai').name_zh,'人工智慧');
+ assert.equal(tags.body.find(t=>t.id==='ai').count,1,'private category count includes pending bookmark');
+ assert.equal((await req('/bookmarks/api/tags')).body.find(t=>t.id==='ai'),undefined,'private tag never appears in public counts');
  const id=created.body.item.id;
  assert.equal((await req('/bookmarks/api/')).body.total,0);
  const again=await req('/bookmarks/api/admin/','POST',{url:'https://example.org/sample?keep=1',title:'duplicate'},true);
@@ -161,6 +163,7 @@ try{
  assert.equal((await req('/bookmarks/feed.xml')).text.includes('Sample article'),false);
  const published=await req('/bookmarks/api/admin/'+id,'PATCH',{status:3},true);
  assert.equal(published.body.status,3);
+ assert.equal((await req('/bookmarks/api/tags')).body.find(t=>t.id==='ai').count,1,'publication updates public count');
  assert.equal((await req('/bookmarks/api/')).body.total,1);
  assert.match((await req('/bookmarks/feed.xml')).text,/Sample article/);
  const sitemapPublished=await req('/bookmarks/sitemap.xml');
@@ -189,6 +192,7 @@ try{
  assert.match(publicDetail.body.status_at,/^\d{4}-\d{2}-\d{2}$/);
  const starred=await req('/bookmarks/api/admin/'+id,'PATCH',{status:4},true);
  assert.equal(starred.body.status,4);
+ assert.equal((await req('/bookmarks/api/tags')).body.find(t=>t.id==='ai').count,1,'recommendation keeps count');
  const rotated=await req('/bookmarks/api/admin/ingest-token','POST',{},true);
  assert.equal(rotated.status,200,rotated.text);
  assert.match(rotated.body.token,/^[a-f0-9]{64}$/);
@@ -199,6 +203,7 @@ try{
  assert.equal(unstarred.body.status,3);
  const privateAgain=await req('/bookmarks/api/admin/'+id,'PATCH',{status:2},true);
  assert.equal(privateAgain.body.status,2);
+ assert.equal((await req('/bookmarks/api/tags')).body.find(t=>t.id==='ai'),undefined,'unpublish removes public count');
  assert.equal((await req('/bookmarks/api/')).body.total,0);
  assert.equal((await req('/bookmarks/api/'+id)).status,404);
  const hidden=await req('/bookmarks/api/admin/'+id,'PATCH',{status:0},true);
@@ -208,6 +213,7 @@ try{
  assert.doesNotMatch((await req('/bookmarks/sitemap.xml')).text,/sample-article/);
  const deleted=await req('/bookmarks/api/admin/'+id,'DELETE',undefined,true);
  assert.equal(deleted.body.deleted,true);
+ assert.equal((await req('/bookmarks/api/admin/tags','GET',undefined,true)).body.find(t=>t.id==='ai'),undefined,'cascade deletion updates all count');
  console.log('Integration tests passed: auth, private queue, status transitions, URL de-duplication, RSS and ingest token.');
 }finally{
  if(windows)child.kill();
