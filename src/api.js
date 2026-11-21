@@ -136,7 +136,7 @@ export async function api(req,env,url,ctx){
    if(req.method==='PATCH'){
     const id=match[1];
     return json(await patch(env.DB,id,await input(req),
-      () => env.NOTE_REFERENCES?.hasReference(id)));
+      () => env.NOTE_REFERENCES?.hasReference(id),env.AI));
    }
    if(req.method==='DELETE')return json({deleted:await remove(env.DB,match[1])});
   }
