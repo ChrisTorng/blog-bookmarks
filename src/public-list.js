@@ -78,9 +78,7 @@ export async function publicBookmarksList(req, env) {
     '<label class="md:hidden">分類 <select class="' + field + '" name="tag">' +
     '<option value="">所有書籤</option>' + categories.map(t => '<option value="' + esc(t.id) +
     '"' + (t.id === filter.tag ? ' selected' : '') + '>' + esc(t.name_zh || t.name) + '</option>').join('') +
-    '</select></label>' + (filter.tag ? '<input type="hidden" name="tag" value="' +
-    esc(filter.tag) + '" class="hidden md:block">' : '') +
-    '</form>' + (cards || '<p class="py-6 text-gray-500">沒有符合條件的書籤。</p>') +
+    '</select></label></form>' + (cards || '<p class="py-6 text-gray-500">沒有符合條件的書籤。</p>') +
     pageLinks + '</div></div></section>';
 
   const shell = await fetch(url.origin + '/notes-shell/', { headers:{Accept:'text/html'} });
