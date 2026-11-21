@@ -81,7 +81,7 @@ export async function publicBookmarksList(req, env) {
     '</select></label></form>' + (cards || '<p class="py-6 text-gray-500">沒有符合條件的書籤。</p>') +
     pageLinks + '</div></div></section>';
 
-  const shell = await fetch(url.origin + '/notes-shell/', { headers:{Accept:'text/html'} });
+  const shell = await fetch(env.BLOG_SHELL_URL || url.origin + '/notes-shell/', { headers:{Accept:'text/html'} });
   if (!shell.ok) return new Response('網站版型暫時無法取得', {status:503, headers:{'Cache-Control':'no-store'}});
   const canonical = url.origin + '/bookmarks/';
   const description = 'ChrisTorng 分享的書籤、原始文章連結、繁體中文摘要與分類';
