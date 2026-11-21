@@ -183,6 +183,11 @@ export async function create(db,raw) {
 }
 export async function patch(db,id,raw,hasNoteReference,ai=null) {
   const current=await get(db,id,true);if(!current)return null;
+  // Internal, non-serializing marker avoids an extra D1 read just for cache invalidation.
+  const markPreviousVisibility = value => {
+    if (value) Object.defineProperty(value,'_wasPublic',{value:current.status>=3,enumerable:false});
+    return value;
+  };
   // Publication must have a persisted or concurrently submitted category.
   const desired='status' in raw?Number(raw.status):Number(current.status);
   const finalTags='tags' in raw
@@ -242,9 +247,9 @@ export async function patch(db,id,raw,hasNoteReference,ai=null) {
   // Never change an established slug on edits, unpublication, or re-publication.
   if((result.status===3 || result.status===4) && !result.slug){
     await ensureSlug(db,'bookmarks',id,result.title_original||result.title,preferredSlug);
-    return get(db,id,true);
+    return markPreviousVisibility(await get(db,id,true));
   }
-  return result;
+  return markPreviousVisibility(result);
 }
 export async function remove(db,id){
   const result=await db.prepare('DELETE FROM bookmarks WHERE id=?').bind(id).run();return Boolean(result.meta.changes);

@@ -1,15 +1,27 @@
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
 import { readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import assert from 'node:assert/strict';
 const root='http://127.0.0.1:8788';
 const password='bookmarks-local-ci-auth-token-2026';
 const devVars='.dev.vars';
 const testConfig='.wrangler-integration.jsonc';
+const shellUrl='http://127.0.0.1:8789/notes-shell/';
+const shellServer=createServer((req,res)=>{
+  res.writeHead(req.url==='/notes-shell/'?200:404,{
+    'Content-Type':'text/html; charset=utf-8'
+  });
+  res.end('<!doctype html><html lang="zh-Hant"><head><title>測試模板</title></head><body>' +
+    '<main><div id="notes-content"></div></main></body></html>');
+});
+await new Promise(resolve=>shellServer.listen(8789,'127.0.0.1',resolve));
 // This suite runs only the Bookmarks Worker. Cross-Worker behavior is exercised separately.
-writeFileSync(testConfig,readFileSync('wrangler.jsonc','utf8').replace(/^  "services": .*\n/m,''));
-writeFileSync(devVars,'AUTH_MODE=local\nLOCAL_ADMIN_TOKEN='+password+'\nBLOG_SHELL_URL=\n');
+const localConfig=JSON.parse(readFileSync('wrangler.jsonc','utf8'));
+delete localConfig.services; // No cross-Worker service binding in isolated CI.
+writeFileSync(testConfig,JSON.stringify(localConfig,null,2));
+writeFileSync(devVars,'AUTH_MODE=local\nLOCAL_ADMIN_TOKEN='+password+'\nBLOG_SHELL_URL='+shellUrl+'\n');
 const windows=process.platform==='win32';
-const child=spawn(windows?'npx.cmd':'npx',['wrangler','dev','--config',testConfig,'--local','--ip','127.0.0.1','--port','8788','--infer-origin-from-routes=false','--var','AUTH_MODE:local','--var','LOCAL_ADMIN_TOKEN:'+password,'--var','BLOG_SHELL_URL:'],{stdio:['ignore','pipe','pipe'],detached:!windows,shell:windows});
+const child=spawn(windows?'npx.cmd':'npx',['wrangler','dev','--config',testConfig,'--local','--ip','127.0.0.1','--port','8788','--infer-origin-from-routes=false','--var','AUTH_MODE:local','--var','LOCAL_ADMIN_TOKEN:'+password,'--var','BLOG_SHELL_URL:'+shellUrl],{stdio:['ignore','pipe','pipe'],detached:!windows,shell:windows});
 let output='';
 child.stdout.on('data',v=>output+=v.toString());
 child.stderr.on('data',v=>output+=v.toString());
@@ -184,8 +196,13 @@ try{
  assert.equal((await req('/bookmarks/api/?to=1999-01-01')).body.total,0);
  assert.equal((await req('/bookmarks/api/?from=1999-01-01&to=2099-12-31')).body.total,1);
  assert.equal((await req('/bookmarks/filters.js')).status,404);
- assert.equal((await req('/bookmarks/')).status,404);
- assert.equal((await req('/bookmarks/?tag=ai')).status,404);
+ const htmlPage=await req('/bookmarks/');
+ assert.equal(htmlPage.status,200,htmlPage.text.slice(0,1200)+'\n'+output.slice(-1200));
+ assert.match(htmlPage.text,/Sample article/,'SSR content appears without browser JS');
+ assert.match(htmlPage.text,/Imported description/,'SSR includes full summary');
+ assert.match(htmlPage.text,/\/bookmarks\/sample-article\//,'SSR includes a crawlable local permalink');
+ const filteredPage=await req('/bookmarks/?tag=ai');
+ assert.equal(filteredPage.status,200,filteredPage.text.slice(0,1200));
  const publicDetail=await req('/bookmarks/api/'+id);
  assert.equal(publicDetail.status,200);
  assert.equal(publicDetail.body.id,id);
@@ -216,6 +233,7 @@ try{
  assert.equal((await req('/bookmarks/api/admin/tags','GET',undefined,true)).body.find(t=>t.id==='ai'),undefined,'cascade deletion updates all count');
  console.log('Integration tests passed: auth, private queue, status transitions, URL de-duplication, RSS and ingest token.');
 }finally{
+ await new Promise(resolve=>shellServer.close(resolve));
  if(windows)child.kill();
  else {try{process.kill(-child.pid,'SIGTERM')}catch{child.kill()}}
  try{unlinkSync(devVars)}catch{}

@@ -13,6 +13,22 @@ import {list,get,byUrl,create,patch,remove,tagsList,renameTag,reviewWindow,creat
 import {bookmarkArticleHtml,bookmarkPermalink} from './public-content.js';
 import {relatedNoteHtml} from './note-references.js';
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}});
+// A public bookmark may also appear in Notes/RSS; invalidate both Workers.
+async function invalidateAfterWrite(env,ctx) {
+ if(env.AUTH_MODE==='local')return;
+ try {
+  if(!ctx?.exports?.PublicCache?.purgePublic || !env.NOTE_REFERENCES?.invalidatePublic)
+   throw new Error('Public cache invalidation entrypoint missing');
+  await ctx.exports.PublicCache.purgePublic();
+  await env.NOTE_REFERENCES.invalidatePublic();
+ } catch(error) {
+  console.error('Bookmark saved but public cache purge failed',String(error));
+  const failure=new Error('書籤已儲存，但公開快取尚未全部更新；請稍後重新整理或再次儲存。');
+  failure.httpStatus=503;failure.code='PUBLIC_CACHE_PURGE_FAILED';
+  failure.publicMessage=failure.message;failure.saved=true;
+  throw failure;
+ }
+}
 export function opts(url,privateList=false){
  const filter=url.searchParams.get('filter')||(privateList?'pending':'published');
  const defaultSort=privateList&&['pending','unread','readPending','deferred'].includes(filter)?'old':'new';
@@ -85,7 +101,9 @@ export async function api(req,env,url,ctx){
   }
   if(p==='/bookmarks/api/admin/image/backfill'&&req.method==='POST'){
     const body=await input(req);
-    return json(await backfillMissingImages(env,Math.min(10,Math.max(1,Number(body.limit)||5))));
+    const updated=await backfillMissingImages(env,Math.min(10,Math.max(1,Number(body.limit)||5)));
+    if(updated?.saved>0)await invalidateAfterWrite(env,ctx);
+    return json(updated);
   }
   if(p==='/bookmarks/api/admin/quick'&&req.method==='GET')
     return json(await reviewWindow(env.DB,url.searchParams.get('size')));
@@ -93,7 +111,9 @@ export async function api(req,env,url,ctx){
     if(req.method==='GET')return json(await repairCandidates(env.DB));
     if(req.method==='POST'){
       const body=await readSubmittedContent(req,{allowDescription:true});
-      return json(await commitArticleSummary(env,body.id,body));
+      const updated=await commitArticleSummary(env,body.id,body);
+      await invalidateAfterWrite(env,ctx);
+      return json(updated);
     }
   }
   if(p==='/bookmarks/api/admin/summary-repair/preview' && req.method==='POST'){
@@ -117,14 +137,20 @@ export async function api(req,env,url,ctx){
       await env.DB.prepare('UPDATE bookmarks SET title_original=COALESCE(NULLIF(title_original,\'\'),?),summary=CASE WHEN ? IS NOT NULL THEN ? ELSE summary END,updated_at=? WHERE id=?')
         .bind(title,summary,summary,new Date().toISOString(),item.id).run();
     }
+    if(body.apply===true&&(title||summary))await invalidateAfterWrite(env,ctx);
     return json({...report,proposed:{title_original:title,summary},updated:body.apply===true&&!!(title||summary)});
   }
   if(p==='/bookmarks/api/admin/ingest-token'&&req.method==='POST')return json(await rotateIngestToken(env.DB));
   if(p==='/bookmarks/api/admin/tags'&&req.method==='GET')return json(await tagsList(env.DB,true));
-  if(p==='/bookmarks/api/admin/tags'&&req.method==='POST')return json(await createAndAttachTag(env.DB,await input(req)),201);
+  if(p==='/bookmarks/api/admin/tags'&&req.method==='POST'){
+    const created=await createAndAttachTag(env.DB,await input(req));
+    if(created.item?.status>=3)await invalidateAfterWrite(env,ctx);
+    return json(created,201);
+  }
   const tagMatch=p.match(/^\/bookmarks\/api\/admin\/tags\/([^/]+)\/?$/);
   if(tagMatch&&req.method==='PATCH'){
    const changed=await renameTag(env.DB,decodeURIComponent(tagMatch[1]),await input(req));
+   if(changed)await invalidateAfterWrite(env,ctx);
    return changed?json(changed):json({error:'找不到標籤'},404);
   }
   if(p==='/bookmarks/api/admin/check'&&req.method==='GET'){
@@ -135,23 +161,39 @@ export async function api(req,env,url,ctx){
    if(req.method==='GET')return json(await get(env.DB,match[1],true));
    if(req.method==='PATCH'){
     const id=match[1];
-    return json(await patch(env.DB,id,await input(req),
-      () => env.NOTE_REFERENCES?.hasReference(id),env.AI));
+    const item=await patch(env.DB,id,await input(req),
+      () => env.NOTE_REFERENCES?.hasReference(id),env.AI);
+    if(item&&(item.status>=3||item._wasPublic))await invalidateAfterWrite(env,ctx);
+    return json(item);
    }
-   if(req.method==='DELETE')return json({deleted:await remove(env.DB,match[1])});
+   if(req.method==='DELETE'){
+    const deleted=await remove(env.DB,match[1]);
+    if(deleted)await invalidateAfterWrite(env,ctx);
+    return json({deleted});
+   }
   }
   if(p==='/bookmarks/api/ingest/preview'&&req.method==='POST'){
     if(!await validIngestToken(req,env))return json({error:'Token 無效'},401);
     return json(await previewInsights(env,await input(req),ctx));
   }
-  if(p==='/bookmarks/api/ingest/status'&&req.method==='POST')return bulkStatus(req,env);
+  if(p==='/bookmarks/api/ingest/status'&&req.method==='POST'){
+    const result=await bulkStatus(req,env);
+    if(result.ok && result.headers.get('X-Public-Content-Changed')==='1')await invalidateAfterWrite(env,ctx);
+    return result;
+  }
   if(p==='/bookmarks/api/ingest/remove'&&req.method==='POST'){
    if(!await validIngestToken(req,env))return json({error:'Token 無效'},401);
    const body=await input(req),item=await byUrl(env.DB,body.url);
    if(!item)return json({deleted:false});
-   return json({deleted:await remove(env.DB,item.id)});
+   const deleted=await remove(env.DB,item.id);
+   if(deleted)await invalidateAfterWrite(env,ctx);
+   return json({deleted});
   }
-  if(p==='/bookmarks/api/ingest/update-tags'&&req.method==='POST')return updateTags(req,env);
+  if(p==='/bookmarks/api/ingest/update-tags'&&req.method==='POST'){
+    const result=await updateTags(req,env);
+    if(result.ok && result.headers.get('X-Public-Content-Changed')==='1')await invalidateAfterWrite(env,ctx);
+    return result;
+  }
   if(p==='/bookmarks/api/ingest/tags'&&req.method==='GET'){
    if(!await validIngestToken(req,env))return json({error:'Token 無效'},401);
    return json(await tagsList(env.DB,true));
@@ -202,6 +244,6 @@ export async function api(req,env,url,ctx){
   const code=e?.code||endpoint+(status>=500?'_FAILED':'_INVALID');
   console.error('Bookmark API failure',JSON.stringify({code,method:req.method,path:p,ray,message:String(e?.message||e).slice(0,600),stack:String(e?.stack||'').slice(0,1800)}));
   const safeMessage=e?.publicMessage||(status>=500?'伺服器錯誤':String(e?.message||'請求無效'));
-  return json({error:safeMessage,code,...(ray?{ray}:{})},status);
+  return json({error:safeMessage,code,...(e?.saved?{saved:true}:{}),...(ray?{ray}:{})},status);
  }
 }
