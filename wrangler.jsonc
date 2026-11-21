@@ -69,12 +69,6 @@
       "cache": {
         "enabled": true
       }
-    },
-    "NoteEditor": {
-      "type": "worker",
-      "cache": {
-        "enabled": false
-      }
     }
   }
 }
