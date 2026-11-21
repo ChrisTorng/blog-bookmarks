@@ -148,7 +148,12 @@ export async function reviewWindow(db,requested=3) {
     deferredRemaining:Number(deferredCount.n),size,pending_order:'oldest'};
 }
 export async function tagsList(db,includePrivate=false) {
-  const rows=await db.prepare(`SELECT t.id,t.name,t.name_zh,COUNT(*) count FROM tags t JOIN bookmark_tags bt ON bt.tag_id=t.id JOIN bookmarks b ON b.id=bt.bookmark_id ${includePrivate?'':"WHERE b.stage>=3"} GROUP BY t.id,t.name,t.name_zh ORDER BY count DESC,t.name`).all();
+  // Updated transactionally by migration 0012 triggers for publication and tag edits.
+  // Read only one small counter row per tag, not thousands of bookmark relationships.
+  const counter=includePrivate?'all_count':'public_count';
+  const rows=await db.prepare(`SELECT t.id,t.name,t.name_zh,c.${counter} AS count
+    FROM bookmark_tag_counts c JOIN tags t ON t.id=c.tag_id
+    WHERE c.${counter}>0 ORDER BY count DESC,t.name`).all();
   return rows.results;
 }
 async function replaceTags(db,id,tags) {
