@@ -21,13 +21,16 @@ export async function bulkStatus(req,env){
  const updates=rows.results.filter(item=>!item.image_url && images.has(item.normalized_url))
   .map(item=>env.DB.prepare('UPDATE bookmarks SET image_url=? WHERE id=? AND (image_url IS NULL OR image_url=\'\')')
    .bind(images.get(item.normalized_url),item.id));
+ const publishedImageChanged=rows.results.some(item=>item.status>=3&&!item.image_url&&images.has(item.normalized_url));
  if(updates.length)await env.DB.batch(updates);
  const result=[];
  for(const item of rows.results){
   const complete=await get(env.DB,item.id,true);
   result.push({url:item.normalized_url,id:item.id,status:item.status,tags:complete.tags});
  }
- return json(result);
+ const response=json(result);
+ if(publishedImageChanged)response.headers.set('X-Public-Content-Changed','1');
+ return response;
 }
 export async function updateTags(req,env){
  if(!await validIngestToken(req,env))return json({error:'Token 無效'},401);
@@ -35,5 +38,7 @@ export async function updateTags(req,env){
  if(!item)return json({error:'書籤不存在'},404);
  if(!Array.isArray(body.tags))return json({error:'缺少標籤'},400);
  const result=await patch(env.DB,item.id,{tags:body.tags});
- return json(result);
+ const response=json(result);
+ if(result?.status>=3 || result?._wasPublic)response.headers.set('X-Public-Content-Changed','1');
+ return response;
 }
