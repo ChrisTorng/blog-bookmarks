@@ -27,7 +27,15 @@ const isPublicPage = (path) =>
 
 const worker = {
  async scheduled(event,env,ctx){
-  ctx.waitUntil(backfillMissingImages(env,6).catch(error=>console.error('Bookmark scheduled image enrichment failed',String(error))));
+  ctx.waitUntil(backfillMissingImages(env,6).then(async result => {
+    // Published thumbnails can change without an admin save.
+    // Keep their HTML and Notes references fresh after enrichment.
+    if (env.AUTH_MODE !== 'local' && ctx?.exports?.PublicCache?.purgePublic) {
+      await ctx.exports.PublicCache.purgePublic();
+      await env.NOTE_REFERENCES.invalidatePublic();
+    }
+    return result;
+  }).catch(error=>console.error('Bookmark scheduled image enrichment/cache purge failed',String(error))));
  },
  async fetch(req, env, ctx, inner = false) {
   if (req.method === 'HEAD') {
