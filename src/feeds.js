@@ -37,11 +37,12 @@ export function rss(items, siteUrl, tag = '', tagLabel = '', categories = [], no
   + '<description>ChrisTorng 分享的書籤</description><language>zh-TW</language>'
   + items.map((item, index) => {
    const url = base + bookmarkPermalink(item);
+   const guid = item.rss_guid || url;
    const content = bookmarkArticleHtml(item, categories, noteHtmlById[item.id]);
    const labels = bookmarkTags(item, categories);
-   // New feed is not public yet: canonical permalink is the RSS GUID.
+   // A migrated bookmark keeps its original GUID to avoid RSS duplicates.
    return '<item><title>' + esc(item.title) + '</title><link>' + esc(url) + '</link>'
-    + '<guid isPermaLink="true">' + esc(url) + '</guid><pubDate>' + dates[index] + '</pubDate>'
+    + '<guid isPermaLink="true">' + esc(guid) + '</guid><pubDate>' + dates[index] + '</pubDate>'
     + labels.map(t => '<category>' + esc(t.name) + '</category>').join('')
     + '<description>' + esc(content) + '</description>'
     + '<content:encoded><![CDATA[' + content.replaceAll(']]>', ']]]]><![CDATA[>') + ']]></content:encoded>'
