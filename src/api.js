@@ -102,7 +102,7 @@ export async function api(req,env,url,ctx){
   if(p==='/bookmarks/api/admin/image/backfill'&&req.method==='POST'){
     const body=await input(req);
     const updated=await backfillMissingImages(env,Math.min(10,Math.max(1,Number(body.limit)||5)));
-    await invalidateAfterWrite(env,ctx);
+    if(updated?.saved>0)await invalidateAfterWrite(env,ctx);
     return json(updated);
   }
   if(p==='/bookmarks/api/admin/quick'&&req.method==='GET')
@@ -142,10 +142,15 @@ export async function api(req,env,url,ctx){
   }
   if(p==='/bookmarks/api/admin/ingest-token'&&req.method==='POST')return json(await rotateIngestToken(env.DB));
   if(p==='/bookmarks/api/admin/tags'&&req.method==='GET')return json(await tagsList(env.DB,true));
-  if(p==='/bookmarks/api/admin/tags'&&req.method==='POST')return json(await createAndAttachTag(env.DB,await input(req)),201);
+  if(p==='/bookmarks/api/admin/tags'&&req.method==='POST'){
+    const created=await createAndAttachTag(env.DB,await input(req));
+    if(created.item?.status>=3)await invalidateAfterWrite(env,ctx);
+    return json(created,201);
+  }
   const tagMatch=p.match(/^\/bookmarks\/api\/admin\/tags\/([^/]+)\/?$/);
   if(tagMatch&&req.method==='PATCH'){
    const changed=await renameTag(env.DB,decodeURIComponent(tagMatch[1]),await input(req));
+   if(changed)await invalidateAfterWrite(env,ctx);
    return changed?json(changed):json({error:'找不到標籤'},404);
   }
   if(p==='/bookmarks/api/admin/check'&&req.method==='GET'){
@@ -158,7 +163,7 @@ export async function api(req,env,url,ctx){
     const id=match[1];
     const item=await patch(env.DB,id,await input(req),
       () => env.NOTE_REFERENCES?.hasReference(id),env.AI);
-    if(item)await invalidateAfterWrite(env,ctx);
+    if(item&&(item.status>=3||item._wasPublic))await invalidateAfterWrite(env,ctx);
     return json(item);
    }
    if(req.method==='DELETE'){
@@ -173,7 +178,7 @@ export async function api(req,env,url,ctx){
   }
   if(p==='/bookmarks/api/ingest/status'&&req.method==='POST'){
     const result=await bulkStatus(req,env);
-    if(result.ok)await invalidateAfterWrite(env,ctx);
+    if(result.ok && result.headers.get('X-Public-Content-Changed')==='1')await invalidateAfterWrite(env,ctx);
     return result;
   }
   if(p==='/bookmarks/api/ingest/remove'&&req.method==='POST'){
@@ -186,7 +191,7 @@ export async function api(req,env,url,ctx){
   }
   if(p==='/bookmarks/api/ingest/update-tags'&&req.method==='POST'){
     const result=await updateTags(req,env);
-    if(result.ok)await invalidateAfterWrite(env,ctx);
+    if(result.ok && result.headers.get('X-Public-Content-Changed')==='1')await invalidateAfterWrite(env,ctx);
     return result;
   }
   if(p==='/bookmarks/api/ingest/tags'&&req.method==='GET'){
