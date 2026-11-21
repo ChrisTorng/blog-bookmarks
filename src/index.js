@@ -4,6 +4,7 @@ import { api, opts } from './api.js';
 import { rss } from './feeds.js';
 import { relatedNoteHtml } from './note-references.js';
 import { backfillMissingImages } from './auto-image.js';
+import { publicBookmarksList } from './public-list.js';
 
 // The HTML, JS and CSS live exclusively on GitHub Pages.
 // This Worker serves the API and the dynamic RSS feed only.
@@ -14,39 +15,38 @@ const reply = (body, type='text/plain; charset=utf-8', status=200) =>
     'Cache-Control':'no-store'
   }});
 
-// Cache only public, anonymous XML. Keep the browser side revalidating while
-// allowing the edge to reuse expensive generated XML for a bounded period.
-// Cache API is per-POP: publication may take up to the TTL to reach every POP.
-async function cachedXml(req, env, ctx, ttl, produce) {
-  const cache = env.AUTH_MODE !== 'local' && typeof caches !== 'undefined' ? caches.default : null;
-  const url = new URL(req.url);
-  const keyUrl = url.origin + url.pathname + (url.searchParams.has('tag')
-    ? '?tag=' + encodeURIComponent(url.searchParams.get('tag') || '') : '');
-  const key = cache ? new Request(keyUrl) : null;
-  if (cache) {
-    try { const hit = await cache.match(key); if (hit) return hit; }
-    catch (error) { console.warn('Public XML cache read failed', String(error)); }
-  }
-  const generated = await produce();
-  if (!cache || !generated.ok || !ctx?.waitUntil) return generated;
-  const headers = new Headers(generated.headers);
-  headers.set('Cache-Control', `public, max-age=0, s-maxage=${ttl}`);
-  const response = new Response(generated.body, {status:generated.status,headers});
-  ctx.waitUntil(cache.put(key, response.clone()).catch(error =>
-    console.warn('Public XML cache write failed', String(error))));
-  return response;
-}
+// Legacy per-PoP Cache API is intentionally disabled; public XML is now
+// cached exclusively by the globally-purgeable PublicCache entrypoint.
+function cachedXml(_req,_env,_ctx,_ttl,produce) { return produce(); }
+
+const isPublicPage = (path) =>
+  path === '/bookmarks/' || path === '/bookmarks' ||
+  path === '/bookmarks/feed.xml' || path === '/bookmarks/sitemap.xml' ||
+  /^\/bookmarks\/[a-z0-9-]{1,100}\/?$/.test(path) &&
+  !['view','admin','api'].includes(path.split('/')[2]);
 
 const worker = {
  async scheduled(event,env,ctx){
   ctx.waitUntil(backfillMissingImages(env,6).catch(error=>console.error('Bookmark scheduled image enrichment failed',String(error))));
  },
- async fetch(req, env, ctx) {
+ async fetch(req, env, ctx, inner = false) {
   if (req.method === 'HEAD') {
-   const response = await worker.fetch(new Request(req,{method:'GET'}),env,ctx);
+   const response = await worker.fetch(new Request(req,{method:'GET'}),env,ctx,inner);
    return new Response(null,{status:response.status,headers:response.headers});
   }
   const url=new URL(req.url), path=url.pathname;
+  // The default entrypoint always runs. Only anonymous public HTML/XML can
+  // reach the separate cacheable entrypoint. Never cache admin or JSON APIs.
+  if (!inner && req.method === 'GET' && env.AUTH_MODE !== 'local' &&
+      isPublicPage(path) && ctx?.exports?.PublicCache?.fetch) {
+    const publicRequest = new Request(req);
+    publicRequest.headers.delete('Authorization');
+    publicRequest.headers.delete('Cookie');
+    return ctx.exports.PublicCache.fetch(publicRequest);
+  }
+  if (path === '/bookmarks/' || path === '/bookmarks') {
+    if (req.method === 'GET') return publicBookmarksList(req,env);
+  }
   if (path==='/bookmarks/api' || path==='/bookmarks/api/' || path.startsWith('/bookmarks/api/')) return api(req,env,url,ctx);
   if (path==='/bookmarks/feed.xml' && req.method==='GET') {
     return cachedXml(req,env,ctx,60,async () => {
