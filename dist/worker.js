@@ -25395,13 +25395,45 @@ function slugify(title, fallback = "entry") {
   return value || fallback;
 }
 __name(slugify, "slugify");
-async function ensureSlug(db, table2, id, title) {
+function englishSlug(text2) {
+  return String(text2 || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 100).replace(/-+$/g, "");
+}
+__name(englishSlug, "englishSlug");
+async function translatedBookmarkSlug(title, ai2) {
+  const original = String(title || "").trim();
+  if (!/\p{Script=Han}/u.test(original)) return englishSlug(original) || "bookmark";
+  if (!ai2?.run) throw new Error("\u7121\u6CD5\u7FFB\u8B6F\u66F8\u7C64\u7DB2\u5740\uFF1A\u5C1A\u672A\u8A2D\u5B9A Workers AI");
+  let result;
+  try {
+    result = await ai2.run("@cf/google/gemma-4-26b-a4b-it", {
+      messages: [
+        { role: "system", content: "Translate this Traditional Chinese article/bookmark title into a concise, natural English title suitable for a URL. Preserve technical names, dates, proper nouns. Translate meaning, NEVER Pinyin or transliteration. Output ONLY the English title, without quotation marks, commentary or Markdown." },
+        { role: "user", content: original.slice(0, 200) }
+      ],
+      chat_template_kwargs: { enable_thinking: false },
+      temperature: 0,
+      max_tokens: 140
+    });
+  } catch (error2) {
+    console.error("Bookmark title translation error", String(error2));
+    throw new Error("\u7121\u6CD5\u7FFB\u8B6F\u66F8\u7C64\u7DB2\u5740\uFF0C\u8ACB\u7A0D\u5F8C\u91CD\u8A66");
+  }
+  const response = result?.choices?.[0]?.message?.content ?? result?.response ?? "";
+  const candidate = String(response).trim().replace(/^["'“”]+|["'“”]+$/g, "");
+  if (/\p{Script=Han}/u.test(candidate) || /^i (cannot|can't|am unable)/i.test(candidate))
+    throw new Error("AI \u672A\u7522\u751F\u6709\u6548\u82F1\u6587\u66F8\u7C64\u7DB2\u5740\uFF0C\u8ACB\u91CD\u8A66");
+  const slug = englishSlug(candidate);
+  if (slug.length < 4) throw new Error("AI \u672A\u7522\u751F\u6709\u6548\u82F1\u6587\u66F8\u7C64\u7DB2\u5740\uFF0C\u8ACB\u91CD\u8A66");
+  return slug;
+}
+__name(translatedBookmarkSlug, "translatedBookmarkSlug");
+async function ensureSlug(db, table2, id, title, preferredSlug = "") {
   if (table2 !== "bookmarks" && table2 !== "notes") throw new Error("Invalid slug table");
   const query = /* @__PURE__ */ __name(() => db.prepare("SELECT slug FROM " + table2 + " WHERE id=?").bind(id).first(), "query");
   const existing = await query();
   if (!existing) return null;
   if (existing.slug) return existing.slug;
-  const base2 = slugify(title, table2 === "notes" ? "note" : "bookmark");
+  const base2 = preferredSlug ? englishSlug(preferredSlug) : slugify(title, table2 === "notes" ? "note" : "bookmark");
   for (let n = 1; n <= 1e4; n++) {
     const tail = n === 1 ? "" : "-" + n;
     const candidate = base2.slice(0, 100 - tail.length).replace(/-+$/g, "") + tail;
@@ -25551,7 +25583,7 @@ function needsSummaryRepair(summary) {
 __name(needsSummaryRepair, "needsSummaryRepair");
 
 // src/data.js
-var fields = "b.id,b.slug,b.url,b.normalized_url,b.redirect_url,b.title,b.title_original,b.title_zh,b.summary,b.image_url,b.source,b.reference_links,CASE WHEN b.stage=1 AND b.deferred=1 THEN 5 ELSE b.stage END AS status,b.created_at,b.updated_at,b.read_at,b.published_at,b.starred_at, CASE WHEN b.stage=4 THEN COALESCE(b.starred_at,b.published_at,b.created_at) WHEN b.stage=3 THEN COALESCE(b.published_at,b.created_at) ELSE b.created_at END AS status_at,COALESCE((SELECT json_group_array(t.name) FROM bookmark_tags bt JOIN tags t ON t.id=bt.tag_id WHERE bt.bookmark_id=b.id),'[]') AS tags";
+var fields = "b.id,b.slug,b.rss_guid,b.url,b.normalized_url,b.redirect_url,b.title,b.title_original,b.title_zh,b.summary,b.image_url,b.source,b.reference_links,CASE WHEN b.stage=1 AND b.deferred=1 THEN 5 ELSE b.stage END AS status,b.created_at,b.updated_at,b.read_at,b.published_at,b.starred_at, CASE WHEN b.stage=4 THEN COALESCE(b.starred_at,b.published_at,b.created_at) WHEN b.stage=3 THEN COALESCE(b.published_at,b.created_at) ELSE b.created_at END AS status_at,COALESCE((SELECT json_group_array(t.name) FROM bookmark_tags bt JOIN tags t ON t.id=bt.tag_id WHERE bt.bookmark_id=b.id),'[]') AS tags";
 var decode = /* @__PURE__ */ __name((row) => {
   if (!row) return row;
   const { reference_links, ...rest } = row;
@@ -25644,6 +25676,12 @@ async function getBySlug(db, slug) {
   return publicEntry(decode(row));
 }
 __name(getBySlug, "getBySlug");
+async function getByOldSlug(db, slug) {
+  const row = await db.prepare(`SELECT ${fields} FROM bookmark_slug_redirects r JOIN bookmarks b ON b.id=r.bookmark_id
+    WHERE r.slug=? AND b.stage>=3 LIMIT 1`).bind(slug).first();
+  return publicEntry(decode(row));
+}
+__name(getByOldSlug, "getByOldSlug");
 async function byUrl(db, url) {
   const row = await db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.normalized_url=? OR b.redirect_url=? LIMIT 1`).bind(normalUrl(url), normalUrl(url)).first();
   return decode(row);
@@ -25740,7 +25778,7 @@ async function create(db, raw) {
   return { item: await get(db, id, true), alreadyExists: false };
 }
 __name(create, "create");
-async function patch(db, id, raw, hasNoteReference) {
+async function patch(db, id, raw, hasNoteReference, ai2 = null) {
   const current2 = await get(db, id, true);
   if (!current2) return null;
   const desired = "status" in raw ? Number(raw.status) : Number(current2.status);
@@ -25750,6 +25788,8 @@ async function patch(db, id, raw, hasNoteReference) {
     throw new Error("\u6458\u8981\u7A7A\u767D\u6216\u4F86\u6E90\u7121\u6548\uFF0C\u8ACB\u5148\u88DC\u4E0A\u6216\u8CBC\u5168\u6587\u91CD\u65B0\u6458\u8981");
   if (desired >= 3 && desired <= 4 && !finalTags.some((tag) => String(tag).toLowerCase() !== "default"))
     throw new Error("\u516C\u958B\u6216\u63A8\u85A6\u5FC5\u9808\u5148\u9078\u64C7\u81F3\u5C11\u4E00\u500B\u5206\u985E");
+  const sourceTitle = String(raw.title_original || current2.title_original || raw.title || current2.title || "");
+  const preferredSlug = !current2.slug && [3, 4].includes(desired) ? await translatedBookmarkSlug(sourceTitle, ai2) : "";
   if ("status" in raw) {
     const requested = Number(raw.status);
     if (!Number.isInteger(requested) || requested < 0 || requested > 5) throw new Error("\u72C0\u614B\u7121\u6548");
@@ -25789,7 +25829,7 @@ async function patch(db, id, raw, hasNoteReference) {
   }
   const result = await get(db, id, true);
   if ((result.status === 3 || result.status === 4) && !result.slug) {
-    await ensureSlug(db, "bookmarks", id, result.title_original || result.title);
+    await ensureSlug(db, "bookmarks", id, result.title_original || result.title, preferredSlug);
     return get(db, id, true);
   }
   return result;
@@ -25963,7 +26003,7 @@ async function recommendBookmarkForPublishedNote(env, id, { load = get, update =
     if (!tags.length)
       throw new Error("\u5F15\u7528\u66F8\u7C64\u7F3A\u5C11\u6709\u6548\u5206\u985E\uFF0C\u8ACB\u5148\u8A2D\u5B9A\u5206\u985E\u518D\u767C\u4F48\u96A8\u7B46");
   }
-  const saved = await update(env.DB, id, { status: 4, tags });
+  const saved = await update(env.DB, id, { status: 4, tags }, void 0, env.AI);
   if (!saved || saved.status !== 4)
     throw new Error("\u5F15\u7528\u66F8\u7C64\u7121\u6CD5\u8A2D\u5B9A\u70BA\u63A8\u85A6");
   return { id, status: 4, changed: true };
@@ -33119,7 +33159,8 @@ async function api(req, env, url, ctx) {
           env.DB,
           id,
           await input(req),
-          () => env.NOTE_REFERENCES?.hasReference(id)
+          () => env.NOTE_REFERENCES?.hasReference(id),
+          env.AI
         ));
       }
       if (req.method === "DELETE") return json2({ deleted: await remove(env.DB, match2[1]) });
@@ -33211,9 +33252,10 @@ function rss(items, siteUrl, tag = "", tagLabel = "", categories = [], noteHtmlB
   const dates = publicationDates(items);
   return '<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>' + esc(title) + "</title><link>" + esc(feedLink) + "</link><description>ChrisTorng \u5206\u4EAB\u7684\u66F8\u7C64</description><language>zh-TW</language>" + items.map((item, index) => {
     const url = base2 + bookmarkPermalink(item);
+    const guid = item.rss_guid || url;
     const content = bookmarkArticleHtml(item, categories, noteHtmlById[item.id]);
     const labels = bookmarkTags(item, categories);
-    return "<item><title>" + esc(item.title) + "</title><link>" + esc(url) + '</link><guid isPermaLink="true">' + esc(url) + "</guid><pubDate>" + dates[index] + "</pubDate>" + labels.map((t) => "<category>" + esc(t.name) + "</category>").join("") + "<description>" + esc(content) + "</description><content:encoded><![CDATA[" + content.replaceAll("]]>", "]]]]><![CDATA[>") + "]]></content:encoded></item>";
+    return "<item><title>" + esc(item.title) + "</title><link>" + esc(url) + '</link><guid isPermaLink="true">' + esc(guid) + "</guid><pubDate>" + dates[index] + "</pubDate>" + labels.map((t) => "<category>" + esc(t.name) + "</category>").join("") + "<description>" + esc(content) + "</description><content:encoded><![CDATA[" + content.replaceAll("]]>", "]]]]><![CDATA[>") + "]]></content:encoded></item>";
   }).join("") + "</channel></rss>";
 }
 __name(rss, "rss");
@@ -33291,7 +33333,7 @@ var worker = {
       const match2 = path.match(/^\/bookmarks\/([a-z0-9-]{1,100})\/?$/);
       if (match2 && !["view", "admin", "api"].includes(match2[1])) {
         const key2 = match2[1];
-        const published = /^[0-9a-f-]{36}$/.test(key2) ? await get(env.DB, key2) : await getBySlug(env.DB, key2);
+        const published = /^[0-9a-f-]{36}$/.test(key2) ? await get(env.DB, key2) : await getBySlug(env.DB, key2) || await getByOldSlug(env.DB, key2);
         if (published?.slug) {
           const canonical = "/bookmarks/" + published.slug + "/";
           if (url.pathname !== canonical)
