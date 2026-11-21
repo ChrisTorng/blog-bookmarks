@@ -1,7 +1,7 @@
 import { preferredRedirect, primaryUrl } from './redirect.js';
-import { ensureSlug } from './slug.js';
+import { ensureSlug, translatedBookmarkSlug } from './slug.js';
 import { needsSummaryRepair } from './metadata.js';
-const fields = "b.id,b.slug,b.url,b.normalized_url,b.redirect_url,b.title,b.title_original,b.title_zh,b.summary,b.image_url,b.source,b.reference_links,CASE WHEN b.stage=1 AND b.deferred=1 THEN 5 ELSE b.stage END AS status,b.created_at,b.updated_at,b.read_at,b.published_at,b.starred_at, CASE WHEN b.stage=4 THEN COALESCE(b.starred_at,b.published_at,b.created_at) WHEN b.stage=3 THEN COALESCE(b.published_at,b.created_at) ELSE b.created_at END AS status_at,COALESCE((SELECT json_group_array(t.name) FROM bookmark_tags bt JOIN tags t ON t.id=bt.tag_id WHERE bt.bookmark_id=b.id),'[]') AS tags";
+const fields = "b.id,b.slug,b.rss_guid,b.url,b.normalized_url,b.redirect_url,b.title,b.title_original,b.title_zh,b.summary,b.image_url,b.source,b.reference_links,CASE WHEN b.stage=1 AND b.deferred=1 THEN 5 ELSE b.stage END AS status,b.created_at,b.updated_at,b.read_at,b.published_at,b.starred_at, CASE WHEN b.stage=4 THEN COALESCE(b.starred_at,b.published_at,b.created_at) WHEN b.stage=3 THEN COALESCE(b.published_at,b.created_at) ELSE b.created_at END AS status_at,COALESCE((SELECT json_group_array(t.name) FROM bookmark_tags bt JOIN tags t ON t.id=bt.tag_id WHERE bt.bookmark_id=b.id),'[]') AS tags";
 const decode = row => {
   if(!row)return row;
   const {reference_links,...rest}=row;
@@ -84,6 +84,11 @@ export async function get(db,id,includePrivate=false) {
 }
 export async function getBySlug(db,slug) {
   const row=await db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.slug=? AND b.stage>=3 LIMIT 1`).bind(slug).first();
+  return publicEntry(decode(row));
+}
+export async function getByOldSlug(db,slug) {
+  const row=await db.prepare(`SELECT ${fields} FROM bookmark_slug_redirects r JOIN bookmarks b ON b.id=r.bookmark_id
+    WHERE r.slug=? AND b.stage>=3 LIMIT 1`).bind(slug).first();
   return publicEntry(decode(row));
 }
 export async function byUrl(db,url) {
@@ -176,7 +181,7 @@ export async function create(db,raw) {
   await replaceTags(db,id,x.tags);
   return {item:await get(db,id,true),alreadyExists:false};
 }
-export async function patch(db,id,raw,hasNoteReference) {
+export async function patch(db,id,raw,hasNoteReference,ai=null) {
   const current=await get(db,id,true);if(!current)return null;
   // Publication must have a persisted or concurrently submitted category.
   const desired='status' in raw?Number(raw.status):Number(current.status);
@@ -188,6 +193,11 @@ export async function patch(db,id,raw,hasNoteReference) {
     throw new Error('摘要空白或來源無效，請先補上或貼全文重新摘要');
   if(desired>=3 && desired<=4 && !finalTags.some(tag=>String(tag).toLowerCase()!=='default'))
     throw new Error('公開或推薦必須先選擇至少一個分類');
+  // Translate before modifying the stage, so AI failure cannot leave a public
+  // record without its permalink. This runs only on first publication.
+  const sourceTitle=String(raw.title_original||current.title_original||raw.title||current.title||'');
+  const preferredSlug=!current.slug && [3,4].includes(desired)
+    ? await translatedBookmarkSlug(sourceTitle,ai) : '';
   if('status' in raw){
     const requested=Number(raw.status);
     if(!Number.isInteger(requested)||requested<0||requested>5)throw new Error('狀態無效');
@@ -231,7 +241,7 @@ export async function patch(db,id,raw,hasNoteReference) {
   // Allocate only on first publication, after the original title has been saved.
   // Never change an established slug on edits, unpublication, or re-publication.
   if((result.status===3 || result.status===4) && !result.slug){
-    await ensureSlug(db,'bookmarks',id,result.title_original||result.title);
+    await ensureSlug(db,'bookmarks',id,result.title_original||result.title,preferredSlug);
     return get(db,id,true);
   }
   return result;
