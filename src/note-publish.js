@@ -29,7 +29,7 @@ export async function recommendBookmarkForPublishedNote(
 
   // patch() performs the same summary/category validation as manual publication
   // and creates the stable bookmark permalink on first publication.
-  const saved = await update(env.DB, id, { status: 4, tags });
+  const saved = await update(env.DB, id, { status: 4, tags }, undefined, env.AI);
   if (!saved || saved.status !== 4)
     throw new Error('引用書籤無法設定為推薦');
   return { id, status: 4, changed: true };
