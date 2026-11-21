@@ -25781,6 +25781,10 @@ __name(create, "create");
 async function patch(db, id, raw, hasNoteReference, ai2 = null) {
   const current2 = await get(db, id, true);
   if (!current2) return null;
+  const markPreviousVisibility = /* @__PURE__ */ __name((value) => {
+    if (value) Object.defineProperty(value, "_wasPublic", { value: current2.status >= 3, enumerable: false });
+    return value;
+  }, "markPreviousVisibility");
   const desired = "status" in raw ? Number(raw.status) : Number(current2.status);
   const finalTags = "tags" in raw ? Array.isArray(raw.tags) ? raw.tags.map((t) => String(t).trim()).filter(Boolean) : [] : current2.tags;
   const summary = "summary" in raw ? raw.summary : current2.summary;
@@ -25830,9 +25834,9 @@ async function patch(db, id, raw, hasNoteReference, ai2 = null) {
   const result = await get(db, id, true);
   if ((result.status === 3 || result.status === 4) && !result.slug) {
     await ensureSlug(db, "bookmarks", id, result.title_original || result.title, preferredSlug);
-    return get(db, id, true);
+    return markPreviousVisibility(await get(db, id, true));
   }
-  return result;
+  return markPreviousVisibility(result);
 }
 __name(patch, "patch");
 async function remove(db, id) {
@@ -32018,13 +32022,16 @@ async function bulkStatus(req, env) {
   const marks = normalized.map(() => "?").join(",");
   const rows = await env.DB.prepare("SELECT id,normalized_url,image_url,CASE WHEN stage=1 AND deferred=1 THEN 5 ELSE stage END AS status FROM bookmarks WHERE normalized_url IN (" + marks + ")").bind(...normalized).all();
   const updates = rows.results.filter((item) => !item.image_url && images.has(item.normalized_url)).map((item) => env.DB.prepare("UPDATE bookmarks SET image_url=? WHERE id=? AND (image_url IS NULL OR image_url='')").bind(images.get(item.normalized_url), item.id));
+  const publishedImageChanged = rows.results.some((item) => item.status >= 3 && !item.image_url && images.has(item.normalized_url));
   if (updates.length) await env.DB.batch(updates);
   const result = [];
   for (const item of rows.results) {
     const complete = await get(env.DB, item.id, true);
     result.push({ url: item.normalized_url, id: item.id, status: item.status, tags: complete.tags });
   }
-  return json(result);
+  const response = json(result);
+  if (publishedImageChanged) response.headers.set("X-Public-Content-Changed", "1");
+  return response;
 }
 __name(bulkStatus, "bulkStatus");
 async function updateTags(req, env) {
@@ -32033,7 +32040,9 @@ async function updateTags(req, env) {
   if (!item) return json({ error: "\u66F8\u7C64\u4E0D\u5B58\u5728" }, 404);
   if (!Array.isArray(body.tags)) return json({ error: "\u7F3A\u5C11\u6A19\u7C64" }, 400);
   const result = await patch(env.DB, item.id, { tags: body.tags });
-  return json(result);
+  const response = json(result);
+  if (result?.status >= 3 || result?._wasPublic) response.headers.set("X-Public-Content-Changed", "1");
+  return response;
 }
 __name(updateTags, "updateTags");
 
@@ -33030,6 +33039,24 @@ __name(relatedNoteHtml, "relatedNoteHtml");
 
 // src/api.js
 var json2 = /* @__PURE__ */ __name((value, status = 200) => new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } }), "json");
+async function invalidateAfterWrite(env, ctx) {
+  if (env.AUTH_MODE === "local") return;
+  try {
+    if (!ctx?.exports?.PublicCache?.purgePublic || !env.NOTE_REFERENCES?.invalidatePublic)
+      throw new Error("Public cache invalidation entrypoint missing");
+    await ctx.exports.PublicCache.purgePublic();
+    await env.NOTE_REFERENCES.invalidatePublic();
+  } catch (error2) {
+    console.error("Bookmark saved but public cache purge failed", String(error2));
+    const failure = new Error("\u66F8\u7C64\u5DF2\u5132\u5B58\uFF0C\u4F46\u516C\u958B\u5FEB\u53D6\u5C1A\u672A\u5168\u90E8\u66F4\u65B0\uFF1B\u8ACB\u7A0D\u5F8C\u91CD\u65B0\u6574\u7406\u6216\u518D\u6B21\u5132\u5B58\u3002");
+    failure.httpStatus = 503;
+    failure.code = "PUBLIC_CACHE_PURGE_FAILED";
+    failure.publicMessage = failure.message;
+    failure.saved = true;
+    throw failure;
+  }
+}
+__name(invalidateAfterWrite, "invalidateAfterWrite");
 function opts(url, privateList = false) {
   const filter = url.searchParams.get("filter") || (privateList ? "pending" : "published");
   const defaultSort = privateList && ["pending", "unread", "readPending", "deferred"].includes(filter) ? "old" : "new";
@@ -33105,7 +33132,9 @@ async function api(req, env, url, ctx) {
     }
     if (p === "/bookmarks/api/admin/image/backfill" && req.method === "POST") {
       const body = await input(req);
-      return json2(await backfillMissingImages(env, Math.min(10, Math.max(1, Number(body.limit) || 5))));
+      const updated = await backfillMissingImages(env, Math.min(10, Math.max(1, Number(body.limit) || 5)));
+      if (updated?.saved > 0) await invalidateAfterWrite(env, ctx);
+      return json2(updated);
     }
     if (p === "/bookmarks/api/admin/quick" && req.method === "GET")
       return json2(await reviewWindow(env.DB, url.searchParams.get("size")));
@@ -33113,7 +33142,9 @@ async function api(req, env, url, ctx) {
       if (req.method === "GET") return json2(await repairCandidates(env.DB));
       if (req.method === "POST") {
         const body = await readSubmittedContent(req, { allowDescription: true });
-        return json2(await commitArticleSummary(env, body.id, body));
+        const updated = await commitArticleSummary(env, body.id, body);
+        await invalidateAfterWrite(env, ctx);
+        return json2(updated);
       }
     }
     if (p === "/bookmarks/api/admin/summary-repair/preview" && req.method === "POST") {
@@ -33136,14 +33167,20 @@ async function api(req, env, url, ctx) {
       if (body.apply === true && (title || summary)) {
         await env.DB.prepare("UPDATE bookmarks SET title_original=COALESCE(NULLIF(title_original,''),?),summary=CASE WHEN ? IS NOT NULL THEN ? ELSE summary END,updated_at=? WHERE id=?").bind(title, summary, summary, (/* @__PURE__ */ new Date()).toISOString(), item.id).run();
       }
+      if (body.apply === true && (title || summary)) await invalidateAfterWrite(env, ctx);
       return json2({ ...report, proposed: { title_original: title, summary }, updated: body.apply === true && !!(title || summary) });
     }
     if (p === "/bookmarks/api/admin/ingest-token" && req.method === "POST") return json2(await rotateIngestToken(env.DB));
     if (p === "/bookmarks/api/admin/tags" && req.method === "GET") return json2(await tagsList(env.DB, true));
-    if (p === "/bookmarks/api/admin/tags" && req.method === "POST") return json2(await createAndAttachTag(env.DB, await input(req)), 201);
+    if (p === "/bookmarks/api/admin/tags" && req.method === "POST") {
+      const created = await createAndAttachTag(env.DB, await input(req));
+      if (created.item?.status >= 3) await invalidateAfterWrite(env, ctx);
+      return json2(created, 201);
+    }
     const tagMatch = p.match(/^\/bookmarks\/api\/admin\/tags\/([^/]+)\/?$/);
     if (tagMatch && req.method === "PATCH") {
       const changed = await renameTag(env.DB, decodeURIComponent(tagMatch[1]), await input(req));
+      if (changed) await invalidateAfterWrite(env, ctx);
       return changed ? json2(changed) : json2({ error: "\u627E\u4E0D\u5230\u6A19\u7C64" }, 404);
     }
     if (p === "/bookmarks/api/admin/check" && req.method === "GET") {
@@ -33155,28 +33192,44 @@ async function api(req, env, url, ctx) {
       if (req.method === "GET") return json2(await get(env.DB, match2[1], true));
       if (req.method === "PATCH") {
         const id = match2[1];
-        return json2(await patch(
+        const item = await patch(
           env.DB,
           id,
           await input(req),
           () => env.NOTE_REFERENCES?.hasReference(id),
           env.AI
-        ));
+        );
+        if (item && (item.status >= 3 || item._wasPublic)) await invalidateAfterWrite(env, ctx);
+        return json2(item);
       }
-      if (req.method === "DELETE") return json2({ deleted: await remove(env.DB, match2[1]) });
+      if (req.method === "DELETE") {
+        const deleted = await remove(env.DB, match2[1]);
+        if (deleted) await invalidateAfterWrite(env, ctx);
+        return json2({ deleted });
+      }
     }
     if (p === "/bookmarks/api/ingest/preview" && req.method === "POST") {
       if (!await validIngestToken(req, env)) return json2({ error: "Token \u7121\u6548" }, 401);
       return json2(await previewInsights(env, await input(req), ctx));
     }
-    if (p === "/bookmarks/api/ingest/status" && req.method === "POST") return bulkStatus(req, env);
+    if (p === "/bookmarks/api/ingest/status" && req.method === "POST") {
+      const result = await bulkStatus(req, env);
+      if (result.ok && result.headers.get("X-Public-Content-Changed") === "1") await invalidateAfterWrite(env, ctx);
+      return result;
+    }
     if (p === "/bookmarks/api/ingest/remove" && req.method === "POST") {
       if (!await validIngestToken(req, env)) return json2({ error: "Token \u7121\u6548" }, 401);
       const body = await input(req), item = await byUrl(env.DB, body.url);
       if (!item) return json2({ deleted: false });
-      return json2({ deleted: await remove(env.DB, item.id) });
+      const deleted = await remove(env.DB, item.id);
+      if (deleted) await invalidateAfterWrite(env, ctx);
+      return json2({ deleted });
     }
-    if (p === "/bookmarks/api/ingest/update-tags" && req.method === "POST") return updateTags(req, env);
+    if (p === "/bookmarks/api/ingest/update-tags" && req.method === "POST") {
+      const result = await updateTags(req, env);
+      if (result.ok && result.headers.get("X-Public-Content-Changed") === "1") await invalidateAfterWrite(env, ctx);
+      return result;
+    }
     if (p === "/bookmarks/api/ingest/tags" && req.method === "GET") {
       if (!await validIngestToken(req, env)) return json2({ error: "Token \u7121\u6548" }, 401);
       return json2(await tagsList(env.DB, true));
@@ -33221,7 +33274,7 @@ async function api(req, env, url, ctx) {
     const code2 = e?.code || endpoint + (status >= 500 ? "_FAILED" : "_INVALID");
     console.error("Bookmark API failure", JSON.stringify({ code: code2, method: req.method, path: p, ray, message: String(e?.message || e).slice(0, 600), stack: String(e?.stack || "").slice(0, 1800) }));
     const safeMessage = e?.publicMessage || (status >= 500 ? "\u4F3A\u670D\u5668\u932F\u8AA4" : String(e?.message || "\u8ACB\u6C42\u7121\u6548"));
-    return json2({ error: safeMessage, code: code2, ...ray ? { ray } : {} }, status);
+    return json2({ error: safeMessage, code: code2, ...e?.saved ? { saved: true } : {}, ...ray ? { ray } : {} }, status);
   }
 }
 __name(api, "api");
@@ -33260,44 +33313,111 @@ function rss(items, siteUrl, tag = "", tagLabel = "", categories = [], noteHtmlB
 }
 __name(rss, "rss");
 
+// src/public-list.js
+async function publicBookmarksList(req, env) {
+  const url = new URL(req.url);
+  const p = url.searchParams;
+  const filter = {
+    tag: (p.get("tag") || "").slice(0, 100),
+    q: (p.get("q") || "").slice(0, 100),
+    from: /^\d{4}-\d{2}-\d{2}$/.test(p.get("from") || "") ? p.get("from") : "",
+    to: /^\d{4}-\d{2}-\d{2}$/.test(p.get("to") || "") ? p.get("to") : "",
+    sort: ["old", "new", "recommended", "title"].includes(p.get("sort")) ? p.get("sort") : "new",
+    page: Math.max(1, Math.min(1e5, Number(p.get("page")) || 1))
+  };
+  const [result, categories] = await Promise.all([
+    list(env.DB, { ...filter, privateList: false, filter: "published" }),
+    tagsList(env.DB)
+  ]);
+  const notes = await relatedNoteHtml(env, result.items);
+  const active = categories.find((t) => t.id === filter.tag);
+  const activeName = active ? active.name_zh || active.name : "";
+  const label = activeName ? activeName + " \xB7 \u66F8\u7C64" : "\u66F8\u7C64";
+  const name = "ChrisTorng \u5B78\u7FD2\u5929\u5730";
+  const buildLink = /* @__PURE__ */ __name((changes = {}) => {
+    const next2 = { ...filter, ...changes };
+    const search = new URLSearchParams();
+    for (const key2 of ["tag", "q", "from", "to", "sort", "page"]) {
+      const value = next2[key2];
+      if (!value || key2 === "sort" && value === "new" || key2 === "page" && Number(value) === 1) continue;
+      search.set(key2, String(value));
+    }
+    return "/bookmarks/" + (search.size ? "?" + search.toString() : "");
+  }, "buildLink");
+  const nav = categories.map((t) => {
+    const label2 = t.name_zh || t.name;
+    const selected = t.id === filter.tag;
+    return '<a class="block rounded px-2 py-1 text-sm hover:bg-gray-100 dark:hover:bg-gray-800 ' + (selected ? "bg-gray-100 font-bold text-primary-500 dark:bg-gray-800" : "") + '" href="' + esc(buildLink({ tag: t.id, page: 1 })) + '">#' + esc(label2) + ' <small class="text-gray-500">(' + Number(t.count) + ")</small></a>";
+  }).join("");
+  const field = "rounded border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100";
+  const radio = /* @__PURE__ */ __name((value, title) => '<option value="' + value + '"' + (filter.sort === value ? " selected" : "") + ">" + title + "</option>", "radio");
+  const cards = result.items.map(
+    (item) => bookmarkArticleHtml(item, categories, notes[item.id] || "", bookmarkPermalink(item))
+  ).join("");
+  const prev = result.page > 1 ? '<a class="text-primary-500" href="' + esc(buildLink({ page: result.page - 1 })) + '">\u2190 \u4E0A\u4E00\u9801</a>' : "<span></span>";
+  const next = result.page < result.pages ? '<a class="text-primary-500" href="' + esc(buildLink({ page: result.page + 1 })) + '">\u4E0B\u4E00\u9801 \u2192</a>' : "<span></span>";
+  const pageLinks = result.pages > 1 ? '<nav aria-label="\u5206\u9801" class="mt-6 flex items-center justify-between gap-3 text-sm">' + prev + "<span>" + result.page + " / " + result.pages + "</span>" + next + "</nav>" : "";
+  const body = '<section class="w-full py-5 pb-12"><header class="mb-6 flex flex-wrap items-start justify-between gap-4"><div><h1 class="heading-accent text-3xl font-extrabold sm:text-5xl">' + esc(label) + ' <small class="ml-2 text-lg font-normal text-gray-500">Bookmarks</small></h1><p class="mt-3 text-gray-500 dark:text-gray-400">\u95B1\u8B80\u8207\u5206\u4EAB\u7684\u7DB2\u9801\u6536\u85CF</p></div><a class="text-primary-500 text-sm" type="application/rss+xml" href="/bookmarks/feed.xml' + (filter.tag ? "?tag=" + encodeURIComponent(filter.tag) : "") + '">\u66F8\u7C64 RSS</a></header><div class="grid grid-cols-1 items-start gap-6 md:grid-cols-[244px_minmax(0,1fr)] lg:gap-12"><aside class="hidden md:block"><a class="mb-2 block font-bold text-primary-500" href="/bookmarks/">\u6240\u6709\u66F8\u7C64 (' + Number(result.total) + ')</a><nav class="space-y-1" aria-label="\u66F8\u7C64\u5206\u985E">' + nav + '</nav></aside><div class="min-w-0"><form method="get" action="/bookmarks/" class="mb-4 space-y-2 border-b border-gray-300/30 pb-4"><div class="flex flex-wrap items-center gap-2"><label class="flex-1"><span class="sr-only">\u641C\u5C0B</span><input class="' + field + ' w-full" type="search" name="q" placeholder="\u641C\u5C0B\u6A19\u984C\u3001\u6458\u8981\u3001\u7DB2\u5740" value="' + esc(filter.q) + '"></label><label><span class="sr-only">\u6392\u5E8F</span><select class="' + field + '" name="sort">' + radio("new", "\u6700\u65B0") + radio("old", "\u6700\u65E9") + radio("recommended", "\u63A8\u85A6\u512A\u5148") + radio("title", "\u4F9D\u6A19\u984C") + '</select></label><button type="submit" class="rounded bg-primary-500 px-3 py-1.5 text-sm text-white">\u67E5\u8A62</button></div><div class="flex flex-wrap gap-2 text-sm"><label>\u7531 <input aria-label="\u8D77\u59CB\u65E5\u671F" class="' + field + '" type="date" name="from" value="' + esc(filter.from) + '"></label><label>\u81F3 <input aria-label="\u7D50\u675F\u65E5\u671F" class="' + field + '" type="date" name="to" value="' + esc(filter.to) + '"></label></div><label class="md:hidden">\u5206\u985E <select class="' + field + '" name="tag"><option value="">\u6240\u6709\u66F8\u7C64</option>' + categories.map((t) => '<option value="' + esc(t.id) + '"' + (t.id === filter.tag ? " selected" : "") + ">" + esc(t.name_zh || t.name) + "</option>").join("") + "</select></label></form>" + (cards || '<p class="py-6 text-gray-500">\u6C92\u6709\u7B26\u5408\u689D\u4EF6\u7684\u66F8\u7C64\u3002</p>') + pageLinks + "</div></div></section>";
+  const shell = await fetch(env.BLOG_SHELL_URL || url.origin + "/notes-shell/", { headers: { Accept: "text/html" } });
+  if (!shell.ok) return new Response("\u7DB2\u7AD9\u7248\u578B\u66AB\u6642\u7121\u6CD5\u53D6\u5F97", { status: 503, headers: { "Cache-Control": "no-store" } });
+  const canonical = url.origin + "/bookmarks/";
+  const description = "ChrisTorng \u5206\u4EAB\u7684\u66F8\u7C64\u3001\u539F\u59CB\u6587\u7AE0\u9023\u7D50\u3001\u7E41\u9AD4\u4E2D\u6587\u6458\u8981\u8207\u5206\u985E";
+  const meta = '<meta name="description" content="' + esc(description) + '"><meta name="robots" content="' + (p.size ? "noindex,follow" : "index,follow") + '"><link rel="canonical" href="' + esc(canonical) + '">';
+  let rewrite = new HTMLRewriter().on("#notes-content", { element(el) {
+    el.setInnerContent(body, { html: true });
+  } }).on("title", { element(el) {
+    el.setInnerContent(label + " | " + name);
+  } }).on("head", { element(el) {
+    el.append(meta, { html: true });
+  } });
+  for (const selector of ['meta[name="description"]', 'meta[name="robots"]', 'link[rel="canonical"]'])
+    rewrite = rewrite.on(selector, { element(el) {
+      el.remove();
+    } });
+  const headers = new Headers(shell.headers);
+  headers.set("Content-Type", "text/html; charset=utf-8");
+  headers.set("Cache-Control", "no-store");
+  headers.delete("Content-Length");
+  return rewrite.transform(new Response(shell.body, { status: 200, headers }));
+}
+__name(publicBookmarksList, "publicBookmarksList");
+
 // src/index.js
 var reply = /* @__PURE__ */ __name((body, type = "text/plain; charset=utf-8", status = 200) => new Response(body, { status, headers: {
   "Content-Type": type,
   "X-Content-Type-Options": "nosniff",
   "Cache-Control": "no-store"
 } }), "reply");
-async function cachedXml(req, env, ctx, ttl, produce) {
-  const cache = env.AUTH_MODE !== "local" && typeof caches !== "undefined" ? caches.default : null;
-  const url = new URL(req.url);
-  const keyUrl = url.origin + url.pathname + (url.searchParams.has("tag") ? "?tag=" + encodeURIComponent(url.searchParams.get("tag") || "") : "");
-  const key2 = cache ? new Request(keyUrl) : null;
-  if (cache) {
-    try {
-      const hit = await cache.match(key2);
-      if (hit) return hit;
-    } catch (error2) {
-      console.warn("Public XML cache read failed", String(error2));
-    }
-  }
-  const generated = await produce();
-  if (!cache || !generated.ok || !ctx?.waitUntil) return generated;
-  const headers = new Headers(generated.headers);
-  headers.set("Cache-Control", `public, max-age=0, s-maxage=${ttl}`);
-  const response = new Response(generated.body, { status: generated.status, headers });
-  ctx.waitUntil(cache.put(key2, response.clone()).catch((error2) => console.warn("Public XML cache write failed", String(error2))));
-  return response;
+function cachedXml(_req, _env, _ctx, _ttl, produce) {
+  return produce();
 }
 __name(cachedXml, "cachedXml");
+var isPublicPage = /* @__PURE__ */ __name((path) => path === "/bookmarks/" || path === "/bookmarks" || path === "/bookmarks/feed.xml" || path === "/bookmarks/sitemap.xml" || /^\/bookmarks\/[a-z0-9-]{1,100}\/?$/.test(path) && !["view", "admin", "api"].includes(path.split("/")[2]), "isPublicPage");
 var worker = {
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(backfillMissingImages(env, 6).catch((error2) => console.error("Bookmark scheduled image enrichment failed", String(error2))));
+    ctx.waitUntil(backfillMissingImages(env, 6).then(async (result) => {
+      if (result?.saved > 0 && env.AUTH_MODE !== "local" && ctx?.exports?.PublicCache?.purgePublic) {
+        await ctx.exports.PublicCache.purgePublic();
+        await env.NOTE_REFERENCES.invalidatePublic();
+      }
+      return result;
+    }).catch((error2) => console.error("Bookmark scheduled image enrichment/cache purge failed", String(error2))));
   },
-  async fetch(req, env, ctx) {
+  async fetch(req, env, ctx, inner = false) {
     if (req.method === "HEAD") {
-      const response = await worker.fetch(new Request(req, { method: "GET" }), env, ctx);
+      const response = await worker.fetch(new Request(req, { method: "GET" }), env, ctx, inner);
       return new Response(null, { status: response.status, headers: response.headers });
     }
     const url = new URL(req.url), path = url.pathname;
+    if (!inner && req.method === "GET" && env.AUTH_MODE !== "local" && isPublicPage(path) && ctx?.exports?.PublicCache?.fetch) {
+      const publicRequest = new Request(req);
+      publicRequest.headers.delete("Authorization");
+      publicRequest.headers.delete("Cookie");
+      return ctx.exports.PublicCache.fetch(publicRequest);
+    }
+    if (path === "/bookmarks/" || path === "/bookmarks") {
+      if (req.method === "GET") return publicBookmarksList(req, env);
+    }
     if (path === "/bookmarks/api" || path === "/bookmarks/api/" || path.startsWith("/bookmarks/api/")) return api(req, env, url, ctx);
     if (path === "/bookmarks/feed.xml" && req.method === "GET") {
       return cachedXml(req, env, ctx, 60, async () => {
@@ -33352,12 +33472,38 @@ var worker = {
 var index_default = worker;
 
 // src/worker/index.js
+var index_default2 = index_default;
+var PublicCache = class extends WorkerEntrypoint {
+  static {
+    __name(this, "PublicCache");
+  }
+  async fetch(request) {
+    const response = await index_default.fetch(request, this.env, this.ctx, true);
+    const type = response.headers.get("Content-Type") || "";
+    if (response.status !== 200 || !/(text\/html|\/xml|\+xml)/i.test(type)) return response;
+    const headers = new Headers(response.headers);
+    headers.set("Cache-Control", "public, max-age=0, s-maxage=300");
+    headers.set("Cache-Tag", "blog-bookmarks-public");
+    return new Response(response.body, { status: response.status, headers });
+  }
+  async purgePublic() {
+    const result = await this.ctx.cache.purge({ purgeEverything: true });
+    if (!result.success) throw new Error("Bookmark Workers Cache purge failed: " + JSON.stringify(result.errors || []));
+    return true;
+  }
+};
 var NoteEditor = class extends WorkerEntrypoint {
   static {
     __name(this, "NoteEditor");
   }
   async recommendForPublishedNote(id) {
-    return recommendBookmarkForPublishedNote(this.env, id);
+    const result = await recommendBookmarkForPublishedNote(this.env, id);
+    if (result.changed) await this.invalidatePublic();
+    return result;
+  }
+  // Called by Notes and by the local Bookmarks gateway after a mutation.
+  async invalidatePublic() {
+    return this.ctx.exports.PublicCache.purgePublic();
   }
   async previewBookmark(id) {
     const item = await get(this.env.DB, id, true);
@@ -33368,6 +33514,7 @@ var NoteEditor = class extends WorkerEntrypoint {
 };
 export {
   NoteEditor,
-  index_default as default
+  PublicCache,
+  index_default2 as default
 };
 //# sourceMappingURL=index.js.map
