@@ -1,4 +1,4 @@
-import { list, tagsList, get, getBySlug, esc, publicFeedItems, publicSitemapEntries } from './data.js';
+import { list, tagsList, get, getBySlug, getByOldSlug, esc, publicFeedItems, publicSitemapEntries } from './data.js';
 import { publicBookmarkPage } from './public-page.js';
 import { api, opts } from './api.js';
 import { rss } from './feeds.js';
@@ -87,7 +87,8 @@ const worker = {
     const match = path.match(/^\/bookmarks\/([a-z0-9-]{1,100})\/?$/);
     if (match && !['view','admin','api'].includes(match[1])) {
       const key = match[1];
-      const published = /^[0-9a-f-]{36}$/.test(key) ? await get(env.DB,key) : await getBySlug(env.DB,key);
+      const published = /^[0-9a-f-]{36}$/.test(key) ? await get(env.DB,key)
+        : await getBySlug(env.DB,key) || await getByOldSlug(env.DB,key);
       if (published?.slug) {
         const canonical = '/bookmarks/' + published.slug + '/';
         if (url.pathname !== canonical)
