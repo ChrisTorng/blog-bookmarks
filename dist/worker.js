@@ -25711,7 +25711,10 @@ async function reviewWindow(db, requested = 3) {
 }
 __name(reviewWindow, "reviewWindow");
 async function tagsList(db, includePrivate = false) {
-  const rows = await db.prepare(`SELECT t.id,t.name,t.name_zh,COUNT(*) count FROM tags t JOIN bookmark_tags bt ON bt.tag_id=t.id JOIN bookmarks b ON b.id=bt.bookmark_id ${includePrivate ? "" : "WHERE b.stage>=3"} GROUP BY t.id,t.name,t.name_zh ORDER BY count DESC,t.name`).all();
+  const counter = includePrivate ? "all_count" : "public_count";
+  const rows = await db.prepare(`SELECT t.id,t.name,t.name_zh,c.${counter} AS count
+    FROM bookmark_tag_counts c JOIN tags t ON t.id=c.tag_id
+    WHERE c.${counter}>0 ORDER BY count DESC,t.name`).all();
   return rows.results;
 }
 __name(tagsList, "tagsList");
