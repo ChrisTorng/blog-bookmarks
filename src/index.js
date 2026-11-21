@@ -30,7 +30,7 @@ const worker = {
   ctx.waitUntil(backfillMissingImages(env,6).then(async result => {
     // Published thumbnails can change without an admin save.
     // Keep their HTML and Notes references fresh after enrichment.
-    if (env.AUTH_MODE !== 'local' && ctx?.exports?.PublicCache?.purgePublic) {
+    if (result?.saved > 0 && env.AUTH_MODE !== 'local' && ctx?.exports?.PublicCache?.purgePublic) {
       await ctx.exports.PublicCache.purgePublic();
       await env.NOTE_REFERENCES.invalidatePublic();
     }
