@@ -32,7 +32,14 @@ export class PublicCache extends WorkerEntrypoint {
 
 export class NoteEditor extends WorkerEntrypoint {
   async recommendForPublishedNote(id) {
-    return recommendBookmarkForPublishedNote(this.env, id);
+    const result = await recommendBookmarkForPublishedNote(this.env, id);
+    if (result.changed) await this.invalidatePublic();
+    return result;
+  }
+
+  // Called by Notes and by the local Bookmarks gateway after a mutation.
+  async invalidatePublic() {
+    return this.ctx.exports.PublicCache.purgePublic();
   }
 
   async previewBookmark(id) {
