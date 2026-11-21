@@ -11,8 +11,16 @@ export default worker;
 // remains uncached, so authenticated APIs, mutable state and static passthrough
 // requests cannot accidentally be cached.
 export class PublicCache extends WorkerEntrypoint {
-  fetch(request) {
-    return worker.fetch(request, this.env, this.ctx, true);
+  async fetch(request) {
+    const response = await worker.fetch(request, this.env, this.ctx, true);
+    const type = response.headers.get('Content-Type') || '';
+    // Cache ONLY successful public HTML and XML. Never cache redirects,
+    // errors, JSON (including public API), access responses, or static origin.
+    if (response.status !== 200 || !/(text\/html|\/xml|\+xml)/i.test(type)) return response;
+    const headers = new Headers(response.headers);
+    headers.set('Cache-Control', 'public, max-age=0, s-maxage=300');
+    headers.set('Cache-Tag', 'blog-bookmarks-public');
+    return new Response(response.body, {status:response.status,headers});
   }
 
   async purgePublic() {
