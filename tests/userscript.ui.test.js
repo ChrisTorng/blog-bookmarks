@@ -4,7 +4,8 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 
 const source = readFileSync(new URL('../tampermonkey/BlogBookmarks.user.js', import.meta.url), 'utf8');
-const instrumented = source.replace(/\n\}\)\(\);\s*$/, `
+const bookmarkModule = source.split('// BEGIN BETACAT_READING')[0].trimEnd();
+const instrumented = bookmarkModule.replace(/\n\}\)\(\);\s*$/, `
     globalThis.__test = { controls, saved, checked, errors, positionControl,
         toggleArticle, showError, clearError, layoutErrors, render, scoreAppearance, previewScores };
 })();`);
