@@ -555,9 +555,12 @@ describe('BetaCat time-normalized popularity highlighting', () => {
 
 test('all BetaCat-specific modules are consolidated in BlogBookmarks', () => {
     assert(fullScript.includes('// @grant        GM_openInTab'));
-    assert(fullScript.includes('function hideDuplicateFloatingDayNav'));
-    assert(fullScript.includes('if (control.closest?.(\'.\' + DATE_NAV_CLASS))') ||
-           fullScript.includes("control.closest?.('.' + DATE_NAV_CLASS)"));
+    // The original site template uses <nav class="day-nav"> with .newer/.older
+    // links, while #scrollUp is moved into the same nav. Hide ONLY the arrows.
+    assert(scriptContents.includes('.day-nav > a.newer, .day-nav > a.older'));
+    assert(scriptContents.includes('display: none !important'));
+    assert(!scriptContents.includes('.day-nav { display: none'));
+    assert(!scriptContents.includes('#scrollUp { display: none'));
     assert(extract('BETACAT_MOBILE_LAYOUT').includes('(orientation: portrait)'));
     assert(extract('BETACAT_MOBILE_LAYOUT').includes('.post-summary .feature-image'));
     assert(extract('BETACAT_EXTERNAL_LINKS').includes('GM_openInTab(url, { active: false, insert: true })'));
