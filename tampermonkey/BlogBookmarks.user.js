@@ -1,15 +1,17 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.21
+// @version      0.5.22
 // @description  BetaCat reading/navigation, popularity, mobile layout, background article tabs and bookmarks
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
 // @downloadURL  https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
 // @match        https://hackernews.betacat.io/*
+// @match        *://*/*
 // @connect      christorng.idv.tw
 // @grant        GM_getValue
 // @grant        GM_setValue
+// @grant        GM_addValueChangeListener
 // @grant        GM_registerMenuCommand
 // @grant        GM_xmlhttpRequest
 // @grant        GM_openInTab
@@ -17,8 +19,125 @@
 // @noframes
 // ==/UserScript==
 
+// Cross-tab article capture. Idle on all non-BetaCat sites unless the admin
+// explicitly queued a matching URL. No separate installed script is required.
+(function articleCaptureBridge() {
+ 'use strict';
+ const jobsKey='blog-bookmarks:capture-jobs:v1', resultsKey='blog-bookmarks:capture-results:v1';
+ const reqEvent='blog-bookmarks:capture-request', queuedEvent='blog-bookmarks:capture-queued';
+ const resultEvent='blog-bookmarks:capture-result', ackEvent='blog-bookmarks:capture-ack';
+ const ttl=30*60*1000, idOK=id=>/^[a-f0-9-]{36}$/i.test(String(id||''));
+ const records=key=>{const v=GM_getValue(key,{});return v&&typeof v==='object'&&!Array.isArray(v)?v:{};};
+ const live=key=>Object.fromEntries(Object.entries(records(key)).filter(([,v])=>v&&
+  Date.now()-Number(v.createdAt??v.capturedAt)<ttl&&Number(v.createdAt??v.capturedAt)<=Date.now()+60000&&idOK(v.id)));
+ const canonical=value=>{try{const u=new URL(value);if(!/^https?:$/.test(u.protocol))return '';u.hash='';u.pathname=u.pathname.replace(/\/+$/,'')||'/';return u.href;}catch{return '';}};
+ const archive=host=>/^archive\.(?:is|today|ph|vn|md)$/.test(host);
+ if(location.hostname==='christorng.idv.tw'&&/^\/bookmarks\/admin\/quick\/?$/.test(location.pathname)){
+  window.addEventListener(reqEvent,event=>{
+   const {id,url}=event.detail||{},target=canonical(url);
+   if(!idOK(id)||!target)return;
+   const jobs=live(jobsKey),nonce=globalThis.crypto?.randomUUID?.()||String(Date.now())+Math.random();
+   jobs[id]={id,url:target,nonce,createdAt:Date.now()};
+   GM_setValue(jobsKey,jobs);
+   window.dispatchEvent(new CustomEvent(queuedEvent,{detail:{id,nonce}}));
+  });
+  window.addEventListener(ackEvent,event=>{
+   const {id,nonce}=event.detail||{};
+   if(!idOK(id)||!nonce)return;
+   for(const key of [resultsKey,jobsKey]){
+    const values=live(key);
+    if(values[id]?.nonce===nonce){delete values[id];GM_setValue(key,values);}
+   }
+  });
+  const deliver=()=>{
+   const jobs=live(jobsKey);
+   for(const result of Object.values(live(resultsKey)))
+    if(jobs[result.id]?.nonce===result.nonce)
+     window.dispatchEvent(new CustomEvent(resultEvent,{detail:result}));
+  };
+  if(typeof GM_addValueChangeListener==='function')GM_addValueChangeListener(resultsKey,deliver);
+  document.addEventListener('DOMContentLoaded',deliver);
+  window.addEventListener('pageshow',deliver);
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')deliver();});
+  return;
+ }
+ if(!/^https?:$/.test(location.protocol))return;
+ const jobs=Object.values(live(jobsKey)),here=canonical(location.href);
+ const matches=jobs.filter(j=>canonical(j.url)===here);
+ const archived=jobs.filter(j=>{try{return archive(new URL(j.url).hostname)&&archive(location.hostname);}catch{return false;}});
+ // Archive.today may redirect from /submit to a CAPTCHA and a snapshot URL.
+ const job=matches.length===1?matches[0]:!matches.length&&archived.length===1?archived[0]:null;
+ if(!job||live(resultsKey)[job.id]?.nonce===job.nonce)return;
+ let done=false,button,timer,observer,last='',stableAt=0,checkTimeout;
+ const isChallenge=()=>{
+  const title=document.title||'';
+  if(/^(just a moment|attention required|verify you are human|checking your browser|access denied|security verification|安全驗證)/i.test(title.trim()))return true;
+  const text=(document.body?.textContent||'').slice(0,3000);
+  return text.length<2800&&/(verify (you are |that you are )?(a )?human|checking if (the )?site connection is secure|cf-challenge|cloudflare ray id|complete (the )?(captcha|security check)|please (enter|solve).{0,35}captcha|i am not a robot|機器人驗證|人機驗證|請完成驗證)/i.test(text);
+ };
+ const read=node=>{
+  const copy=node.cloneNode(true);
+  copy.querySelectorAll('script,style,noscript,nav,footer,aside,form,button,svg,iframe,[aria-hidden="true"],.ads,.comments,.related-posts,.sidebar').forEach(el=>el.remove());
+  const blocks=[...copy.querySelectorAll('h1,h2,h3,p,li,blockquote')]
+   .map(el=>(el.textContent||'').replace(/\s+/g,' ').trim()).filter(t=>t.length>=28);
+  const text=(blocks.length>=3?blocks.join('\n'):copy.textContent||'').trim().slice(0,90000);
+  return {text,prose:blocks.filter(t=>t.length>=65).length};
+ };
+ const extract=(manual=false)=>{
+  if(!document.body||isChallenge())return null;
+  const elements=[...document.querySelectorAll('article,[itemprop="articleBody"],[data-testid="article-body"],.article-body,.article-content,.entry-content,.post-content,main,[role="main"],#article')].slice(0,40);
+  if(manual)elements.push(document.body);
+  let best=null;
+  for(const el of elements){
+   const item=read(el);
+   if((manual?item.text.length>=300:item.text.length>=650&&item.prose>=3)&&(!best||item.text.length>best.text.length))best=item;
+  }
+  return best;
+ };
+ const showButton=()=>{
+  if(button||!document.body)return;
+  button=document.createElement('button');
+  button.type='button';button.textContent='擷取本文送回書籤';
+  button.id='tm-blog-bookmarks-capture-article';
+  button.style.cssText='position:fixed!important;right:12px!important;bottom:max(16px,env(safe-area-inset-bottom))!important;z-index:2147483647!important;padding:11px 15px!important;border-radius:999px!important;border:2px solid #fff!important;background:#126a4f!important;color:#fff!important;font:600 14px/1.3 system-ui,sans-serif!important;box-shadow:0 2px 12px #0006!important;max-width:calc(100vw - 24px)!important;cursor:pointer!important';
+  button.addEventListener('click',()=>{
+   if(isChallenge()){button.textContent='先完成機器人驗證，再按此鈕';return;}
+   const article=extract(true);
+   if(!article){button.textContent='尚未取得正文，請稍後再按';return;}
+   send(article.text);
+  });
+  document.body.appendChild(button);
+ };
+ function send(text){
+  if(done||!text||live(jobsKey)[job.id]?.nonce!==job.nonce)return;
+  done=true;clearInterval(timer);clearTimeout(checkTimeout);observer?.disconnect();
+  const results=live(resultsKey);
+  results[job.id]={id:job.id,nonce:job.nonce,url:location.href,content:text,capturedAt:Date.now()};
+  GM_setValue(resultsKey,results);
+  if(button){button.disabled=true;button.textContent='全文已送回書籤頁';setTimeout(()=>button.remove(),3600);}
+ }
+ const check=()=>{
+  if(done)return;
+  const found=extract();
+  if(!found){last='';stableAt=0;return;}
+  if(last!==found.text){last=found.text;stableAt=Date.now();return;}
+  if(Date.now()-stableAt>=1100)send(found.text);
+ };
+ const begin=()=>{
+  check();
+  timer=setInterval(check,1700);
+  observer=new MutationObserver(()=>{if(!done){clearTimeout(checkTimeout);checkTimeout=setTimeout(check,850);}});
+  observer.observe(document.body||document.documentElement,{childList:true,subtree:true});
+  setTimeout(()=>{if(!done)showButton();},4500);
+ };
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',begin,{once:true});
+ else begin();
+})();
+
+
 (() => {
     'use strict';
+    if (new URL(location.href).hostname !== 'hackernews.betacat.io') return;
     const ENDPOINT = 'https://christorng.idv.tw/bookmarks/api/ingest';
     const TOKEN_KEY = 'blog-bookmarks-ingest-token';
     const BUTTON_CLASS = 'tm-blog-bookmarks-save';
@@ -936,6 +1055,7 @@
 // BEGIN BETACAT_READING
 (function () {
     'use strict';
+    if (new URL(location.href).hostname !== 'hackernews.betacat.io') return;
     const STORAGE_PREFIX = 'autoOpenNewArticles:lastSeen';
     const STAR_CLASS = 'auto-open-new-articles-star';
     const SEEN_CLASS = 'auto-open-new-articles-seen';
@@ -1471,6 +1591,7 @@
 // BEGIN BETACAT_MOBILE_LAYOUT
 (function () {
     'use strict';
+    if (new URL(location.href).hostname !== 'hackernews.betacat.io') return;
 
     const STYLE_ID = 'tm-better-mobile-view-style';
     const STYLE_CONTENT = `
@@ -1522,6 +1643,7 @@
 // BEGIN BETACAT_EXTERNAL_LINKS
 (function () {
     'use strict';
+    if (new URL(location.href).hostname !== 'hackernews.betacat.io') return;
 
     const STYLE_ID = 'tampermonkey-articles-new-tab-style';
     const ICON_CLASS_NAME = 'articles-new-tab-icon';
