@@ -29,7 +29,7 @@ For manual first-time setup: run `npm ci`, copy .dev.vars.example to .dev.vars, 
 - **Write note** opens the Notes editor with a bookmark reference. Notes must also be running.
 - The manager generates a separate Tampermonkey ingest token. The userscript is under tampermonkey/; this token is distinct from the local admin token.
 - **Tampermonkey 安裝與更新**：直接開啟 [Blog Bookmarks.user.js](https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js)，使用 Tampermonkey 安裝。腳本 metadata 的 `@updateURL` 與 `@downloadURL` 均指向這個 Raw URL。
-- 目前只在 `hackernews.betacat.io` 注入；收藏星號不佔版面高度：收合時位於標題右下，展開時在文章範圍內貼螢幕右側，於手機以固定螢幕高度校正 Edge 工具列顯隱造成的位移。收合／展開按鈕由 `TampermonkeyScripts` 的 `AutoOpenNewArticles.user.js` 放在標題列。
+- 目前只在 `hackernews.betacat.io` 注入；收藏星號不佔版面高度：收合時位於標題右下，展開時在文章範圍內貼螢幕右側，於手機以固定螢幕高度校正 Edge 工具列顯隱造成的位移。收合／展開、日期導覽、已讀、熱度高亮、外部連結背景分頁與手機圖片排版均由 `BlogBookmarks.user.js` 維護。
 - **英文原始標題**：TM 於 `document-start` 即監聽文章 DOM、以 URL 暫存初始英文標題，並於頁面載入時向 BetaCat **僅請求一次**原始 HTML 作為備援。按星號時直接讀取記憶體，不會重新下載、等待或抓目標文章；其 `@connect` 僅允許 `christorng.idv.tw`。
 - 按星號儲存只使用已截取的文章標題與現有 DOM；Client 及 Worker 都不會在收藏後補抓 BetaCat 或目標文章。標題抓取失敗時使用目前顯示的標題備援，書籤仍可儲存；不會變更原始 URL、Redirect 規則或已存在書籤。不需要 D1 Migration。
 - 使用前於後台登入後按「產生 Tampermonkey Token」，複製一次性 Token，並在 BetaCat 頁面右下角的 **Bookmarks 設定** 貼入。
@@ -70,3 +70,10 @@ Use the admin-only `POST /bookmarks/api/admin/enrich` endpoint with JSON `{ "id"
 - 若 Workers AI 暫時失敗，保留原手動標籤；沒有任何可用標籤時使用 `default` 佔位，供之後重新檢視。
 - 既有網址不再執行推論、不重設分類，後台手動覆寫標籤亦不會受到自動分類影響。
 - 需要 `wrangler.jsonc` 的 `ai.binding=AI` 隨 Worker 一起部署；`npm run check` 包含解析與合併分類的單元測試。
+
+
+### BetaCats Userscript 維護歸屬（2026-11-23）
+
+BetaCats 專屬的日期導覽／最新頁載入時間、已讀／收合、相對熱度、手機圖片、外部文章背景分頁及書籤星號集中到本 Repo 的 `tampermonkey/BlogBookmarks.user.js`。通用新分頁與其他網站自動開頁仍由 `TampermonkeyScripts` 維護。額外的浮動圓形日期箭頭會隱藏，原有文字日期連結保留。
+
+**升級：** 更新 BlogBookmarks 與 TampermonkeyScripts 的 AutoOpenNewArticles、ArticlesExternalNewTab，並停用原 BetterMobileView。不同 Tampermonkey 腳本的 GM 儲存空間彼此隔離，舊版的 BetaCats 已讀／最新頁載入時間無法自動帶到新版。
