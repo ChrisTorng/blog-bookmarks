@@ -1032,6 +1032,9 @@
                 line-height: 26px !important;
                 z-index: 1 !important;
             }
+            .day-nav > a.newer, .day-nav > a.older {
+                display: none !important;
+            }
             .${DATE_NAV_CLASS} {
                 display: grid !important;
                 grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) !important;
@@ -1430,47 +1433,8 @@
     }
 
 
-    // The original inline date nav is retained. Suppress only circular floating
-    // day links, never the inline text links or bookmark/article toggles.
-    function hideDuplicateFloatingDayNav() {
-        if (typeof getComputedStyle !== 'function') return;
-        for (const control of document.querySelectorAll('a[href],button')) {
-            if (control.closest?.('.' + DATE_NAV_CLASS)) continue;
-            let dailyHref = false;
-            try {
-                if (control.href) {
-                    const url = new URL(control.href, location.href);
-                    dailyHref = url.origin === location.origin &&
-                        (/^\/daily\/\d{4}-\d{2}-\d{2}\/?$/.test(url.pathname) ||
-                         (url.pathname === '/' && /latest|最新/i.test(control.title || '')));
-                }
-            } catch (_) {}
-            const hint = [control.title, control.getAttribute?.('aria-label')].filter(Boolean).join(' ');
-            if (!dailyHref && !/previous (available )?day|next (available )?day|前一天|後一天|上一天|下一天/i.test(hint)) continue;
-            let node = control;
-            for (let depth = 0; node && depth < 4; depth++, node = node.parentElement) {
-                const style = getComputedStyle(node);
-                if (style.position !== 'fixed' && style.position !== 'sticky') continue;
-                const size = node.getBoundingClientRect();
-                if (size.width < 28 || size.height < 28 || size.width > 130 || size.height > 130) continue;
-                if (parseFloat(style.borderTopLeftRadius) < 20 && parseFloat(style.borderTopRightRadius) < 20) continue;
-                node.style.setProperty('display', 'none', 'important');
-                node.setAttribute('data-tm-hidden-duplicate-date-nav', 'true');
-                break;
-            }
-        }
-    }
-    function watchDuplicateFloatingDayNav() {
-        hideDuplicateFloatingDayNav();
-        if (typeof MutationObserver !== 'function') return;
-        let pending = false;
-        new MutationObserver(() => {
-            if (pending) return;
-            pending = true;
-            setTimeout(() => { pending = false; hideDuplicateFloatingDayNav(); }, 100);
-        }).observe(document.body, { childList: true, subtree: true });
-    }
-
+    // BetaCats renders fixed native day arrows in its .day-nav template.
+    // Keep the site's #scrollUp control, and preserve our inline text date navigation.
     function handleArticles() {
         const url = new URL(window.location.href);
         const dated = url.pathname.match(/^\/daily\/(\d{4}-\d{2}-\d{2})\/?$/);
@@ -1494,11 +1458,11 @@
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => {
             handleArticles();
-            watchDuplicateFloatingDayNav();
+            
         });
     } else {
         handleArticles();
-        watchDuplicateFloatingDayNav();
+        
     }
 
 })();
