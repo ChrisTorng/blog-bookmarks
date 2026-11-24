@@ -61,7 +61,7 @@ export function renderSummary(markdown,baseUrl) {
 }
 // The article is the canonical public content contract: the Worker detail and
 // both RSS representations use this exact complete HTML, not parallel summaries.
-export function bookmarkArticleHtml(item,categories=[],relatedNotesHtml='',permalink='') {
+export function bookmarkArticleHtml(item,categories=[],relatedNotesHtml='',permalink='',showAdminLink=false) {
   const target=bookmarkTarget(item),date=bookmarkDate(item);
   const english=item.title_original && item.title_original!==item.title
     ? '<p lang="en" class="mt-1 text-sm leading-snug text-gray-600 dark:text-gray-300">'+esc(item.title_original)+'</p>' : '';
@@ -87,12 +87,14 @@ export function bookmarkArticleHtml(item,categories=[],relatedNotesHtml='',perma
     item.status!==3?'<span class="text-gray-500">未公開</span>':'';
   const referenceLink=permalink
     ? '<a class="text-primary-500" href="'+esc(permalink)+'">書籤永久連結</a>' : '';
+  const adminLink=showAdminLink && item.id
+    ? '<a class="text-gray-500 hover:text-primary-500" href="/bookmarks/admin/?edit='+encodeURIComponent(item.id)+'" target="_blank" rel="noopener noreferrer">後台管理 ↗</a>' : '';
   const relatedNotes=relatedNotesHtml
     ? '<aside aria-label="引用隨筆" class="mt-3 min-w-0 rounded-r-lg border-l-4 border-primary-500 bg-gray-50/60 px-3 py-2 dark:bg-gray-800/40">'+
       '<hr><p><strong>引用隨筆</strong></p>'+relatedNotesHtml+'</aside>' : '';
   return '<article class="border-b border-gray-300/40 py-4 dark:border-gray-700">'+
     '<div class="mb-2 flex items-center justify-between gap-3 text-xs">'+
-    '<time class="text-gray-500" datetime="'+esc(date)+'">'+esc(date)+'</time>'+status+'</div>'+
+    '<time class="text-gray-500" datetime="'+esc(date)+'">'+esc(date)+'</time>'+status+adminLink+'</div>'+
     '<div class="'+(image?'grid grid-cols-1 gap-x-4 md:grid-cols-[minmax(0,1fr)_11rem]':'block')+'">'+
     '<div class="min-w-0"><h1 class="text-xl leading-snug font-bold"><a class="text-primary-500 hover:text-primary-600 dark:hover:text-primary-400" href="'+
     esc(target)+'" target="_blank" rel="noopener noreferrer">'+esc(item.title)+'</a></h1>'+

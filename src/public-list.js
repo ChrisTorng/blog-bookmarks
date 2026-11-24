@@ -46,7 +46,7 @@ export async function publicBookmarksList(req, env) {
   const radio = (value,title) => '<option value="' + value + '"' + (filter.sort === value ? ' selected' : '') +
     '>' + title + '</option>';
   const cards = result.items.map(item =>
-    bookmarkArticleHtml(item, categories, notes[item.id] || '', bookmarkPermalink(item))
+    bookmarkArticleHtml(item, categories, notes[item.id] || '', bookmarkPermalink(item), true)
   ).join('');
   const prev = result.page > 1 ? '<a class="text-primary-500" href="' +
     esc(buildLink({ page:result.page-1 })) + '">← 上一頁</a>' : '<span></span>';

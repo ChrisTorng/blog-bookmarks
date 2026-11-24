@@ -60,3 +60,12 @@ test('remote thumbnail appears once in permalink, RSS and embedded HTML; mobile 
   assert.doesNotMatch(bookmarkArticleHtml({...item,image_url:null},categories),/md:grid-cols-|sample.webp/);
   assert.doesNotMatch(bookmarkArticleHtml({...item,image_url:'javascript:alert(1)'},categories),/javascript:alert/);
 });
+
+
+test('public page admin action opens the exact bookmark; RSS and embedded defaults omit it',()=>{
+  const html=bookmarkArticleHtml(item,categories,'','',true);
+  assert.ok(html.includes('href="/bookmarks/admin/?edit='+item.id+'"'));
+  assert.ok(html.includes('後台管理'));
+  assert.ok(!bookmarkArticleHtml(item,categories).includes('/bookmarks/admin/'));
+  assert.ok(!rss([item],'https://christorng.idv.tw','','',categories).includes('/bookmarks/admin/'));
+});

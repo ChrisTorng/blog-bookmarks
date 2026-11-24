@@ -12,7 +12,7 @@ export async function publicBookmarkPage(request,item,categories=[],relatedNotes
     .replace(/[*_~#]/g,'').slice(0,180);
   const body = '<section class="w-full py-5 pb-12">'+
     '<a class="text-primary-500 text-sm" href="/bookmarks/">← 書籤列表</a>'+
-    '<div class="mt-4">'+bookmarkArticleHtml(item,categories,relatedNotesHtml)+'</div></section>';
+    '<div class="mt-4">'+bookmarkArticleHtml(item,categories,relatedNotesHtml,'',true)+'</div></section>';
   const meta = '<meta name="description" content="'+esc(description)+'">'+
     '<meta name="robots" content="index,follow">'+
     '<link rel="canonical" href="'+esc(canonical)+'">'+
