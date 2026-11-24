@@ -7,7 +7,7 @@ const source = readFileSync(new URL('../tampermonkey/BlogBookmarks.user.js', imp
 test('userscript installs from blog-bookmarks and parses', () => {
   assert.doesNotThrow(() => new Function(source));
   assert.match(source, /\/\/ @name\s+Blog Bookmarks\n/);
-  assert.match(source, /\/\/ @version\s+0\.5\.21\n/);
+  assert.match(source, /\/\/ @version\s+0\.5\.22\n/);
   assert.match(source, /raw\.githubusercontent\.com\/ChrisTorng\/blog-bookmarks\/main\/tampermonkey\/BlogBookmarks\.user\.js/);
   assert.match(source, /\/\/ @match\s+https:\/\/hackernews\.betacat\.io\/\*/);
   assert.doesNotMatch(source, /cloudmark-christorng|cloudmark\.site/);
@@ -158,4 +158,19 @@ test('single vertical score and star share the same 38px translucent button', ()
   assert.match(source, /\.tm-bookmarks-glyph \{[\s\S]*?rgba\(37,68,50,\.80\)/);
   assert.match(source, /overflow: hidden !important/);
   assert.match(source, /translate', 'no'/);
+});
+
+test('capture bridge registers only source links opened from quick review and waits through verification',()=>{
+ assert.match(source,/\/\/ @match\s+\*:\/\/\*\/\*/);
+ assert.match(source,/GM_addValueChangeListener/);
+ assert.match(source,/blog-bookmarks:capture-request/);
+ assert.match(source,/blog-bookmarks:capture-result/);
+ assert.match(source,/blog-bookmarks:capture-deliver/);
+ assert.match(source,/function send\(text\)/);
+ assert.match(source,/isChallenge\(\)/);
+ assert.match(source,/MutationObserver/);
+ assert.match(source,/tm-blog-bookmarks-capture-article/);
+ assert.match(source,/if\(location\.hostname==='christorng\.idv\.tw'/);
+ assert.match(source,/GM_setValue\(resultsKey,results\)/);
+ assert.doesNotMatch(source,/GM_xmlhttpRequest\(\{[^}]*capture-results/);
 });
