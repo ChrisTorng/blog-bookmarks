@@ -58,6 +58,7 @@
   if(typeof GM_addValueChangeListener==='function')GM_addValueChangeListener(resultsKey,deliver);
   document.addEventListener('DOMContentLoaded',deliver);
   window.addEventListener('pageshow',deliver);
+  window.addEventListener('blog-bookmarks:capture-deliver',deliver);
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')deliver();});
   return;
  }
