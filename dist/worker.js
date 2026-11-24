@@ -31839,7 +31839,7 @@ function renderSummary(markdown, baseUrl) {
   });
 }
 __name(renderSummary, "renderSummary");
-function bookmarkArticleHtml(item, categories = [], relatedNotesHtml = "", permalink = "") {
+function bookmarkArticleHtml(item, categories = [], relatedNotesHtml = "", permalink = "", showAdminLink = false) {
   const target = bookmarkTarget(item), date = bookmarkDate(item);
   const english = item.title_original && item.title_original !== item.title ? '<p lang="en" class="mt-1 text-sm leading-snug text-gray-600 dark:text-gray-300">' + esc(item.title_original) + "</p>" : "";
   let image2 = null;
@@ -31854,8 +31854,9 @@ function bookmarkArticleHtml(item, categories = [], relatedNotesHtml = "", perma
   const tags = bookmarkTags(item, categories).map((t) => '<a class="text-primary-500" href="/bookmarks/?tag=' + encodeURIComponent(t.id) + '">#' + esc(t.name) + "</a>").join(" ");
   const status = item.status === 4 ? '<span class="text-primary-500">\u2606 \u63A8\u85A6</span>' : item.status !== 3 ? '<span class="text-gray-500">\u672A\u516C\u958B</span>' : "";
   const referenceLink = permalink ? '<a class="text-primary-500" href="' + esc(permalink) + '">\u66F8\u7C64\u6C38\u4E45\u9023\u7D50</a>' : "";
+  const adminLink = showAdminLink && item.id ? '<a class="text-gray-500 hover:text-primary-500" href="/bookmarks/admin/?edit=' + encodeURIComponent(item.id) + '" target="_blank" rel="noopener noreferrer">\u5F8C\u53F0\u7BA1\u7406 \u2197</a>' : "";
   const relatedNotes = relatedNotesHtml ? '<aside aria-label="\u5F15\u7528\u96A8\u7B46" class="mt-3 min-w-0 rounded-r-lg border-l-4 border-primary-500 bg-gray-50/60 px-3 py-2 dark:bg-gray-800/40"><hr><p><strong>\u5F15\u7528\u96A8\u7B46</strong></p>' + relatedNotesHtml + "</aside>" : "";
-  return '<article class="border-b border-gray-300/40 py-4 dark:border-gray-700"><div class="mb-2 flex items-center justify-between gap-3 text-xs"><time class="text-gray-500" datetime="' + esc(date) + '">' + esc(date) + "</time>" + status + '</div><div class="' + (image2 ? "grid grid-cols-1 gap-x-4 md:grid-cols-[minmax(0,1fr)_11rem]" : "block") + '"><div class="min-w-0"><h1 class="text-xl leading-snug font-bold"><a class="text-primary-500 hover:text-primary-600 dark:hover:text-primary-400" href="' + esc(target) + '" target="_blank" rel="noopener noreferrer">' + esc(item.title) + "</a></h1>" + english + "</div>" + thumbnail + (summary ? '<div class="min-w-0">' + summary + "</div>" : "") + '</div><div class="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600 dark:text-gray-300">' + bookmarkSource(item.url) + original + "</div>" + (referenceLink ? '<p class="mt-2 text-xs">' + referenceLink + "</p>" : "") + bookmarkReferences(item) + '<div class="mt-2 flex flex-wrap items-center gap-3 text-sm">' + tags + "</div>" + relatedNotes + "</article>";
+  return '<article class="border-b border-gray-300/40 py-4 dark:border-gray-700"><div class="mb-2 flex items-center justify-between gap-3 text-xs"><time class="text-gray-500" datetime="' + esc(date) + '">' + esc(date) + "</time>" + status + adminLink + '</div><div class="' + (image2 ? "grid grid-cols-1 gap-x-4 md:grid-cols-[minmax(0,1fr)_11rem]" : "block") + '"><div class="min-w-0"><h1 class="text-xl leading-snug font-bold"><a class="text-primary-500 hover:text-primary-600 dark:hover:text-primary-400" href="' + esc(target) + '" target="_blank" rel="noopener noreferrer">' + esc(item.title) + "</a></h1>" + english + "</div>" + thumbnail + (summary ? '<div class="min-w-0">' + summary + "</div>" : "") + '</div><div class="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600 dark:text-gray-300">' + bookmarkSource(item.url) + original + "</div>" + (referenceLink ? '<p class="mt-2 text-xs">' + referenceLink + "</p>" : "") + bookmarkReferences(item) + '<div class="mt-2 flex flex-wrap items-center gap-3 text-sm">' + tags + "</div>" + relatedNotes + "</article>";
 }
 __name(bookmarkArticleHtml, "bookmarkArticleHtml");
 
@@ -31867,7 +31868,7 @@ async function publicBookmarkPage(request, item, categories = [], relatedNotesHt
   const canonical = siteUrl + pageUrl(item);
   const title = item.title + " | " + siteTitle;
   const description = String(item.summary || item.title).replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/[*_~#]/g, "").slice(0, 180);
-  const body = '<section class="w-full py-5 pb-12"><a class="text-primary-500 text-sm" href="/bookmarks/">\u2190 \u66F8\u7C64\u5217\u8868</a><div class="mt-4">' + bookmarkArticleHtml(item, categories, relatedNotesHtml) + "</div></section>";
+  const body = '<section class="w-full py-5 pb-12"><a class="text-primary-500 text-sm" href="/bookmarks/">\u2190 \u66F8\u7C64\u5217\u8868</a><div class="mt-4">' + bookmarkArticleHtml(item, categories, relatedNotesHtml, "", true) + "</div></section>";
   const meta = '<meta name="description" content="' + esc(description) + '"><meta name="robots" content="index,follow"><link rel="canonical" href="' + esc(canonical) + '"><meta property="og:type" content="article"><meta property="og:title" content="' + esc(item.title) + '"><meta property="og:url" content="' + esc(canonical) + '"><meta property="og:description" content="' + esc(description) + '">' + (item.image_url && /^https:\/\/[^/]+/i.test(item.image_url) ? '<meta property="og:image" content="' + esc(item.image_url) + '">' : "") + '<link rel="alternate" type="application/rss+xml" title="\u6240\u6709\u66F8\u7C64 RSS | ' + siteTitle + '" href="/bookmarks/feed.xml">';
   const response = await fetch(siteUrl + "/notes-shell/", { headers: { Accept: "text/html" } });
   if (!response.ok) return new Response("\u7DB2\u7AD9\u7248\u578B\u66AB\u6642\u7121\u6CD5\u53D6\u5F97", { status: 503 });
@@ -33352,7 +33353,7 @@ async function publicBookmarksList(req, env) {
   const field = "rounded border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100";
   const radio = /* @__PURE__ */ __name((value, title) => '<option value="' + value + '"' + (filter.sort === value ? " selected" : "") + ">" + title + "</option>", "radio");
   const cards = result.items.map(
-    (item) => bookmarkArticleHtml(item, categories, notes[item.id] || "", bookmarkPermalink(item))
+    (item) => bookmarkArticleHtml(item, categories, notes[item.id] || "", bookmarkPermalink(item), true)
   ).join("");
   const prev = result.page > 1 ? '<a class="text-primary-500" href="' + esc(buildLink({ page: result.page - 1 })) + '">\u2190 \u4E0A\u4E00\u9801</a>' : "<span></span>";
   const next = result.page < result.pages ? '<a class="text-primary-500" href="' + esc(buildLink({ page: result.page + 1 })) + '">\u4E0B\u4E00\u9801 \u2192</a>' : "<span></span>";
