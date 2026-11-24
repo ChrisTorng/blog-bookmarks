@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.22
+// @version      0.5.23
 // @description  BetaCat reading/navigation, popularity, mobile layout, background article tabs and bookmarks
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -1068,7 +1068,10 @@
     const UPDATE_TIME_CLASS = 'auto-open-new-articles-update-time';
     const POPULARITY_CLASS = 'auto-open-new-articles-popularity';
     const POPULARITY_HOT_CLASS = 'auto-open-new-articles-popularity-hot';
-    const LATEST_LOAD_HISTORY_KEY = 'autoOpenNewArticles:hackerNewsSummary:latestLoads';
+    const LATEST_LOAD_HISTORY_KEY = 'autoOpenNewArticles:hackerNewsSummary:verifiedLatestLoads';
+    const NAV_OWNER_ATTR = 'data-blog-bookmarks-date-nav-owner';
+    const SNAPSHOT_KEY = LATEST_LOAD_HISTORY_KEY + ':' + new URL(location.href).pathname;
+    let documentLoadHistory;
     const PAGE_LOADED_AT = Date.now();
     const STYLE_ID = 'auto-open-new-articles-style';
 
@@ -1347,16 +1350,48 @@
         return control;
     }
 
-    function recordLatestBrowserLoad() {
-        // Each real page load or browser refresh is a visit, even when the site content is unchanged.
-        // Store browser timestamps separately from the old server-update history.
-        const current = new Date(PAGE_LOADED_AT).toISOString();
+    function recordLatestBrowserLoad(articles) {
+        if (documentLoadHistory) return documentLoadHistory;
+        // A discarded/restored tab can create a new Document from the local cache.
+        // Its navigation clock is NOT proof of a new server response.
+        const nav = window.performance?.getEntriesByType?.('navigation')?.[0];
+        const origin = window.performance?.timeOrigin;
+        const networkConfirmed = nav && nav.transferSize > 0 && !nav.workerStart
+            && (!nav.responseStatus || (nav.responseStatus >= 200 && nav.responseStatus < 400))
+            && Number.isFinite(origin) && Number.isFinite(nav.responseEnd);
+        // Stable across translation and our own DOM changes; separate snapshots per tab and URL.
+        const signature = JSON.stringify(articles.map(({ id, link }) => [
+            id,
+            link.querySelector('.last-updated[data-submitted]')?.getAttribute('data-submitted') || '',
+            link.querySelector('.post-meta .score span')?.textContent?.trim() || '',
+            link.querySelector('.post-meta .comment a span')?.textContent?.trim() || ''
+        ]));
+        let snapshots = [];
+        try {
+            const stored = JSON.parse(sessionStorage.getItem(SNAPSHOT_KEY) || '[]');
+            if (Array.isArray(stored)) snapshots = stored;
+        } catch (_) {}
+        if (!networkConfirmed) {
+            documentLoadHistory = snapshots.find(item => item.signature === signature)?.history
+                || { current: null, previous: null };
+            return documentLoadHistory;
+        }
+        const current = new Date(origin + nav.responseEnd).toISOString();
         const saved = GM_getValue(LATEST_LOAD_HISTORY_KEY, null);
         const lastLoad = saved && typeof saved.current === 'string' && Number.isFinite(Date.parse(saved.current))
             ? new Date(saved.current).toISOString()
             : null;
-        GM_setValue(LATEST_LOAD_HISTORY_KEY, { current, previous: lastLoad });
-        return { current, previous: lastLoad };
+        documentLoadHistory = current === lastLoad
+            ? { current, previous: saved.previous || null }
+            : { current, previous: lastLoad };
+        if (current !== lastLoad) GM_setValue(LATEST_LOAD_HISTORY_KEY, documentLoadHistory);
+        try {
+            sessionStorage.setItem(SNAPSHOT_KEY, JSON.stringify([
+                { signature, history: documentLoadHistory },
+                ...snapshots.filter(item => item.signature !== signature)
+            ].slice(0, 12)));
+        } catch (_) {}
+        return documentLoadHistory;
     }
 
     function formatUpdateTime(timestamp) {
@@ -1376,7 +1411,7 @@
         const label = document.createElement('time');
         label.className = `${UPDATE_TIME_CLASS} ${kind}`;
         label.textContent = formatUpdateTime(timestamp);
-        label.title = kind === 'previous' ? 'Previous browser load of Latest' : 'Current browser load of Latest';
+        label.title = kind === 'previous' ? 'Previous verified server retrieval of Latest' : 'Verified server retrieval of this Latest page';
         if (timestamp) {
             label.setAttribute('datetime', timestamp);
         }
@@ -1417,14 +1452,46 @@
         const availableDates = getAvailableDates();
         const first = articles[0].link;
         const last = articles[articles.length - 1].link;
-        const updateHistory = displayedDate === null ? recordLatestBrowserLoad() : null;
+        const updateHistory = displayedDate === null ? recordLatestBrowserLoad(articles) : null;
         const topNavigation = createDateNavigation(displayedDate, availableDates, updateHistory);
         const bottomNavigation = createDateNavigation(displayedDate, availableDates, updateHistory);
         if (!topNavigation || !bottomNavigation || !first.parentNode || !last.parentNode) {
             return;
         }
+        // Remove old standalone-script navigation or copies from a restored DOM.
+        document.querySelectorAll(`.${DATE_NAV_CLASS}`).forEach(nav => nav.remove());
+        topNavigation.setAttribute('data-betacat-nav-position', 'top');
+        bottomNavigation.setAttribute('data-betacat-nav-position', 'bottom');
         first.parentNode.insertBefore(topNavigation, first);
         last.insertAdjacentElement('afterend', bottomNavigation);
+
+        // Translation/legacy scripts may clone or move the controls. Keep precisely one
+        // at each end, without recomputing the acquisition time.
+        function reconcileNavigation() {
+            if (!first.isConnected || !last.isConnected) return;
+            document.querySelectorAll(`.${DATE_NAV_CLASS}`).forEach(nav => {
+                if (nav !== topNavigation && nav !== bottomNavigation) nav.remove();
+            });
+            const before = Array.from(first.parentNode.children);
+            if (before[before.indexOf(first) - 1] !== topNavigation) {
+                topNavigation.remove();
+                first.parentNode.insertBefore(topNavigation, first);
+            }
+            const after = Array.from(last.parentNode.children);
+            if (after[after.indexOf(last) + 1] !== bottomNavigation) {
+                bottomNavigation.remove();
+                last.insertAdjacentElement('afterend', bottomNavigation);
+            }
+        }
+        if (typeof MutationObserver !== 'undefined') {
+            const touchesNavigation = node => node?.matches?.(`.${DATE_NAV_CLASS}`)
+                || node?.querySelector?.(`.${DATE_NAV_CLASS}`);
+            const observer = new MutationObserver(records => {
+                if (records.some(record => [...record.addedNodes, ...record.removedNodes].some(touchesNavigation)))
+                    reconcileNavigation();
+            });
+            observer.observe(document.body, { childList: true, subtree: true });
+        }
     }
 
     function readPopularityNumber(metric, selector) {
@@ -1560,7 +1627,7 @@
         const url = new URL(window.location.href);
         const dated = url.pathname.match(/^\/daily\/(\d{4}-\d{2}-\d{2})\/?$/);
         if (!dated && !['/', '/zh', '/zh/'].includes(url.pathname)) return;
-        if (document.getElementById(ALL_TOGGLE_ID)) return;
+        if (document.documentElement.hasAttribute(NAV_OWNER_ATTR)) return;
         const links = Array.from(document.querySelectorAll('article.post-item'))
             .filter(article => !article.classList.contains('ad'));
         const articles = links.map(link => {
@@ -1571,6 +1638,13 @@
             return { link, id: id ? 'hackernews:' + id : titleLink ? 'hackernews:url:' + titleLink.href : '' };
         }).filter(article => article.id);
         if (!articles.length) return;
+        document.documentElement.setAttribute(NAV_OWNER_ATTR, 'true');
+        // Older installed Auto Open New Articles may already own the collapse controls.
+        // Take over only the date navigation rather than creating duplicate buttons.
+        if (document.getElementById(ALL_TOGGLE_ID)) {
+            addDateNavigation(articles, dated?.[1] || null);
+            return;
+        }
         ensureStyles();
         const storageKey = STORAGE_PREFIX + ':hackernews-summary:listings';
         const stored = GM_getValue(storageKey, []);
