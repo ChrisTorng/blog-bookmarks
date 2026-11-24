@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.24
+// @version      0.5.25
 // @description  BetaCat reading/navigation, popularity, mobile layout, background article tabs and bookmarks
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -37,10 +37,10 @@ let blogBookmarksBetaCatPageTask;
  const archive=host=>/^archive\.(?:is|today|ph|vn|md)$/.test(host);
  if(location.hostname==='christorng.idv.tw'&&/^\/bookmarks\/admin\/quick\/?$/.test(location.pathname)){
   window.addEventListener(reqEvent,event=>{
-   const {id,url}=event.detail||{},target=canonical(url);
+   const {id,url,manual=false}=event.detail||{},target=canonical(url);
    if(!idOK(id)||!target)return;
    const jobs=live(jobsKey),nonce=globalThis.crypto?.randomUUID?.()||String(Date.now())+Math.random();
-   jobs[id]={id,url:target,nonce,createdAt:Date.now()};
+   jobs[id]={id,url:target,nonce,manual:manual===true,createdAt:Date.now()};
    GM_setValue(jobsKey,jobs);
    window.dispatchEvent(new CustomEvent(queuedEvent,{detail:{id,nonce}}));
   });
@@ -66,13 +66,40 @@ let blogBookmarksBetaCatPageTask;
   return;
  }
  if(!/^https?:$/.test(location.protocol))return;
- const jobs=Object.values(live(jobsKey)),here=canonical(location.href);
- const matches=jobs.filter(j=>canonical(j.url)===here);
- const archived=jobs.filter(j=>{try{return archive(new URL(j.url).hostname)&&archive(location.hostname);}catch{return false;}});
- // Archive.today may redirect from /submit to a CAPTCHA and a snapshot URL.
- const job=matches.length===1?matches[0]:!matches.length&&archived.length===1?archived[0]:null;
- if(!job||live(resultsKey)[job.id]?.nonce===job.nonce)return;
- let done=false,button,timer,observer,last='',stableAt=0,checkTimeout;
+ let active=null;
+ const identity=value=>{
+  try{
+   const u=new URL(canonical(value));
+   const host=u.hostname.replace(/^www\./,'');
+   const rg=host==='researchgate.net'&&u.pathname.match(/^\/publication\/(\d+)(?:_|\/|$)/);
+   if(rg)return 'researchgate:'+rg[1];
+   for(const k of [...u.searchParams.keys()])if(/^utm_/i.test(k)||/^(fbclid|gclid|msclkid)$/i.test(k))u.searchParams.delete(k);
+   u.searchParams.sort();
+   return host+u.pathname+u.search;
+  }catch{return '';}
+ };
+ function scan(initial=false){
+  const jobs=Object.values(live(jobsKey)),here=identity(location.href);
+  const matches=jobs.filter(j=>here&&identity(j.url)===here);
+  const archived=jobs.filter(j=>{try{return archive(new URL(j.url).hostname)&&archive(location.hostname);}catch{return false;}});
+  // Retain the existing archive navigation fallback only during initial navigation,
+  // or for a retry of the same bookmark already associated with this tab.
+  const job=matches.length===1?matches[0]:!matches.length&&archived.length===1&&
+   (initial||active?.id===archived[0].id)?archived[0]:null;
+  if(!job||live(resultsKey)[job.id]?.nonce===job.nonce){if(active){active.stop();active=null;}return;}
+  if(active?.nonce===job.nonce)return;
+  active?.stop();
+  active={id:job.id,nonce:job.nonce,stop:start(job)};
+ }
+ if(typeof GM_addValueChangeListener==='function')GM_addValueChangeListener(jobsKey,()=>scan());
+ window.addEventListener('pageshow',()=>scan());
+ window.addEventListener('focus',()=>scan());
+ document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')scan();});
+ document.addEventListener('DOMContentLoaded',()=>scan());
+ scan(true);
+ function start(job){
+ let done=false,button,timer,observer,last='',stableAt=0,checkTimeout,showTimeout;
+ const stop=()=>{done=true;clearInterval(timer);clearTimeout(checkTimeout);clearTimeout(showTimeout);observer?.disconnect();button?.remove();document.removeEventListener('DOMContentLoaded',begin);};
  const isChallenge=()=>{
   const title=document.title||'';
   if(/^(just a moment|attention required|verify you are human|checking your browser|access denied|security verification|安全驗證)/i.test(title.trim()))return true;
@@ -89,19 +116,19 @@ let blogBookmarksBetaCatPageTask;
  };
  const extract=(manual=false)=>{
   if(!document.body||isChallenge())return null;
-  const elements=[...document.querySelectorAll('article,[itemprop="articleBody"],[data-testid="article-body"],.article-body,.article-content,.entry-content,.post-content,main,[role="main"],#article')].slice(0,40);
-  if(manual)elements.push(document.body);
+  const elements=[...document.querySelectorAll('article,[itemprop="articleBody"],[data-testid="article-body"],.article-body,.article-content,.entry-content,.post-content,.publication-content,.publication-body,.publication-abstract,.nova-legacy-e-text,main,[role="main"],#article')].slice(0,60);
   let best=null;
   for(const el of elements){
    const item=read(el);
-   if((manual?item.text.length>=300:item.text.length>=650&&item.prose>=3)&&(!best||item.text.length>best.text.length))best=item;
+   if((manual?item.text.length>=120:item.text.length>=300&&(item.prose>=2||item.prose===1&&item.text.length>=450))&&(!best||item.text.length>best.text.length))best=item;
   }
+  if(!best&&manual){const fallback=read(document.body);if(fallback.text.length>=120)best=fallback;}
   return best;
  };
  const showButton=()=>{
   if(button||!document.body)return;
   button=document.createElement('button');
-  button.type='button';button.textContent='擷取本文送回書籤';
+  button.type='button';button.textContent='立即擷取本文送回書籤';
   button.id='tm-blog-bookmarks-capture-article';
   button.style.cssText='position:fixed!important;right:12px!important;bottom:max(16px,env(safe-area-inset-bottom))!important;z-index:2147483647!important;padding:11px 15px!important;border-radius:999px!important;border:2px solid #fff!important;background:#126a4f!important;color:#fff!important;font:600 14px/1.3 system-ui,sans-serif!important;box-shadow:0 2px 12px #0006!important;max-width:calc(100vw - 24px)!important;cursor:pointer!important';
   button.addEventListener('click',()=>{
@@ -122,20 +149,25 @@ let blogBookmarksBetaCatPageTask;
  }
  const check=()=>{
   if(done)return;
-  const found=extract();
+  if(live(jobsKey)[job.id]?.nonce!==job.nonce){stop();return;}
+  const found=extract(job.manual);
   if(!found){last='';stableAt=0;return;}
   if(last!==found.text){last=found.text;stableAt=Date.now();return;}
   if(Date.now()-stableAt>=1100)send(found.text);
  };
- const begin=()=>{
+ function begin(){
+  if(done)return;
+  if(job.manual){showButton();const found=extract(true);if(found){send(found.text);return;}}
   check();
   timer=setInterval(check,1700);
   observer=new MutationObserver(()=>{if(!done){clearTimeout(checkTimeout);checkTimeout=setTimeout(check,850);}});
   observer.observe(document.body||document.documentElement,{childList:true,subtree:true});
-  setTimeout(()=>{if(!done)showButton();},4500);
- };
+  showTimeout=setTimeout(()=>{if(!done)showButton();},1500);
+ }
  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',begin,{once:true});
  else begin();
+ return stop;
+ }
 })();
 
 
