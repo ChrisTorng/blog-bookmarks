@@ -7,7 +7,7 @@ const source = readFileSync(new URL('../tampermonkey/BlogBookmarks.user.js', imp
 test('userscript installs from blog-bookmarks and parses', () => {
   assert.doesNotThrow(() => new Function(source));
   assert.match(source, /\/\/ @name\s+Blog Bookmarks\n/);
-  assert.match(source, /\/\/ @version\s+0\.5\.24\n/);
+  assert.match(source, /\/\/ @version\s+0\.5\.25\n/);
   assert.match(source, /raw\.githubusercontent\.com\/ChrisTorng\/blog-bookmarks\/main\/tampermonkey\/BlogBookmarks\.user\.js/);
   assert.match(source, /\/\/ @match\s+https:\/\/hackernews\.betacat\.io\/\*/);
   assert.doesNotMatch(source, /cloudmark-christorng|cloudmark\.site/);
@@ -173,4 +173,24 @@ test('capture bridge registers only source links opened from quick review and wa
  assert.match(source,/if\(location\.hostname==='christorng\.idv\.tw'/);
  assert.match(source,/GM_setValue\(resultsKey,results\)/);
  assert.doesNotMatch(source,/GM_xmlhttpRequest\(\{[^}]*capture-results/);
+});
+
+test('already-open source tab receives a manual capture request without navigation',()=>{
+ const bridge=source.slice(source.indexOf('(function articleCaptureBridge()'),source.indexOf('\n\n(() => {'));
+ const jobsKey='blog-bookmarks:capture-jobs:v1',resultsKey='blog-bookmarks:capture-results:v1';
+ const listeners=new Map(),store=new Map();
+ const paragraph={textContent:'A meaningful research paragraph. '.repeat(25)};
+ const article={cloneNode:()=>({querySelectorAll:q=>q.startsWith('script')?[]:[paragraph,paragraph],textContent:paragraph.textContent})};
+ const button={style:{},addEventListener(){},remove(){}};
+ const doc={readyState:'complete',title:'Research publication',body:{textContent:paragraph.textContent,appendChild(){}},querySelectorAll:()=>[article],createElement:()=>button,addEventListener(){},removeEventListener(){}};
+ const win={addEventListener(){}};
+ const loc=new URL('https://www.researchgate.net/publication/12345_Updated_title?utm_source=test');
+ const run=new Function('document','window','location','GM_getValue','GM_setValue','GM_addValueChangeListener','setTimeout','clearTimeout','setInterval','clearInterval','MutationObserver',bridge);
+ run(doc,win,loc,(key,fallback)=>store.get(key)??fallback,(key,value)=>store.set(key,value),(key,fn)=>listeners.set(key,fn),()=>1,()=>{},()=>1,()=>{},class{observe(){} disconnect(){}});
+ assert.equal(store.has(resultsKey),false);
+ const id='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+ store.set(jobsKey,{[id]:{id,url:'https://researchgate.net/publication/12345_Old_title',nonce:'retry',manual:true,createdAt:Date.now()}});
+ listeners.get(jobsKey)();
+ assert.equal(store.get(resultsKey)[id].nonce,'retry');
+ assert.ok(store.get(resultsKey)[id].content.includes('meaningful research paragraph'));
 });
