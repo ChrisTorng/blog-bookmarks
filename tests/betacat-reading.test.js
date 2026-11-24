@@ -379,6 +379,45 @@ describe('AutoOpenNewArticles on Hacker News Summary', () => {
         assert.equal(unknown.gmStore.has(key), false);
     });
 
+    test('Edge reload without transfer timing verifies the displayed listing through the existing response', async () => {
+        const key = 'autoOpenNewArticles:hackerNewsSummary:verifiedLatestLoads';
+        const url = 'https://hackernews.betacat.io/';
+        const morning = new Date(2026, 10, 24, 8, 0).getTime();
+        const now = new Date(2026, 10, 24, 17, 26).getTime();
+        const first = createAutoOpenHarness(url, {}, [], morning);
+        buildHackerNewsDateMenu(first.harness, ['2026-11-23']);
+        buildHackerNewsArticle(first.harness, '907', 'Same story');
+        runAutoOpenScript(first.harness);
+        first.harness.dispatchDocumentEvent('DOMContentLoaded');
+        const sessionStorageSeed = { [key + ':/']: first.harness.sessionStorage.getItem(key + ':/') };
+        const render = async (options, remoteId, seed = sessionStorageSeed) => {
+            const { harness, gmStore } = createAutoOpenHarness(url, Object.fromEntries(first.gmStore), [], now,
+                { transferSize: 0, sessionStorageSeed: seed, ...options });
+            buildHackerNewsDateMenu(harness, ['2026-11-23']);
+            buildHackerNewsArticle(harness, '907', 'Same story');
+            const remote = createAutoOpenHarness(url, {}, [], now).harness;
+            buildHackerNewsArticle(remote, remoteId, 'Untranslated story');
+            harness.document.wasDiscarded = options.wasDiscarded || false;
+            harness.context.blogBookmarksBetaCatPageTask = Promise.resolve({ doc: remote.document, receivedAt: now });
+            runAutoOpenScript(harness);
+            harness.dispatchDocumentEvent('DOMContentLoaded');
+            await Promise.resolve();
+            await Promise.resolve();
+            return { nav: harness.document.querySelector('.auto-open-new-articles-date-nav'), gmStore };
+        };
+        const reload = await render({ navigationType: 'reload' }, '907');
+        assert.equal(reload.nav.children[3].textContent, '08:00');
+        assert.equal(reload.nav.children[4].textContent, '17:26');
+        const restored = await render({ navigationType: 'reload', wasDiscarded: true }, '907');
+        assert.equal(restored.nav.children[4].textContent, '08:00');
+        const cached = await render({ navigationType: 'navigate' }, '907');
+        assert.equal(cached.nav.children[4].textContent, '08:00');
+        const mismatch = await render({ navigationType: 'reload' }, '999');
+        assert.equal(mismatch.nav.children[4].textContent, '08:00');
+        const firstUnknown = await render({ navigationType: 'navigate' }, '907', {});
+        assert.equal(firstUnknown.nav.children[4].textContent, '17:26');
+    });
+
     test('date navigation replaces legacy copies and removes newly cloned controls', () => {
         const { harness } = createAutoOpenHarness('https://hackernews.betacat.io/', {}, [], Date.now());
         buildHackerNewsDateMenu(harness, ['2026-11-23']);

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.23
+// @version      0.5.24
 // @description  BetaCat reading/navigation, popularity, mobile layout, background article tabs and bookmarks
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -18,6 +18,9 @@
 // @run-at       document-start
 // @noframes
 // ==/UserScript==
+
+// Share the existing no-store original-title response with the reading controls.
+let blogBookmarksBetaCatPageTask;
 
 // Cross-tab article capture. Idle on all non-BetaCat sites unless the admin
 // explicitly queued a matching URL. No separate installed script is required.
@@ -350,8 +353,10 @@
                         if (title && !originalTitles.has(key)) originalTitles.set(key, title);
                     } catch {}
                 }
+                return { doc, receivedAt: Date.now() };
             })
-            .catch(error => console.debug('Blog Bookmarks: original title unavailable', error));
+            .catch(error => { console.debug('Blog Bookmarks: original title unavailable', error); return null; });
+        blogBookmarksBetaCatPageTask = originalTitleTask;
         return originalTitleTask;
     }
 
@@ -1350,33 +1355,25 @@
         return control;
     }
 
-    function recordLatestBrowserLoad(articles) {
-        if (documentLoadHistory) return documentLoadHistory;
-        // A discarded/restored tab can create a new Document from the local cache.
-        // Its navigation clock is NOT proof of a new server response.
-        const nav = window.performance?.getEntriesByType?.('navigation')?.[0];
-        const origin = window.performance?.timeOrigin;
-        const networkConfirmed = nav && nav.transferSize > 0 && !nav.workerStart
-            && (!nav.responseStatus || (nav.responseStatus >= 200 && nav.responseStatus < 400))
-            && Number.isFinite(origin) && Number.isFinite(nav.responseEnd);
-        // Stable across translation and our own DOM changes; separate snapshots per tab and URL.
-        const signature = JSON.stringify(articles.map(({ id, link }) => [
+    function latestSignature(articles) {
+        return JSON.stringify(articles.map(({ id, link }) => [
             id,
             link.querySelector('.last-updated[data-submitted]')?.getAttribute('data-submitted') || '',
             link.querySelector('.post-meta .score span')?.textContent?.trim() || '',
             link.querySelector('.post-meta .comment a span')?.textContent?.trim() || ''
-        ]));
-        let snapshots = [];
+        ]).sort((a, b) => a[0].localeCompare(b[0])));
+    }
+
+    function getLatestSnapshots() {
         try {
             const stored = JSON.parse(sessionStorage.getItem(SNAPSHOT_KEY) || '[]');
-            if (Array.isArray(stored)) snapshots = stored;
+            if (Array.isArray(stored)) return stored;
         } catch (_) {}
-        if (!networkConfirmed) {
-            documentLoadHistory = snapshots.find(item => item.signature === signature)?.history
-                || { current: null, previous: null };
-            return documentLoadHistory;
-        }
-        const current = new Date(origin + nav.responseEnd).toISOString();
+        return [];
+    }
+
+    function recordVerifiedLatestLoad(signature, receivedAt, snapshots) {
+        const current = new Date(receivedAt).toISOString();
         const saved = GM_getValue(LATEST_LOAD_HISTORY_KEY, null);
         const lastLoad = saved && typeof saved.current === 'string' && Number.isFinite(Date.parse(saved.current))
             ? new Date(saved.current).toISOString()
@@ -1392,6 +1389,49 @@
             ].slice(0, 12)));
         } catch (_) {}
         return documentLoadHistory;
+    }
+
+    function latestNavigationTiming() {
+        const perf = window.performance;
+        return { nav: perf?.getEntriesByType?.('navigation')?.[0], origin: perf?.timeOrigin };
+    }
+
+    function recordLatestBrowserLoad(articles) {
+        if (documentLoadHistory) return documentLoadHistory;
+        const { nav, origin } = latestNavigationTiming();
+        const signature = latestSignature(articles);
+        const snapshots = getLatestSnapshots();
+        const networkConfirmed = nav && nav.transferSize > 0 && !nav.workerStart
+            && (!nav.responseStatus || (nav.responseStatus >= 200 && nav.responseStatus < 400))
+            && Number.isFinite(origin) && Number.isFinite(nav.responseEnd) && nav.responseEnd > 0;
+        if (networkConfirmed)
+            return recordVerifiedLatestLoad(signature, origin + nav.responseEnd, snapshots);
+        documentLoadHistory = snapshots.find(item => item.signature === signature)?.history
+            || { current: null, previous: null };
+        return documentLoadHistory;
+    }
+
+    // Edge may omit navigation transfer metrics even for a manual reload.
+    // Reuse the existing cache-bypassing title fetch, but only certify the
+    // visible listing if its IDs, submission times and counts match that response.
+    // Never re-date a known cached snapshot just because its tab is restored.
+    function verifyAmbiguousLatestLoad(articles, onVerified) {
+        const { nav, origin } = latestNavigationTiming();
+        if (nav?.transferSize > 0 && !nav.workerStart
+            && (!nav.responseStatus || (nav.responseStatus >= 200 && nav.responseStatus < 400))
+            && Number.isFinite(origin) && Number.isFinite(nav.responseEnd) && nav.responseEnd > 0) return;
+        if (document.wasDiscarded || nav?.type === 'back_forward') return;
+        if (nav?.type !== 'reload' && (documentLoadHistory?.current || getLatestSnapshots().length)) return;
+        if (typeof blogBookmarksBetaCatPageTask === 'undefined' || !blogBookmarksBetaCatPageTask) return;
+        const signature = latestSignature(articles);
+        blogBookmarksBetaCatPageTask.then(result => {
+            if (!result || !Number.isFinite(result.receivedAt)) return;
+            const remoteArticles = collectHackerNewsArticles(result.doc);
+            if (!remoteArticles.length || latestSignature(remoteArticles) !== signature
+                || latestSignature(articles) !== signature) return;
+            const history = recordVerifiedLatestLoad(signature, result.receivedAt, getLatestSnapshots());
+            onVerified(history);
+        }).catch(() => {});
     }
 
     function formatUpdateTime(timestamp) {
@@ -1464,6 +1504,13 @@
         bottomNavigation.setAttribute('data-betacat-nav-position', 'bottom');
         first.parentNode.insertBefore(topNavigation, first);
         last.insertAdjacentElement('afterend', bottomNavigation);
+        if (displayedDate === null) verifyAmbiguousLatestLoad(articles, history => {
+            for (const nav of [topNavigation, bottomNavigation]) {
+                nav.querySelectorAll(`.${UPDATE_TIME_CLASS}`).forEach(label => label.remove());
+                addUpdateTime(nav, 'previous', history.previous);
+                addUpdateTime(nav, 'current', history.current);
+            }
+        });
 
         // Translation/legacy scripts may clone or move the controls. Keep precisely one
         // at each end, without recomputing the acquisition time.
@@ -1623,20 +1670,24 @@
 
     // BetaCats renders fixed native day arrows in its .day-nav template.
     // Keep the site's #scrollUp control, and preserve our inline text date navigation.
-    function handleArticles() {
-        const url = new URL(window.location.href);
-        const dated = url.pathname.match(/^\/daily\/(\d{4}-\d{2}-\d{2})\/?$/);
-        if (!dated && !['/', '/zh', '/zh/'].includes(url.pathname)) return;
-        if (document.documentElement.hasAttribute(NAV_OWNER_ATTR)) return;
-        const links = Array.from(document.querySelectorAll('article.post-item'))
+    function collectHackerNewsArticles(root) {
+        const links = Array.from(root.querySelectorAll('article.post-item'))
             .filter(article => !article.classList.contains('ad'));
-        const articles = links.map(link => {
+        return links.map(link => {
             const comment = link.querySelector('a[rel="comment"]');
             let id = '';
             try { id = new URL(comment?.href || '', window.location.href).searchParams.get('id') || ''; } catch (_) {}
             const titleLink = link.querySelector('.post-title a[href]');
             return { link, id: id ? 'hackernews:' + id : titleLink ? 'hackernews:url:' + titleLink.href : '' };
         }).filter(article => article.id);
+    }
+
+    function handleArticles() {
+        const url = new URL(window.location.href);
+        const dated = url.pathname.match(/^\/daily\/(\d{4}-\d{2}-\d{2})\/?$/);
+        if (!dated && !['/', '/zh', '/zh/'].includes(url.pathname)) return;
+        if (document.documentElement.hasAttribute(NAV_OWNER_ATTR)) return;
+        const articles = collectHackerNewsArticles(document);
         if (!articles.length) return;
         document.documentElement.setAttribute(NAV_OWNER_ATTR, 'true');
         // Older installed Auto Open New Articles may already own the collapse controls.
