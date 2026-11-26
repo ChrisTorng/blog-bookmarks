@@ -7,7 +7,7 @@ const source = readFileSync(new URL('../tampermonkey/BlogBookmarks.user.js', imp
 test('userscript installs from blog-bookmarks and parses', () => {
   assert.doesNotThrow(() => new Function(source));
   assert.match(source, /\/\/ @name\s+Blog Bookmarks\n/);
-  assert.match(source, /\/\/ @version\s+0\.5\.31\n/);
+  assert.match(source, /\/\/ @version\s+0\.5\.32\n/);
   assert.match(source, /raw\.githubusercontent\.com\/ChrisTorng\/blog-bookmarks\/main\/tampermonkey\/BlogBookmarks\.user\.js/);
   assert.match(source, /\/\/ @match\s+https:\/\/hackernews\.betacat\.io\/\*/);
   assert.doesNotMatch(source, /cloudmark-christorng|cloudmark\.site/);
@@ -228,11 +228,11 @@ test('matching direct iframe returns stable text through GM storage without open
  assert.equal(store.get(resultsKey)[id].url,url);
 });
 
- test('reading insights remains a separate fixed, draggable control',()=>{
+ test('reading insights remains a compact fixed top-left control',()=>{
  assert.match(source,/BEGIN READING_INSIGHTS/);
  assert.match(source,/position:fixed!important;z-index:2147483639/);
- assert.match(source,/pointermove/);
- assert.match(source,/GM_setValue\(positionKey,pos\)/);
+ assert.doesNotMatch(source,/blog-bookmarks:reading-position/);
+ assert.match(source,/width:32px!important;height:32px!important/);
  assert.match(source,/value\.summary&&value\.auto_expand&&!touched/);
  assert.match(source,/精讀摘要：顯示／恢復/);
 });
@@ -255,4 +255,16 @@ test('cross-archive capture requires matching original URL and renders Markdown 
  assert.match(source,/renderReadingMarkdown\(body,markdown\)/);
  assert.match(source,/target\.replaceChildren\(frag\)/);
  assert.match(source,/1\/\(v\?\.scale\|\|1\)/);
+});
+
+test('reading controls hide throughout manual pinch zoom and restore at the initial scale',()=>{
+ const code=source.slice(source.indexOf(' let normalScale='),source.indexOf(' const svg=',source.indexOf(' let normalScale=')));
+ const vv={scale:0.5,width:780,height:1200,offsetLeft:0,offsetTop:0};
+ const styles={},host={style:{setProperty:(k,v)=>styles[k]=v}},panel={style:{}};
+ const api=new Function('window','host','panel','innerWidth','innerHeight', 'let hidden=false;'+code+';return {place,hide(){hidden=true;syncVisibility();}};')({visualViewport:vv},host,panel,780,1200);
+ api.place();assert.equal(styles.display,'block');assert.equal(styles.left,'16px');assert.equal(styles.top,'16px');
+ vv.scale=0.8;api.place();assert.equal(styles.display,'none');
+ vv.offsetLeft=100;api.place();assert.equal(styles.display,'none');
+ vv.scale=0.5;vv.offsetLeft=0;api.place();assert.equal(styles.display,'block');
+ api.hide();vv.scale=2;api.place();vv.scale=0.5;api.place();assert.equal(styles.display,'none');
 });
