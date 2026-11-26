@@ -25578,7 +25578,9 @@ var commentaryOpening = /^[#*\s]*(?:根據(?:你)?(?:所)?提供的(?:文本(?:�
 var isSummaryCommentary = /* @__PURE__ */ __name((summary) => commentaryOpening.test(summary), "isSummaryCommentary");
 function needsSummaryRepair(summary) {
   const s = String(summary || "").trim();
-  return invalidSummary(s) || isSummaryCommentary(s) || /^(?:常見漏洞與暴露(?:（CVE）)?|no description|not found)$/i.test(s) || /(?:Google 系統偵測到來自|解開 CAPTCHA 後|請啟用 JS 並關閉|繼續操作，請登入你的 Reddit 帳號|你沒有權限存取這個伺服器|如需協助，請造訪 help\.ft\.com|請確保您的瀏覽器支援 JavaScript 和 Cookies)/i.test(s);
+  return invalidSummary(s) || isSummaryCommentary(s) || // Require both a missing/technical input signal and an explicit failure to
+  // summarize; technical articles mentioning CSS alone are not failures.
+  /^[#*\s]*(?:抱歉[，,。\s]*)?(?:由於|因為|根據|您提供|你提供|所提供|提供的|目前提供|原文|本文片段|the (?:provided|supplied)|(?:based on|due to) the)/i.test(s) && /(?:僅|只|只有|皆為|沒有|並無|缺乏|未提供|不足|only|no (?:actual|article|body)|does not contain).{0,90}(?:CSS|HTML|JavaScript|樣式|代碼|程式碼|正文|內文|新聞內容|文章內容|article (?:content|text)|source code)/i.test(s) && /(?:無法|不能|難以|不足以|無從).{0,24}(?:摘要|總結|概述)|(?:cannot|unable to|not possible to).{0,30}summariz/i.test(s) || /^(?:常見漏洞與暴露(?:（CVE）)?|no description|not found)$/i.test(s) || /(?:Google 系統偵測到來自|解開 CAPTCHA 後|請啟用 JS 並關閉|繼續操作，請登入你的 Reddit 帳號|你沒有權限存取這個伺服器|如需協助，請造訪 help\.ft\.com|請確保您的瀏覽器支援 JavaScript 和 Cookies)/i.test(s);
 }
 __name(needsSummaryRepair, "needsSummaryRepair");
 
@@ -25737,6 +25739,20 @@ async function reviewWindow(db, requested = 3) {
     db.prepare("SELECT COUNT(*) n FROM bookmarks WHERE stage IN (0,1) AND deferred=0").first(),
     db.prepare("SELECT COUNT(*) n FROM bookmarks WHERE stage=1 AND deferred=1").first()
   ]);
+  const candidates = [...deferred.results, ...pending.results].filter((b) => String(b.summary || "").trim() && needsSummaryRepair(b.summary));
+  if (candidates.length) {
+    const results = await db.batch(candidates.map((b) => db.prepare(
+      "UPDATE bookmarks SET summary=NULL,updated_at=? WHERE id=? AND stage IN (0,1) AND summary IS ?"
+    ).bind((/* @__PURE__ */ new Date()).toISOString(), b.id, b.summary)));
+    for (let i = 0; i < candidates.length; i++) {
+      const b = candidates[i];
+      if (results[i].meta.changes) b.summary = null;
+      else {
+        const latest = await get(db, b.id, true);
+        if (latest) b.summary = latest.summary;
+      }
+    }
+  }
   return {
     recent: recent.results.map(decode).reverse(),
     deferred: deferred.results.map(decode),
@@ -33501,6 +33517,16 @@ async function api(req, env, url, ctx) {
         await invalidateAfterWrite(env, ctx);
         return json2(updated);
       }
+    }
+    if (p === "/bookmarks/api/admin/summary-repair/clear" && req.method === "POST") {
+      const body = await input(req);
+      if (!/^[0-9a-f-]{36}$/i.test(String(body.id || "")) || typeof body.summary !== "string")
+        return json2({ error: "\u66F8\u7C64\u6216\u6458\u8981\u7121\u6548" }, 400);
+      const result = await env.DB.prepare(
+        "UPDATE bookmarks SET summary=NULL,updated_at=? WHERE id=? AND stage IN (0,1,2) AND summary IS ?"
+      ).bind((/* @__PURE__ */ new Date()).toISOString(), body.id, body.summary).run();
+      if (!result.meta.changes) return json2({ error: "\u6458\u8981\u6216\u516C\u958B\u72C0\u614B\u5DF2\u8B8A\u66F4\uFF0C\u8ACB\u91CD\u65B0\u6574\u7406" }, 409);
+      return json2({ id: body.id, summary: null, saved: true });
     }
     if (p === "/bookmarks/api/admin/summary-repair/preview" && req.method === "POST") {
       const body = await readSubmittedContent(req);
