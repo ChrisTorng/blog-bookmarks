@@ -170,7 +170,7 @@ test('capture bridge registers only source links opened from quick review and wa
  assert.match(source,/isChallenge\(\)/);
  assert.match(source,/MutationObserver/);
  assert.match(source,/tm-blog-bookmarks-capture-article/);
- assert.match(source,/if\(location\.hostname==='christorng\.idv\.tw'/);
+ assert.match(source,/if\(!inFrame&&location\.hostname==='christorng\.idv\.tw'/);
  assert.match(source,/GM_setValue\(resultsKey,results\)/);
  assert.doesNotMatch(source,/GM_xmlhttpRequest\(\{[^}]*capture-results/);
 });
@@ -203,4 +203,27 @@ test('embedded capture is authorized by matching pending job and never posts tex
  assert.match(source,/job\.nonce!==data\.nonce/);
  assert.match(source,/iframe-viewer-content/);
  assert.match(source,/frame\.contentWindow\.postMessage/);
+});
+
+
+test('matching direct iframe returns stable text through GM storage without opening a new tab',()=>{
+ const bridge=source.slice(source.indexOf('(function articleCaptureBridge()'),source.indexOf('\n\n(() => {'));
+ const jobsKey='blog-bookmarks:capture-jobs:v1',resultsKey='blog-bookmarks:capture-results:v1';
+ const id='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', url='https://example.org/article';
+ const job={id,url,nonce:'frame-job',createdAt:Date.now()};
+ const store=new Map([[jobsKey,{[id]:job}]]), listeners=new Map();
+ const parent={},win={parent,top:parent,addEventListener:(key,fn)=>listeners.set(key,fn)};
+ const content='A rendered artifact paragraph. '.repeat(30);
+ const doc={title:'Article',body:{querySelector:()=>null,cloneNode:()=>({querySelectorAll:()=>[],textContent:content})}};
+ const run=new Function('document','window','location','GM_getValue','GM_setValue',bridge);
+ run(doc,win,new URL('https://embed.example.net/frame'),(key,fallback)=>store.get(key)??fallback,(key,value)=>store.set(key,value));
+ const receive=event=>listeners.get('message')(event);
+ const data={channel:'blog-bookmarks:embedded-capture:v1',id,url,nonce:'frame-job',manual:true};
+ receive({source:parent,origin:'https://wrong.example',data});
+ assert.equal(store.has(resultsKey),false);
+ receive({source:parent,origin:'https://example.org',data:{...data,nonce:'wrong'}});
+ assert.equal(store.has(resultsKey),false);
+ receive({source:parent,origin:'https://example.org',data});
+ assert.equal(store.get(resultsKey)[id].content,content.trim());
+ assert.equal(store.get(resultsKey)[id].url,url);
 });
