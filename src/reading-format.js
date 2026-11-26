@@ -52,9 +52,11 @@ export function readingDisplay(row){
  const original={chars:row.chars,words:row.words,cjk:row.cjk,english:row.english,minutes:row.minutes};
  const summary=textMetrics(markdownText(row.summary));
  const reduction_percent=original.chars>0?Math.round((1-summary.chars/original.chars)*100):null;
- const label=(name,m)=>name+' '+(m.chars??'未知')+' 字元'+(m.cjk||m.english?'（'+[m.cjk?m.cjk+' 中文字':'',m.english?m.english+' 英文單字':''].filter(Boolean).join(' / ')+'）':'')+(m.minutes!=null?' · 約 '+m.minutes+' 分鐘':'');
- const stats_lines=[label('原文',original),label('摘要',summary)];
- if(reduction_percent!==null)stats_lines.push((reduction_percent>=0?'縮減 ':'增加 ')+Math.abs(reduction_percent)+'%'+(original.minutes!=null&&original.minutes>summary.minutes?' · 節省約 '+(original.minutes-summary.minutes)+' 分鐘':''));
+ const stats_lines=[
+  '原文 '+(original.chars??'未知')+' 字',
+  '摘要 '+summary.chars+' 字',
+  reduction_percent===null?'縮減未知':(reduction_percent>=0?'縮減 ':'增加 ')+Math.abs(reduction_percent)+'%'
+ ];
  return {summary:row.summary,original,summary_metrics:summary,reduction_percent,stats_lines};
 }
 // Only fetch current summary/measurements for already-authorized bookmark rows.

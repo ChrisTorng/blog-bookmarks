@@ -59,6 +59,22 @@ export function renderSummary(markdown,baseUrl) {
     }catch{return attr+'="#"'}
   });
 }
+// Use inline styles and table cells so the same compact bar works in RSS/email clients.
+export function readingStatsHtml(reading) {
+  const fmt=n=>Number.isFinite(n)&&n>=0?String(n):'未知';
+  const original=reading.original?.chars, summary=reading.summary_metrics?.chars;
+  const reduction=Number.isFinite(reading.reduction_percent)?reading.reduction_percent:null;
+  const green=Math.max(0,Math.min(100,reduction??0));
+  const gray=100-green;
+  const label=reduction===null?'縮減未知':(reduction>=0?'縮減 ':'增加 ')+Math.abs(reduction)+'%';
+  const cell=(width,color)=>width>0?'<td width="'+width+'%" bgcolor="'+color+'" style="width:'+width+'%;height:8px;line-height:8px;font-size:1px;padding:0;border:0;background-color:'+color+'">&nbsp;</td>':'';
+  return '<div class="mb-2 text-xs text-gray-600 dark:text-gray-300" style="margin:4px 0 8px;font-size:.8em;line-height:1.5">'+
+    (reduction===null?'':'<table role="presentation" aria-hidden="true" width="100%" cellspacing="0" cellpadding="0" style="width:100%;table-layout:fixed;border:0;border-spacing:0;border-collapse:collapse;border-radius:4px;overflow:hidden;margin:0 0 4px"><tr>'+cell(gray,'#64748b')+cell(green,'#22a06b')+'</tr></table>')+
+    '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;table-layout:fixed;border:0;border-spacing:0;border-collapse:collapse;margin:0"><tr>'+
+    '<td align="left" style="border:0;padding:0;text-align:left;white-space:nowrap">原文 '+fmt(original)+' 字</td>'+
+    '<td align="center" style="border:0;padding:0;text-align:center;white-space:nowrap">摘要 '+fmt(summary)+' 字</td>'+
+    '<td align="right" style="border:0;padding:0;text-align:right;white-space:nowrap">'+label+'</td></tr></table></div>';
+}
 // The article is the canonical public content contract: the Worker detail and
 // both RSS representations use this exact complete HTML, not parallel summaries.
 export function bookmarkArticleHtml(item,categories=[],relatedNotesHtml='',permalink='',showAdminLink=false) {
@@ -80,8 +96,7 @@ export function bookmarkArticleHtml(item,categories=[],relatedNotesHtml='',perma
     ? '<div class="my-2 text-gray-700 dark:text-gray-200"><div class="prose max-w-none text-sm dark:prose-invert">'+
       renderSummary(item.summary,item.url)+'</div></div>' : '';
   const reading=item.reading_summary?.summary
-    ? '<section class="my-3 min-w-0" aria-label="精讀摘要"><p class="font-bold">精讀摘要</p><div class="mb-2 text-xs text-gray-600 dark:text-gray-300">'+
-      (item.reading_summary.stats_lines||[]).map(line=>'<div>'+esc(line)+'</div>').join('')+'</div><div class="prose max-w-none text-sm dark:prose-invert">'+renderSummary(item.reading_summary.summary,item.url)+'</div></section>' : '';
+    ? '<section class="my-3 min-w-0" aria-label="精讀摘要"><p class="font-bold">精讀摘要</p>'+readingStatsHtml(item.reading_summary)+'<div class="prose max-w-none text-sm dark:prose-invert">'+renderSummary(item.reading_summary.summary,item.url)+'</div></section>' : '';
   const original=target!==item.url
     ? '<a href="'+esc(item.url)+'" target="_blank" rel="noopener noreferrer" class="hidden max-w-full truncate underline md:inline">原始網址：'+esc(item.url)+'</a>' : '';
   const tags=bookmarkTags(item,categories).map(t=>

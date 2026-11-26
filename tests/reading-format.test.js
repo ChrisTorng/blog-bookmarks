@@ -32,3 +32,8 @@ test('public reading attaches only safe projection with one bounded query',async
  assert.equal(queries,1);assert.equal(item.reading_summary.summary,'摘要');
  assert.doesNotMatch(JSON.stringify(item),/private/);
 });
+
+test('compact statistics use only original, summary and reduction',()=>{
+ const r=readingDisplay({chars:923,minutes:2,cjk:383,english:106,body_hash:'x',summary_hash:'x',summary:'中'.repeat(533)});
+ assert.deepEqual(r.stats_lines,['原文 923 字','摘要 533 字','縮減 42%']);
+});

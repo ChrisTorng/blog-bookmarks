@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.35
+// @version      0.5.36
 // @description  BetaCat reading/navigation, popularity, mobile layout, background article tabs and bookmarks
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -2232,7 +2232,7 @@ let blogBookmarksBetaCatPageTask;
   host=document.createElement('div');host.id='tm-reading-insights';host.className='notranslate';host.setAttribute('translate','no');
   host.style.cssText='position:fixed!important;z-index:2147483639!important;width:32px!important;height:32px!important;display:block!important;pointer-events:none!important;margin:0!important;padding:0!important;transform:none!important;';
   root=host.attachShadow({mode:'closed'});
-  const style=document.createElement('style');style.textContent=':host{color-scheme:light dark;font:16px/1.55 system-ui,sans-serif;color:CanvasText}button{font:inherit;color:inherit;cursor:pointer;border:1px solid color-mix(in srgb,CanvasText 22%,transparent);border-radius:7px;background:Canvas;padding:4px;min-width:38px;min-height:38px}#toggle{display:grid;place-items:center;box-sizing:border-box;width:32px;height:32px;min-width:32px;min-height:32px;opacity:.86;pointer-events:auto;box-shadow:0 1px 4px #0003;padding:0}#toggle:hover,#toggle:focus-visible{opacity:1}#toggle[data-busy=true]{outline:2px dotted currentColor}section{position:absolute;box-sizing:border-box;width:min(420px,calc(100vw - 16px));background:Canvas;border:1px solid color-mix(in srgb,CanvasText 22%,transparent);border-radius:10px;padding:10px 13px;box-shadow:0 3px 16px #0003;overflow:auto;overscroll-behavior:contain;pointer-events:auto}section[hidden]{display:none!important}header{display:flex;align-items:center;gap:5px;position:sticky;top:-10px;background:Canvas;z-index:1;padding:3px 0}header{padding-right:38px}#toggle[hidden]{display:none!important}strong{flex:1}#meta{font-size:14px;opacity:.8;margin:3px 0 8px;white-space:pre-line}#body a{color:LinkText;text-decoration:underline}#body{overflow-wrap:anywhere;font-size:16px;line-height:1.6}#body p{margin:.55em 0}#body h1,#body h2,#body h3,#body h4{font-size:1.12em;line-height:1.35;margin:.85em 0 .35em}#body ul,#body ol{padding-inline-start:1.35em;margin:.4em 0}#body li{margin:.3em 0}#body code{white-space:pre-wrap;background:color-mix(in srgb,CanvasText 9%,Canvas);border-radius:3px;padding:0 .15em}#body pre{white-space:pre-wrap;margin:.5em 0}#body blockquote{margin:.5em 0;padding-inline-start:.7em;border-inline-start:3px solid currentColor}#retry{margin-top:8px;width:100%}#retry[hidden]{display:none!important}';
+  const style=document.createElement('style');style.textContent=':host{color-scheme:light dark;font:16px/1.55 system-ui,sans-serif;color:CanvasText}button{font:inherit;color:inherit;cursor:pointer;border:1px solid color-mix(in srgb,CanvasText 22%,transparent);border-radius:7px;background:Canvas;padding:4px;min-width:38px;min-height:38px}#toggle{display:grid;place-items:center;box-sizing:border-box;width:32px;height:32px;min-width:32px;min-height:32px;opacity:.86;pointer-events:auto;box-shadow:0 1px 4px #0003;padding:0}#toggle:hover,#toggle:focus-visible{opacity:1}#toggle[data-busy=true]{outline:2px dotted currentColor}section{position:absolute;box-sizing:border-box;width:min(420px,calc(100vw - 16px));background:Canvas;border:1px solid color-mix(in srgb,CanvasText 22%,transparent);border-radius:10px;padding:10px 13px;box-shadow:0 3px 16px #0003;overflow:auto;overscroll-behavior:contain;pointer-events:auto}section[hidden]{display:none!important}header{display:flex;align-items:center;gap:5px;position:sticky;top:-10px;background:Canvas;z-index:1;padding:3px 0}header{padding-right:38px}#toggle[hidden]{display:none!important}strong{flex:1}#meta{font-size:12px;opacity:.9;margin:3px 0 8px}#meta .reading-bar{display:flex;height:8px;background:#64748b;border-radius:4px;overflow:hidden;justify-content:flex-end;margin-bottom:4px}#meta .reading-bar span{height:100%;background:#22a06b}#meta .reading-labels{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:2px;white-space:nowrap;font-size:clamp(9px,3vw,12px);font-variant-numeric:tabular-nums}#meta .reading-labels span:nth-child(2){text-align:center}#meta .reading-labels span:last-child{text-align:right}#body a{color:LinkText;text-decoration:underline}#body{overflow-wrap:anywhere;font-size:16px;line-height:1.6}#body p{margin:.55em 0}#body h1,#body h2,#body h3,#body h4{font-size:1.12em;line-height:1.35;margin:.85em 0 .35em}#body ul,#body ol{padding-inline-start:1.35em;margin:.4em 0}#body li{margin:.3em 0}#body code{white-space:pre-wrap;background:color-mix(in srgb,CanvasText 9%,Canvas);border-radius:3px;padding:0 .15em}#body pre{white-space:pre-wrap;margin:.5em 0}#body blockquote{margin:.5em 0;padding-inline-start:.7em;border-inline-start:3px solid currentColor}#retry{margin-top:8px;width:100%}#retry[hidden]{display:none!important}';
   icon=document.createElement('button');icon.id='toggle';icon.type='button';icon.innerHTML=svg;icon.title='精讀摘要';icon.setAttribute('aria-label',icon.title);
   panel=document.createElement('section');panel.hidden=true;panel.setAttribute('role','region');panel.setAttribute('aria-label','精讀摘要');
   const head=document.createElement('header'),title=document.createElement('strong');title.textContent='精讀摘要';
@@ -2299,7 +2299,21 @@ let blogBookmarksBetaCatPageTask;
  function render(){
   if(!host)return;
   syncVisibility();panel.hidden=!expanded;icon.hidden=expanded;icon.setAttribute('aria-expanded',String(expanded));icon.dataset.busy=String(busy||!!data?.generating);
-  meta.textContent=data?.reading_summary?.stats_lines?.join('\n')||(data?.minutes!=null?((data.cjk||0)>0?data.cjk+' 字'+(data.english?' / '+data.english+' words':''):data.english+' words')+' · 約 '+data.minutes+' 分鐘':'文章長度未知');
+  const reading=data?.reading_summary;
+  if(reading){
+   const reduction=Number.isFinite(reading.reduction_percent)?reading.reduction_percent:null;
+   const labels=document.createElement('div');labels.className='reading-labels';
+   const fmt=n=>Number.isFinite(n)&&n>=0?String(n):'未知';
+   for(const text of ['原文 '+fmt(reading.original?.chars)+' 字','摘要 '+fmt(reading.summary_metrics?.chars)+' 字',reduction===null?'縮減未知':(reduction>=0?'縮減 ':'增加 ')+Math.abs(reduction)+'%']){
+    const el=document.createElement('span');el.textContent=text;labels.append(el);
+   }
+   meta.replaceChildren();
+   if(reduction!==null){
+    const bar=document.createElement('div');bar.className='reading-bar';bar.setAttribute('aria-hidden','true');
+    const green=document.createElement('span');green.style.width=Math.max(0,Math.min(100,reduction))+'%';bar.append(green);meta.append(bar);
+   }
+   meta.append(labels);
+  }else meta.textContent=Number.isFinite(data?.chars)?'原文 '+data.chars+' 字':'文章長度未知';
   const markdown=data?.summary||(busy&&partialSummary?partialSummary:'');
   if(markdown)renderReadingMarkdown(body,markdown);else body.textContent=busy||data?.generating?'正在產生精讀摘要…':lastError||data?.error||'按下按鈕產生精讀摘要。';
   retry.hidden=!!data?.summary||busy||!!data?.generating;
