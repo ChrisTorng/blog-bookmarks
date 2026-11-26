@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.27
+// @version      0.5.28
 // @description  BetaCat reading/navigation, popularity, mobile layout, background article tabs and bookmarks
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -564,7 +564,7 @@ let blogBookmarksBetaCatPageTask;
             if (!link.isConnected || !control.button.isConnected) {
                 // The fixed center star lives under body. Remove it if its
                 // source article is replaced, otherwise it becomes an orphan.
-                if (!link.isConnected) control.button.remove();
+                if (!link.isConnected) {control.button.remove();control.readingBadge?.remove();}
                 controls.delete(link);
                 continue;
             }
@@ -581,6 +581,11 @@ let blogBookmarksBetaCatPageTask;
                 button.textContent = label;
             }
             const insight=previewScores.get(url);
+            if (control.readingBadge) {
+                const r=insight?.reading;
+                const label=r?.minutes!=null?((r.cjk||0)>0?(r.cjk+' 字'+(r.english?' / '+r.english+' words':'')):r.english+' words')+' · 約 '+r.minutes+' 分鐘':'長度未知';
+                if(control.readingBadge.textContent!==label)control.readingBadge.textContent=label;
+            }
             const chip=control.scoreBadge;
             const score = insight && Number.isFinite(Number(insight.publish))
                 ? Math.max(0, Math.min(100, Math.round(Number(insight.publish)))) : null;
@@ -970,7 +975,13 @@ let blogBookmarksBetaCatPageTask;
                 void toggleArticle(link);
             });
             article.appendChild(button);
-            const control = { link, button, glyph, scoreBadge, url: sourceAndTarget(link.href).url };
+            const readingBadge=document.createElement('span');
+            readingBadge.className='tm-bookmarks-reading-length notranslate';
+            readingBadge.setAttribute('translate','no');
+            readingBadge.style.cssText='display:inline-block;font-size:.78em;opacity:.72;margin-inline-start:.5em;white-space:normal';
+            readingBadge.textContent='長度未知';
+            link.insertAdjacentElement('afterend',readingBadge);
+            const control = { link, button, glyph, scoreBadge, readingBadge, url: sourceAndTarget(link.href).url };
             controls.set(link, control);
             const previewSummary=article.querySelector('.post-summary');
             if(previewSummary)summaryObserver?.observe(previewSummary);
@@ -2018,3 +2029,208 @@ let blogBookmarksBetaCatPageTask;
     }
 })();
 // END BETACAT_EXTERNAL_LINKS
+
+
+// BEGIN READING_INSIGHTS
+(function readingInsights(){
+ 'use strict';
+ if(window.top && window!==window.top)return;
+ if(typeof GM_getValue!=='function'||typeof GM_xmlhttpRequest!=='function')return;
+ const secret=GM_getValue('blog-bookmarks-ingest-token','');
+ if(!secret)return;
+ const endpoint='https://christorng.idv.tw/bookmarks/api/ingest/reading';
+ const jobsKey='blog-bookmarks:reading-jobs:v1',positionKey='blog-bookmarks:reading-position:v1';
+ const ttl=2*60*60*1000;
+ const norm=value=>{try{const u=new URL(value);if(!/^https?:$/.test(u.protocol)||u.username||u.password)return '';u.hash='';return u.href;}catch{return '';}};
+ const identity=value=>{try{
+  const u=new URL(norm(value));u.hostname=u.hostname.replace(/^www\./,'');u.pathname=u.pathname.replace(/\/+$/,'')||'/';
+  for(const k of [...u.searchParams.keys()])if(/^utm_/i.test(k)||/^(fbclid|gclid|msclkid)$/i.test(k))u.searchParams.delete(k);
+  u.searchParams.sort();return u.hostname+u.pathname+u.search;
+ }catch{return '';}};
+ const archive=host=>/^archive\.(?:is|today|ph|vn|md)$/.test(host);
+ const jobs=()=>{const x=GM_getValue(jobsKey,{});return Object.fromEntries(Object.entries(x&&typeof x==='object'?x:{}).filter(([,v])=>v?.source&&Date.now()-v.at<ttl&&Date.now()>=v.at));};
+ function request(mode,url,content){
+  return new Promise((resolve,reject)=>{
+   GM_xmlhttpRequest({method:'POST',url:endpoint,anonymous:true,redirect:'error',timeout:115000,
+    headers:{Authorization:'Bearer '+secret,'Content-Type':'application/json'},
+    data:JSON.stringify({mode,url,...(content?{content,complete:true}:{})}),
+    onload:r=>{try{
+     if(r.finalUrl&&new URL(r.finalUrl).origin!==new URL(endpoint).origin)throw Error('非預期的 API 重導向');
+     const data=JSON.parse(r.responseText);if(r.status<200||r.status>=300)throw Error(data.error||'HTTP '+r.status);resolve(data);
+    }catch(e){reject(e);}},
+    onerror:()=>reject(Error('無法連線至摘要服務')),ontimeout:()=>reject(Error('摘要服務逾時'))});
+  });
+ }
+ function queue(source,target){
+  source=norm(source);target=norm(target)||source;if(!source)return;
+  const x=jobs();x[source]={source,target,at:Date.now()};
+  GM_setValue(jobsKey,Object.fromEntries(Object.entries(x).sort((a,b)=>b[1].at-a[1].at).slice(0,80)));
+  void request('prepare',source).catch(()=>{});
+ }
+ if(location.hostname==='hackernews.betacat.io'){
+  document.addEventListener('click',event=>{
+   const link=event.target?.closest?.('article.post-item .post-title a.post-url');
+   if(!link?.href)return;
+   queue(link.href,link.href);
+  },true);
+  return;
+ }
+ if(location.hostname==='christorng.idv.tw'&&/^\/bookmarks\/admin(?:\/|$)/.test(location.pathname)){
+  window.addEventListener('blog-bookmarks:reading-open',event=>{
+   const d=event.detail||{};queue(d.source,d.target);
+  });
+  return;
+ }
+ if(location.hostname==='christorng.idv.tw'&&location.pathname!=='/TampermonkeyScripts/IframeViewer.html')return;
+ const currentUrl=()=>location.hostname==='christorng.idv.tw'&&location.pathname==='/TampermonkeyScripts/IframeViewer.html'
+  ?norm(new URL(location.href).searchParams.get('url')):norm(location.href);
+ function candidateIds(){
+  const ids=new Set([identity(currentUrl())]);
+  try{
+   const here=new URL(currentUrl());
+   if(archive(here.hostname)){
+    for(const key of ['url','q']){const v=here.searchParams.get(key);if(v)ids.add(identity(v));}
+    for(const el of document.querySelectorAll('#HEADER a[href],#HEADER input[value],#header a[href],input[name="url"],link[rel="canonical"]')){
+     const v=el.href||el.value;if(v)ids.add(identity(v));
+    }
+   }
+   if(here.hostname==='web.archive.org'){
+    const m=here.pathname.match(/https?:\/\/.+/);if(m)ids.add(identity(m[0]+here.search));
+   }
+   const canonical=document.querySelector('link[rel="canonical"]')?.href;
+   if(canonical&&new URL(canonical).hostname.replace(/^www\./,'')===here.hostname.replace(/^www\./,''))ids.add(identity(canonical));
+   if(/^(?:nitter\.[^/]+|nitter-[^/]+)$/.test(here.hostname)&&/\/status\/\d+/.test(here.pathname)){
+    ids.add(identity('https://x.com'+here.pathname));ids.add(identity('https://twitter.com'+here.pathname));
+   }
+   if(here.hostname==='arxiv.org'&&/^\/html\//.test(here.pathname)){
+    ids.add(identity('https://arxiv.org'+here.pathname.replace('/html/','/abs/')));
+    ids.add(identity('https://arxiv.org'+here.pathname.replace('/html/','/pdf/')+'.pdf'));
+   }
+  }catch{}
+  ids.delete('');return ids;
+ }
+ function trackedSource(){
+  const ids=candidateIds(),matches=Object.values(jobs()).filter(j=>ids.has(identity(j.source))||ids.has(identity(j.target)));
+  const unique=[...new Set(matches.map(j=>j.source))];
+  return unique.length===1?unique[0]:'';
+ }
+ function extract(){
+  if(!document.body||document.body.querySelector('input[type="password"]'))return '';
+  if(/^(?:just a moment|attention required|verify you are human|access denied|checking your browser|security verification|安全驗證)/i.test(document.title))return '';
+  const pageText=(document.body.textContent||'').slice(0,4000);
+  if(pageText.length<3500&&/(?:verify (?:you are|that you are) (?:a )?human|complete (?:the )?captcha|checking if the site connection is secure|機器人驗證|請完成驗證)/i.test(pageText))return '';
+  if(document.querySelector('meta[property="article:isAccessibleForFree"][content="false"]'))return '';
+  const roots=[...document.querySelectorAll('[itemprop="articleBody"],[data-testid="article-body"],.article-body,.article-content,.entry-content,.post-content,.publication-content,article,main,[role="main"]')];
+  const ranked=roots.map(el=>{
+   const copy=el.cloneNode(true);
+   copy.querySelectorAll('script,style,noscript,nav,footer,aside,header,form,button,svg,iframe,[aria-hidden="true"],[hidden],.ads,.comments,.related-posts,.sidebar,.tm-bookmarks-reading-length').forEach(x=>x.remove());
+   copy.querySelectorAll('p,li,h1,h2,h3,h4,blockquote,pre,br,tr,section').forEach(x=>x.append(document.createTextNode('\n')));
+   const text=(copy.textContent||'').replace(/[ \t]+/g,' ').replace(/\n\s*\n\s*\n/g,'\n\n').trim();
+   const paragraphs=copy.querySelectorAll('p,li,blockquote,pre').length;
+   return {text,paragraphs,semantic:el.matches('[itemprop="articleBody"],[data-testid="article-body"],.article-body,.article-content,.entry-content,.post-content,.publication-content,article')};
+  }).filter(x=>x.text.length>=120&&x.text.length<=160000&&x.paragraphs>=1);
+  const semantic=ranked.filter(x=>x.semantic);
+  const result=(semantic.length?semantic:ranked).sort((a,b)=>b.text.length-a.text.length)[0];
+  return result?.text||'';
+ }
+ let source='',host,root,icon,panel,body,meta,retry,expanded=false,hidden=false,touched=false,data=null,busy=false,lastError='',started=false,attempt=0,pollTimer;
+ let pos=GM_getValue(positionKey,{x:8,y:8});
+ if(!pos||!Number.isFinite(pos.x)||!Number.isFinite(pos.y))pos={x:8,y:8};
+ function viewport(){const v=window.visualViewport;return {w:v?.width||innerWidth,h:v?.height||innerHeight,x:v?.offsetLeft||0,y:v?.offsetTop||0};}
+ function place(){
+  if(!host)return;
+  const v=viewport(),x=Math.max(0,Math.min(v.w-40,pos.x)),y=Math.max(0,Math.min(v.h-40,pos.y));
+  host.style.setProperty('left',(v.x+x)+'px','important');host.style.setProperty('top',(v.y+y)+'px','important');
+  panel.style.left=Math.max(-x,Math.min(0,v.w-x-Math.min(420,v.w-16)-8))+'px';
+  panel.style.top=(y+40+Math.min(v.h*.65,340)>v.h&&y>v.h/2)?'auto':'40px';
+  panel.style.bottom=panel.style.top==='auto'?'40px':'auto';
+  panel.style.maxHeight=Math.max(75,panel.style.top==='auto'?y-8:v.h-y-48)+'px';
+ }
+ const svg='<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3h10l4 4v14H5z"/><path d="M14 3v5h5M8 12h8M8 16h8"/></svg>';
+ function make(){
+  if(host||!document.body)return;
+  host=document.createElement('div');host.id='tm-reading-insights';host.className='notranslate';host.setAttribute('translate','no');
+  host.style.cssText='position:fixed!important;z-index:2147483639!important;width:36px!important;height:36px!important;display:block!important;pointer-events:none!important;margin:0!important;padding:0!important;transform:none!important;';
+  root=host.attachShadow({mode:'closed'});
+  const style=document.createElement('style');style.textContent=':host{color-scheme:light dark;font:14px/1.55 system-ui,sans-serif;color:CanvasText}button{font:inherit;color:inherit;cursor:pointer;border:1px solid color-mix(in srgb,CanvasText 22%,transparent);border-radius:7px;background:Canvas;padding:4px;min-width:30px;min-height:30px}#toggle{display:grid;place-items:center;width:34px;height:34px;opacity:.86;touch-action:none;pointer-events:auto;box-shadow:0 1px 4px #0003;padding:0}#toggle:hover,#toggle:focus-visible{opacity:1}#toggle[data-busy=true]{outline:2px dotted currentColor}section{position:absolute;box-sizing:border-box;width:min(420px,calc(100vw - 16px));background:Canvas;border:1px solid color-mix(in srgb,CanvasText 22%,transparent);border-radius:10px;padding:10px 13px;box-shadow:0 3px 16px #0003;overflow:auto;overscroll-behavior:contain;pointer-events:auto}section[hidden]{display:none!important}header{display:flex;align-items:center;gap:5px;position:sticky;top:-10px;background:Canvas;z-index:1;padding:3px 0}strong{flex:1}#meta{font-size:12px;opacity:.7;margin:3px 0 8px}#body{white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.55}#retry{margin-top:8px;width:100%}#retry[hidden]{display:none!important}';
+  icon=document.createElement('button');icon.id='toggle';icon.type='button';icon.innerHTML=svg;icon.title='精讀摘要（可拖曳）';icon.setAttribute('aria-label',icon.title);
+  panel=document.createElement('section');panel.hidden=true;panel.setAttribute('role','region');panel.setAttribute('aria-label','精讀摘要');
+  const head=document.createElement('header'),title=document.createElement('strong');title.textContent='精讀摘要';
+  const collapse=document.createElement('button');collapse.type='button';collapse.textContent='−';collapse.title='收合摘要';collapse.setAttribute('aria-label',collapse.title);
+  const close=document.createElement('button');close.type='button';close.textContent='×';close.title='隱藏本頁圖示';close.setAttribute('aria-label',close.title);
+  head.append(title,collapse,close);meta=document.createElement('div');meta.id='meta';body=document.createElement('div');body.id='body';body.setAttribute('aria-live','polite');
+  retry=document.createElement('button');retry.id='retry';retry.type='button';retry.textContent='產生精讀摘要';retry.hidden=true;
+  panel.append(head,meta,body,retry);root.append(style,icon,panel);document.body.append(host);
+  let drag=null,suppress=false;
+  icon.addEventListener('pointerdown',e=>{if(e.button!==0)return;drag={id:e.pointerId,x:e.clientX,y:e.clientY,px:pos.x,py:pos.y,moved:false};suppress=false;icon.setPointerCapture?.(e.pointerId);});
+  icon.addEventListener('pointermove',e=>{if(!drag||e.pointerId!==drag.id)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.hypot(dx,dy)>5)drag.moved=true;if(!drag.moved)return;
+   const v=viewport();pos={x:Math.max(0,Math.min(v.w-40,drag.px+dx)),y:Math.max(0,Math.min(v.h-40,drag.py+dy))};place();
+  });
+  const end=e=>{if(!drag||e.pointerId!==drag.id)return;suppress=drag.moved;if(drag.moved)GM_setValue(positionKey,pos);drag=null;};
+  icon.addEventListener('pointerup',end);icon.addEventListener('pointercancel',end);
+  icon.addEventListener('click',()=>{if(suppress){suppress=false;return;}touched=true;expanded=!expanded;render();if(expanded&&!data?.summary&&!busy)void generate(true);});
+  collapse.addEventListener('click',()=>{touched=true;expanded=false;render();});
+  close.addEventListener('click',()=>{touched=true;hidden=true;expanded=false;render();});
+  retry.addEventListener('click',()=>{touched=true;expanded=true;void generate(true);});
+  window.addEventListener('resize',place,{passive:true});window.visualViewport?.addEventListener('resize',place,{passive:true});window.visualViewport?.addEventListener('scroll',place,{passive:true});
+  render();place();
+ }
+ function render(){
+  if(!host)return;
+  host.style.setProperty('display',hidden?'none':'block','important');panel.hidden=!expanded;icon.setAttribute('aria-expanded',String(expanded));icon.dataset.busy=String(busy||!!data?.generating);
+  meta.textContent=data?.minutes!=null?((data.cjk||0)>0?data.cjk+' 字'+(data.english?' / '+data.english+' words':''):data.english+' words')+' · 約 '+data.minutes+' 分鐘':'文章長度未知';
+  body.textContent=data?.summary||(busy||data?.generating?'正在產生精讀摘要…':lastError||data?.error||'按下按鈕產生精讀摘要。');
+  retry.hidden=!!data?.summary||busy||!!data?.generating;
+ }
+ function accept(value){
+  data=value;if(value.summary&&value.auto_expand&&!touched){expanded=true;}
+  lastError=value.error||'';render();
+ }
+ function poll(){
+  clearTimeout(pollTimer);if(attempt++>=45)return;
+  pollTimer=setTimeout(async()=>{try{const v=await request('lookup',source);accept(v);if(v.generating)poll();else if(!v.summary&&!touched&&v.auto_eligible&&!lastError)void generate(false);}catch(e){lastError=e.message;render();}},2200);
+ }
+ async function generate(manual){
+  if(busy||data?.summary)return;
+  busy=true;lastError='';render();
+  try{
+   let text='';
+   if(!data?.has_body){
+    text=extract();
+    if(!text){lastError='尚未取得完整正文。請完成驗證或等待原文載入後重試。';return;}
+   }
+   const value=await request(manual?'manual':text?'capture':'prepare',source,text);
+   accept(value);if(value.generating)poll();
+  }catch(e){lastError=e.message;}
+  finally{busy=false;render();}
+ }
+ async function begin(manual=false){
+  if(started)return;source=trackedSource()||(manual?currentUrl():'');if(!source)return;started=true;
+  try{
+   const v=await request('lookup',source);
+   if(!v.tracked){started=false;return;}
+   make();accept(v);
+   if(manual){touched=true;expanded=true;render();if(!v.summary)await generate(true);return;}
+   if(v.summary)return;
+   if(v.generating){poll();return;}
+   if(v.has_body){if(v.auto_eligible)void generate(false);return;}
+   // Wait for the DOM to settle. Do not send a verification page or a partial
+   // first render. Retry locally only; failed extraction never spends AI.
+   let prev='',stable=0;
+   const timer=setInterval(()=>{
+    if(busy||data?.summary){clearInterval(timer);return;}
+    const text=extract();
+    if(text&&text===prev){if(++stable>=2){clearInterval(timer);busy=true;render();request('capture',source,text).then(v=>{accept(v);if(v.generating)poll();}).catch(e=>{lastError=e.message;}).finally(()=>{busy=false;render();});}}
+    else{prev=text;stable=0;}
+   },750);
+   setTimeout(()=>clearInterval(timer),60000);
+  }catch(e){started=false;console.warn('Reading insights:',e.message);}
+ }
+ if(typeof GM_registerMenuCommand==='function')GM_registerMenuCommand('精讀摘要：顯示／恢復',()=>{if(host){hidden=false;touched=true;expanded=true;render();if(!data?.summary)void generate(true);}else void begin(true);});
+ function scan(){if(!started)void begin();}
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',scan,{once:true});else scan();
+ window.addEventListener('pageshow',scan);window.addEventListener('focus',scan);
+ // Archive verification and client-rendered canonical links can appear late.
+ let scans=0;const watch=setInterval(()=>{if(started||++scans>40){clearInterval(watch);return;}scan();},1500);
+})();
+// END READING_INSIGHTS
