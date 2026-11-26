@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.32
+// @version      0.5.33
 // @description  BetaCat reading/navigation, popularity, mobile layout, background article tabs and bookmarks
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -2192,9 +2192,9 @@ let blogBookmarksBetaCatPageTask;
   return result?.text||'';
  }
  let source='',host,root,icon,panel,body,meta,retry,expanded=false,hidden=false,touched=false,data=null,busy=false,lastError='',partialSummary='',started=false,attempt=0,pollTimer;
- let normalScale=Math.min(1,window.visualViewport?.scale||1),orientation=window.screen?.orientation?.type,pinched=false;
+ let normalScale=Math.min(1,window.visualViewport?.scale||1),orientation=window.screen?.orientation?.type,pinched=false,documentAnchor=null;
  function viewport(){const v=window.visualViewport;return {w:v?.width||innerWidth,h:v?.height||innerHeight,x:v?.offsetLeft||0,y:v?.offsetTop||0,s:Math.max(1,Math.min(4,1/(v?.scale||1)))};}
- function syncVisibility(){if(host)host.style.setProperty('display',hidden||pinched?'none':'block','important');}
+ function syncVisibility(){if(host)host.style.setProperty('display',hidden?'none':'block','important');}
  function place(){
   if(!host)return;
   const currentScale=window.visualViewport?.scale||1,currentOrientation=window.screen?.orientation?.type;
@@ -2202,9 +2202,17 @@ let blogBookmarksBetaCatPageTask;
   normalScale=Math.min(normalScale,currentScale);
   pinched=currentScale>normalScale*1.05;
   syncVisibility();
-  if(pinched)return;
-  const v=viewport(),scale=v.s;
-  host.style.setProperty('left',(v.x+8*scale)+'px','important');host.style.setProperty('top',(v.y+8*scale)+'px','important');
+  if(pinched&&documentAnchor){
+   // Freeze document coordinates and the original CSS scale, not the apparent size.
+   host.style.setProperty('position','absolute','important');
+   host.style.setProperty('left',documentAnchor.x+'px','important');host.style.setProperty('top',documentAnchor.y+'px','important');
+   return;
+  }
+  const v=viewport(),scale=v.s,left=v.x+8*scale,top=v.y+8*scale;
+  const scrollX=window.scrollX||0,scrollY=window.scrollY||0;
+  documentAnchor={x:left+scrollX,y:top+scrollY};
+  host.style.setProperty('position','fixed','important');
+  host.style.setProperty('left',left+'px','important');host.style.setProperty('top',top+'px','important');
   host.style.setProperty('transform','scale('+scale+')','important');
   host.style.setProperty('transform-origin','top left','important');
   panel.style.width=Math.min(460,Math.max(100,v.w/scale-16))+'px';
@@ -2225,12 +2233,12 @@ let blogBookmarksBetaCatPageTask;
   const close=document.createElement('button');close.type='button';close.textContent='×';close.title='隱藏本頁圖示';close.setAttribute('aria-label',close.title);
   head.append(title,collapse,close);meta=document.createElement('div');meta.id='meta';body=document.createElement('div');body.id='body';body.setAttribute('aria-live','polite');
   retry=document.createElement('button');retry.id='retry';retry.type='button';retry.textContent='產生精讀摘要';retry.hidden=true;
-  panel.append(head,meta,body,retry);root.append(style,icon,panel);document.body.append(host);
+  panel.append(head,meta,body,retry);root.append(style,icon,panel);document.documentElement.append(host);
   icon.addEventListener('click',()=>{touched=true;expanded=!expanded;render();if(expanded&&!data?.summary&&!busy)void generate(true);});
   collapse.addEventListener('click',()=>{touched=true;expanded=false;render();});
   close.addEventListener('click',()=>{touched=true;hidden=true;expanded=false;render();});
   retry.addEventListener('click',()=>{touched=true;expanded=true;void generate(true);});
-  window.addEventListener('resize',place,{passive:true});window.visualViewport?.addEventListener('resize',place,{passive:true});window.visualViewport?.addEventListener('scroll',place,{passive:true});
+  window.addEventListener('scroll',place,{passive:true});window.addEventListener('resize',place,{passive:true});window.visualViewport?.addEventListener('resize',place,{passive:true});window.visualViewport?.addEventListener('scroll',place,{passive:true});
   render();place();
  }
  function renderReadingMarkdown(target,text){
