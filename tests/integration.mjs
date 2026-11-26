@@ -117,6 +117,17 @@ try{
   assert.equal(blocked.status,400,blocked.text);
   assert.match(blocked.body.error,/摘要/);
  }
+ const invalidId=invalid.body.item.id;
+ const clearedQuick=await req('/bookmarks/api/admin/quick?size=6','GET',undefined,true);
+ assert.equal(clearedQuick.body.pending.find(x=>x.id===invalidId).summary,null);
+ assert.equal((await req('/bookmarks/api/admin/'+invalidId,'GET',undefined,true)).body.summary,null);
+ const wrongSummary='這是一段有內容但其實不符合原文的摘要文字。';
+ assert.equal((await req('/bookmarks/api/admin/'+invalidId,'PATCH',{summary:wrongSummary},true)).status,200);
+ const clearPath='/bookmarks/api/admin/summary-repair/clear';
+ assert.equal((await req(clearPath,'POST',{id:invalidId,summary:wrongSummary},false)).status,401);
+ assert.equal((await req(clearPath,'POST',{id:invalidId,summary:'舊的摘要'},true)).status,409);
+ assert.equal((await req(clearPath,'POST',{id:invalidId,summary:wrongSummary},true)).body.saved,true);
+ assert.equal((await req('/bookmarks/api/admin/'+invalidId,'GET',undefined,true)).body.summary,null);
  assert.equal((await req('/bookmarks/api/admin/'+invalid.body.item.id,'PATCH',{status:2},true)).body.status,2);
  assert.equal((await req('/bookmarks/api/admin/'+invalid.body.item.id,'DELETE',undefined,true)).body.deleted,true);
  const blank=await req('/bookmarks/api/admin/','POST',{url:'https://example.org/no-summary',title:'Missing summary',summary:''},true);
