@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.25
+// @version      0.5.26
 // @description  BetaCat reading/navigation, popularity, mobile layout, background article tabs and bookmarks
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -16,7 +16,6 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_openInTab
 // @run-at       document-start
-// @noframes
 // ==/UserScript==
 
 // Share the existing no-store original-title response with the reading controls.
@@ -34,8 +33,12 @@ let blogBookmarksBetaCatPageTask;
  const live=key=>Object.fromEntries(Object.entries(records(key)).filter(([,v])=>v&&
   Date.now()-Number(v.createdAt??v.capturedAt)<ttl&&Number(v.createdAt??v.capturedAt)<=Date.now()+60000&&idOK(v.id)));
  const canonical=value=>{try{const u=new URL(value);if(!/^https?:$/.test(u.protocol))return '';u.hash='';u.pathname=u.pathname.replace(/\/+$/,'')||'/';return u.href;}catch{return '';}};
+ const inFrame=!!window.top&&window!==window.top;
+ const viewer=location.hostname==='christorng.idv.tw'&&location.pathname==='/TampermonkeyScripts/IframeViewer.html';
+ const sourceUrl=viewer?canonical(new URL(location.href).searchParams.get('url')):canonical(location.href);
+ const frameChannel='blog-bookmarks:embedded-capture:v1';
  const archive=host=>/^archive\.(?:is|today|ph|vn|md)$/.test(host);
- if(location.hostname==='christorng.idv.tw'&&/^\/bookmarks\/admin\/quick\/?$/.test(location.pathname)){
+ if(!inFrame&&location.hostname==='christorng.idv.tw'&&/^\/bookmarks\/admin\/quick\/?$/.test(location.pathname)){
   window.addEventListener(reqEvent,event=>{
    const {id,url,manual=false}=event.detail||{},target=canonical(url);
    if(!idOK(id)||!target)return;
@@ -78,8 +81,38 @@ let blogBookmarksBetaCatPageTask;
    return host+u.pathname+u.search;
   }catch{return '';}
  };
+ if(inFrame){
+  // Only a matching, explicitly queued top-level bookmark can authorize capture.
+  // Text goes directly to userscript storage, never to the embedding page.
+  let previous='',stableAt=0,previousNonce='';
+  window.addEventListener('message',event=>{
+   if(event.source!==window.parent||window.parent!==window.top)return;
+   const data=event.data;
+   if(!data||data.channel!==frameChannel||!idOK(data.id))return;
+   const job=live(jobsKey)[data.id];
+   if(!job||job.nonce!==data.nonce||identity(job.url)!==identity(data.url))return;
+   try{if(new URL(job.url).origin!==event.origin)return;}catch{return;}
+   if(live(resultsKey)[job.id]?.nonce===job.nonce||!document.body||document.body.querySelector('input[type="password"]'))return;
+   const article=extractEmbedded(document.body,data.manual===true);
+   if(!article){previous='';stableAt=0;return;}
+   if(previousNonce!==job.nonce||previous!==article){previous=article;previousNonce=job.nonce;stableAt=Date.now();if(!data.manual)return;}
+   if(!data.manual&&Date.now()-stableAt<1100)return;
+   const results=live(resultsKey);
+   results[job.id]={id:job.id,nonce:job.nonce,url:job.url,content:article,capturedAt:Date.now()};
+   GM_setValue(resultsKey,results);
+  });
+  return;
+ }
+ function extractEmbedded(root,manual){
+  const copy=root.cloneNode(true);
+  copy.querySelectorAll('script,style,noscript,nav,footer,aside,form,button,svg,iframe,[aria-hidden="true"],[hidden],.ads,.comments,.related-posts,.sidebar').forEach(el=>el.remove());
+  const text=(copy.innerText||copy.textContent||'').trim().slice(0,90000);
+  if(/^(just a moment|attention required|verify you are human|checking your browser|access denied|security verification|安全驗證)/i.test(document.title||''))return '';
+  if(text.length<2800&&/(verify (you are |that you are )?(a )?human|complete (the )?(captcha|security check)|機器人驗證|人機驗證|請完成驗證)/i.test(text))return '';
+  return text.length>=(manual?120:300)?text:'';
+ }
  function scan(initial=false){
-  const jobs=Object.values(live(jobsKey)),here=identity(location.href);
+  const jobs=Object.values(live(jobsKey)),here=identity(sourceUrl);
   const matches=jobs.filter(j=>here&&identity(j.url)===here);
   const archived=jobs.filter(j=>{try{return archive(new URL(j.url).hostname)&&archive(location.hostname);}catch{return false;}});
   // Retain the existing archive navigation fallback only during initial navigation,
@@ -116,6 +149,7 @@ let blogBookmarksBetaCatPageTask;
  };
  const extract=(manual=false)=>{
   if(!document.body||isChallenge())return null;
+  if(viewer){const root=document.getElementById('iframe-viewer-content');if(!root||document.getElementById('iframe-viewer-status'))return null;const text=extractEmbedded(root,manual);return text?{text}:null;}
   const elements=[...document.querySelectorAll('article,[itemprop="articleBody"],[data-testid="article-body"],.article-body,.article-content,.entry-content,.post-content,.publication-content,.publication-body,.publication-abstract,.nova-legacy-e-text,main,[role="main"],#article')].slice(0,60);
   let best=null;
   for(const el of elements){
@@ -125,6 +159,16 @@ let blogBookmarksBetaCatPageTask;
   if(!best&&manual){const fallback=read(document.body);if(fallback.text.length>=120)best=fallback;}
   return best;
  };
+ const requestFrame=manual=>{
+  if(viewer)return false;
+  const frames=[...document.querySelectorAll('iframe')].map(frame=>{
+   const rect=frame.getBoundingClientRect?.();
+   return {frame,area:rect&&rect.width>=180&&rect.height>=85?rect.width*rect.height:0};
+  }).filter(item=>item.area&&item.frame.contentWindow).sort((a,b)=>b.area-a.area);
+  const frame=frames[0]?.frame;
+  if(!frame)return false;
+  try{frame.contentWindow.postMessage({channel:frameChannel,id:job.id,nonce:job.nonce,url:job.url,manual},'*');return true;}catch{return false;}
+ };
  const showButton=()=>{
   if(button||!document.body)return;
   button=document.createElement('button');
@@ -133,6 +177,7 @@ let blogBookmarksBetaCatPageTask;
   button.style.cssText='position:fixed!important;right:12px!important;bottom:max(16px,env(safe-area-inset-bottom))!important;z-index:2147483647!important;padding:11px 15px!important;border-radius:999px!important;border:2px solid #fff!important;background:#126a4f!important;color:#fff!important;font:600 14px/1.3 system-ui,sans-serif!important;box-shadow:0 2px 12px #0006!important;max-width:calc(100vw - 24px)!important;cursor:pointer!important';
   button.addEventListener('click',()=>{
    if(isChallenge()){button.textContent='先完成機器人驗證，再按此鈕';return;}
+   if(requestFrame(true)){button.textContent='正在擷取內嵌正文…';return;}
    const article=extract(true);
    if(!article){button.textContent='尚未取得正文，請稍後再按';return;}
    send(article.text);
@@ -143,13 +188,14 @@ let blogBookmarksBetaCatPageTask;
   if(done||!text||live(jobsKey)[job.id]?.nonce!==job.nonce)return;
   done=true;clearInterval(timer);clearTimeout(checkTimeout);observer?.disconnect();
   const results=live(resultsKey);
-  results[job.id]={id:job.id,nonce:job.nonce,url:location.href,content:text,capturedAt:Date.now()};
+  results[job.id]={id:job.id,nonce:job.nonce,url:viewer?job.url:location.href,content:text,capturedAt:Date.now()};
   GM_setValue(resultsKey,results);
   if(button){button.disabled=true;button.textContent='全文已送回書籤頁';setTimeout(()=>button.remove(),3600);}
  }
  const check=()=>{
   if(done)return;
-  if(live(jobsKey)[job.id]?.nonce!==job.nonce){stop();return;}
+  if(live(jobsKey)[job.id]?.nonce!==job.nonce||live(resultsKey)[job.id]?.nonce===job.nonce){stop();return;}
+  if(!isChallenge()&&requestFrame(job.manual))return;
   const found=extract(job.manual);
   if(!found){last='';stableAt=0;return;}
   if(last!==found.text){last=found.text;stableAt=Date.now();return;}
@@ -157,7 +203,7 @@ let blogBookmarksBetaCatPageTask;
  };
  function begin(){
   if(done)return;
-  if(job.manual){showButton();const found=extract(true);if(found){send(found.text);return;}}
+  if(job.manual){showButton();if(!isChallenge()&&!requestFrame(true)){const found=extract(true);if(found){send(found.text);return;}}}
   check();
   timer=setInterval(check,1700);
   observer=new MutationObserver(()=>{if(!done){clearTimeout(checkTimeout);checkTimeout=setTimeout(check,850);}});
@@ -173,7 +219,7 @@ let blogBookmarksBetaCatPageTask;
 
 (() => {
     'use strict';
-    if (new URL(location.href).hostname !== 'hackernews.betacat.io') return;
+    if ((window.top && window !== window.top) || new URL(location.href).hostname !== 'hackernews.betacat.io') return;
     const ENDPOINT = 'https://christorng.idv.tw/bookmarks/api/ingest';
     const TOKEN_KEY = 'blog-bookmarks-ingest-token';
     const BUTTON_CLASS = 'tm-blog-bookmarks-save';
