@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.28
+// @version      0.5.29
 // @description  BetaCat reading/navigation, popularity, mobile layout, background article tabs and bookmarks
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -495,6 +495,14 @@ let blogBookmarksBetaCatPageTask;
     }
     function useScores(items){
         for(const item of items||[])if(item?.url)previewScores.set(item.url,item);
+        // Keep a bounded local list so directly reopened known articles do
+        // not require sending unrelated browsing URLs to the bookmark API.
+        const stored=GM_getValue('blog-bookmarks:reading-known:v1',{});
+        const known=stored&&typeof stored==='object'&&!Array.isArray(stored)?stored:{};
+        for(const item of items||[])if(item?.url)known[item.url]={source:item.url,at:Date.now()};
+        GM_setValue('blog-bookmarks:reading-known:v1',Object.fromEntries(Object.entries(known)
+          .filter(([,v])=>v?.source&&Date.now()-v.at<30*86400000)
+          .sort((a,b)=>b[1].at-a[1].at).slice(0,800)));
         render();
     }
     function scheduleSnapshot(){
@@ -2071,7 +2079,14 @@ let blogBookmarksBetaCatPageTask;
   document.addEventListener('click',event=>{
    const link=event.target?.closest?.('article.post-item .post-title a.post-url');
    if(!link?.href)return;
-   queue(link.href,link.href);
+   let original=link.href;
+   try {
+    const u=new URL(link.href);
+    if(u.hostname==='web.archive.org'){const m=u.pathname.match(/https?:\/\/.+/);if(m)original=m[0]+u.search;}
+    if(archive(u.hostname)&&u.searchParams.get('url'))original=u.searchParams.get('url');
+    if(/^nitter\./.test(u.hostname)&&/\/status\/\d+/.test(u.pathname))original='https://x.com'+u.pathname;
+   }catch{}
+   queue(original,link.href);
   },true);
   return;
  }
@@ -2112,7 +2127,16 @@ let blogBookmarksBetaCatPageTask;
  function trackedSource(){
   const ids=candidateIds(),matches=Object.values(jobs()).filter(j=>ids.has(identity(j.source))||ids.has(identity(j.target)));
   const unique=[...new Set(matches.map(j=>j.source))];
-  return unique.length===1?unique[0]:'';
+  if(unique.length===1)return unique[0];
+  const stored=GM_getValue('blog-bookmarks:reading-known:v1',{});
+  const known=Object.values(stored&&typeof stored==='object'?stored:{}).filter(j=>j?.source&&Date.now()-j.at<30*86400000&&ids.has(identity(j.source)));
+  const sources=[...new Set(known.map(j=>j.source))];
+  if(sources.length===1)return sources[0];
+  // Explicit test/deep link and trusted referring list are allowed. No
+  // automatic lookup of arbitrary unrelated browsing history.
+  if(location.hash==='#blog-bookmarks-reading')return currentUrl();
+  try{const ref=new URL(document.referrer);if(ref.hostname==='hackernews.betacat.io'||(ref.hostname==='christorng.idv.tw'&&/^\/bookmarks\/admin(?:\/|$)/.test(ref.pathname)))return currentUrl();}catch{}
+  return '';
  }
  function extract(){
   if(!document.body||document.body.querySelector('input[type="password"]'))return '';
@@ -2208,7 +2232,7 @@ let blogBookmarksBetaCatPageTask;
   if(started)return;source=trackedSource()||(manual?currentUrl():'');if(!source)return;started=true;
   try{
    const v=await request('lookup',source);
-   if(!v.tracked){started=false;return;}
+   if(!v.tracked){started=false;if(manual||location.hash==='#blog-bookmarks-reading'){make();lastError='此網址尚未收錄於書籤或 BetaCats 觀察資料。';expanded=true;render();}return;}
    make();accept(v);
    if(manual){touched=true;expanded=true;render();if(!v.summary)await generate(true);return;}
    if(v.summary)return;
@@ -2224,10 +2248,10 @@ let blogBookmarksBetaCatPageTask;
     else{prev=text;stable=0;}
    },750);
    setTimeout(()=>clearInterval(timer),60000);
-  }catch(e){started=false;console.warn('Reading insights:',e.message);}
+  }catch(e){started=false;console.warn('Reading insights:',e.message);if(manual||location.hash==='#blog-bookmarks-reading'){make();lastError=e.message;expanded=true;render();}}
  }
  if(typeof GM_registerMenuCommand==='function')GM_registerMenuCommand('精讀摘要：顯示／恢復',()=>{if(host){hidden=false;touched=true;expanded=true;render();if(!data?.summary)void generate(true);}else void begin(true);});
- function scan(){if(!started)void begin();}
+ function scan(){if(!started&&(!host||!lastError))void begin();}
  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',scan,{once:true});else scan();
  window.addEventListener('pageshow',scan);window.addEventListener('focus',scan);
  // Archive verification and client-rendered canonical links can appear late.
