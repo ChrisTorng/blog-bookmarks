@@ -122,6 +122,16 @@ export async function api(req,env,url,ctx){
       return json(updated);
     }
   }
+  if(p==='/bookmarks/api/admin/summary-repair/clear' && req.method==='POST'){
+    const body=await input(req);
+    if(!/^[0-9a-f-]{36}$/i.test(String(body.id||''))||typeof body.summary!=='string')
+      return json({error:'書籤或摘要無效'},400);
+    const result=await env.DB.prepare(
+      "UPDATE bookmarks SET summary=NULL,updated_at=? WHERE id=? AND stage IN (0,1,2) AND summary IS ?"
+    ).bind(new Date().toISOString(),body.id,body.summary).run();
+    if(!result.meta.changes)return json({error:'摘要或公開狀態已變更，請重新整理'},409);
+    return json({id:body.id,summary:null,saved:true});
+  }
   if(p==='/bookmarks/api/admin/summary-repair/preview' && req.method==='POST'){
     const body=await readSubmittedContent(req);
     const item=await get(env.DB,body.id,true);
