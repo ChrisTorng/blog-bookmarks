@@ -128,3 +128,12 @@ test('removes a model-added summary heading before returning the prose',async()=
   const env={AI:{run:async()=>({response:'**以下是這篇文章的摘要：**\n\n'+quickSummary})}};
   assert.equal(await summarizeSubmittedArticle(env,{title:'Article'},'原文內容。'.repeat(20)),quickSummary);
 });
+
+
+test('rejects the CSS-only AI failure message without rejecting a technical article',()=>{
+ for(const value of [
+  '由於提供的原文片段僅包含網頁前端的 CSS 樣式代碼，並無任何關於 Nvidia 的實際新聞內容或事實資訊，因此無法進行摘要。',
+  'The provided text only contains CSS code and does not contain any actual article content, so I cannot summarize it.'
+ ]) assert.equal(needsSummaryRepair(value),true,value);
+ assert.equal(needsSummaryRepair('這篇文章討論 CSS 樣式代碼的最佳化方法，並介紹如何縮減網頁載入時間。'),false);
+});
