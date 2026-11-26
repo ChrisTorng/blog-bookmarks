@@ -205,7 +205,18 @@ export async function api(req,env,url,ctx){
     const text=await req.text();if(text.length>1000000)throw Error('資料過大');
     const raw=JSON.parse(text);
     if(raw.stream===true&&['manual','prepare','capture'].includes(raw.mode))return readingStreamResponse(env,raw,ctx);
-    return json(await readingRequest(env,raw,ctx));
+    const result=await readingRequest(env,raw,ctx);
+    // A verified browser capture can repair an empty/invalid ordinary summary.
+    // Never replace a valid short summary or spend the deep-reading budget.
+    if(raw.mode==='store'&&result.body_changed&&result.has_body&&ctx?.waitUntil&&env.AI){
+      ctx.waitUntil((async()=>{
+        const item=await byUrl(env.DB,result.url);
+        if(!item||![0,1,5].includes(item.status)||!needsSummaryRepair(item.summary))return;
+        const content=await cachedBrowserBody(env.DB,result.url);
+        if(content)await commitArticleSummary(env,item.id,{content});
+      })().catch(error=>console.warn('Browser short summary fallback:',String(error))));
+    }
+    return json(result);
   }
   if(p==='/bookmarks/api/ingest/preview'&&req.method==='POST'){
     if(!await validIngestToken(req,env))return json({error:'Token 無效'},401);

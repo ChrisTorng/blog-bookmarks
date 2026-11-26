@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.36
+// @version      0.5.37
 // @description  BetaCat reading/navigation, popularity, mobile layout, background article tabs and bookmarks
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -864,6 +864,39 @@ let blogBookmarksBetaCatPageTask;
             render();
         }
     }
+
+    // Opening a title adds it without toggling or changing a saved decision.
+    async function saveOpenedArticle(link) {
+        if (!token) return;
+        const article = articleData(link);
+        const key = article.url;
+        if (saved.has(key) || pending.has(key)) return;
+        revisions.set(key, (revisions.get(key) || 0) + 1);
+        pending.add(key);
+        checked.add(key);
+        saved.set(key, { id: null, status: 0, tags: [] });
+        render();
+        try {
+            const result = await request('', 'POST', article);
+            const item = result.item || result;
+            saved.set(key, { id: item.id, status: item.status, tags: item.tags || [] });
+            clearError(key);
+            if (!result.alreadyExists)
+                void request('/preview','POST',{mode:'selection',snapshot_id:snapshotId,items:[{url:key}],selected:true})
+                    .catch(error=>console.warn('BetaCats title event:',error.message));
+        } catch (error) {
+            saved.delete(key);
+            checked.delete(key);
+            showError(key,link,error.message);
+        } finally {
+            pending.delete(key);
+            render();
+        }
+    }
+    document.addEventListener('click', event => {
+        const link=event.target?.closest?.('article.post-item .post-title a.post-url');
+        if(link?.href && event.button===0) void saveOpenedArticle(link).catch(error=>console.warn('Bookmark title:',error.message));
+    },true);
 
     function schedulePreload() {
         if (!token) return;
@@ -2107,7 +2140,7 @@ let blogBookmarksBetaCatPageTask;
   source=norm(source);target=norm(target)||source;if(!source)return;
   const x=jobs();x[source]={source,target,at:Date.now()};
   GM_setValue(jobsKey,Object.fromEntries(Object.entries(x).sort((a,b)=>b[1].at-a[1].at).slice(0,80)));
-  void request('prepare',source).catch(()=>{});
+  // Opening an article does not start deep-summary inference.
  }
  if(location.hostname==='hackernews.betacat.io'){
   document.addEventListener('click',event=>{
@@ -2198,7 +2231,7 @@ let blogBookmarksBetaCatPageTask;
   const result=(semantic.length?semantic:ranked).sort((a,b)=>b.text.length-a.text.length)[0];
   return result?.text||'';
  }
- let source='',host,root,icon,panel,body,meta,retry,expanded=false,hidden=false,touched=false,data=null,busy=false,lastError='',partialSummary='',started=false,attempt=0,pollTimer;
+ let source='',host,root,icon,panel,body,meta,retry,manage,expanded=false,hidden=false,touched=false,data=null,busy=false,lastError='',partialSummary='',started=false,attempt=0,pollTimer;
  let normalScale=Math.min(1,window.visualViewport?.scale||1),orientation=window.screen?.orientation?.type,pinched=false,documentAnchor=null;
  function viewport(){const v=window.visualViewport;return {w:v?.width||innerWidth,h:v?.height||innerHeight,x:v?.offsetLeft||0,y:v?.offsetTop||0,s:Math.max(1,Math.min(4,1/(v?.scale||1)))};}
  function syncVisibility(){if(host)host.style.setProperty('display',hidden?'none':'block','important');}
@@ -2233,20 +2266,41 @@ let blogBookmarksBetaCatPageTask;
   host.style.cssText='position:fixed!important;z-index:2147483639!important;width:32px!important;height:32px!important;display:block!important;pointer-events:none!important;margin:0!important;padding:0!important;transform:none!important;';
   root=host.attachShadow({mode:'closed'});
   const style=document.createElement('style');style.textContent=':host{color-scheme:light dark;font:16px/1.55 system-ui,sans-serif;color:CanvasText}button{font:inherit;color:inherit;cursor:pointer;border:1px solid color-mix(in srgb,CanvasText 22%,transparent);border-radius:7px;background:Canvas;padding:4px;min-width:38px;min-height:38px}#toggle{display:grid;place-items:center;box-sizing:border-box;width:32px;height:32px;min-width:32px;min-height:32px;opacity:.86;pointer-events:auto;box-shadow:0 1px 4px #0003;padding:0}#toggle:hover,#toggle:focus-visible{opacity:1}#toggle[data-busy=true]{outline:2px dotted currentColor}section{position:absolute;box-sizing:border-box;width:min(420px,calc(100vw - 16px));background:Canvas;border:1px solid color-mix(in srgb,CanvasText 22%,transparent);border-radius:10px;padding:10px 13px;box-shadow:0 3px 16px #0003;overflow:auto;overscroll-behavior:contain;pointer-events:auto}section[hidden]{display:none!important}header{display:flex;align-items:center;gap:5px;position:sticky;top:-10px;background:Canvas;z-index:1;padding:3px 0}header{padding-right:38px}#toggle[hidden]{display:none!important}strong{flex:1}#meta{font-size:12px;opacity:.9;margin:3px 0 8px}#meta .reading-bar{display:flex;height:8px;background:#64748b;border-radius:4px;overflow:hidden;justify-content:flex-end;margin-bottom:4px}#meta .reading-bar span{height:100%;background:#22a06b}#meta .reading-labels{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:2px;white-space:nowrap;font-size:clamp(9px,3vw,12px);font-variant-numeric:tabular-nums}#meta .reading-labels span:nth-child(2){text-align:center}#meta .reading-labels span:last-child{text-align:right}#body a{color:LinkText;text-decoration:underline}#body{overflow-wrap:anywhere;font-size:16px;line-height:1.6}#body p{margin:.55em 0}#body h1,#body h2,#body h3,#body h4{font-size:1.12em;line-height:1.35;margin:.85em 0 .35em}#body ul,#body ol{padding-inline-start:1.35em;margin:.4em 0}#body li{margin:.3em 0}#body code{white-space:pre-wrap;background:color-mix(in srgb,CanvasText 9%,Canvas);border-radius:3px;padding:0 .15em}#body pre{white-space:pre-wrap;margin:.5em 0}#body blockquote{margin:.5em 0;padding-inline-start:.7em;border-inline-start:3px solid currentColor}#retry{margin-top:8px;width:100%}#retry[hidden]{display:none!important}';
-  icon=document.createElement('button');icon.id='toggle';icon.type='button';icon.innerHTML=svg;icon.title='精讀摘要';icon.setAttribute('aria-label',icon.title);
-  panel=document.createElement('section');panel.hidden=true;panel.setAttribute('role','region');panel.setAttribute('aria-label','精讀摘要');
-  const head=document.createElement('header'),title=document.createElement('strong');title.textContent='精讀摘要';
-  const collapse=document.createElement('button');collapse.type='button';collapse.textContent='−';collapse.title='收合摘要';collapse.setAttribute('aria-label',collapse.title);
+  icon=document.createElement('button');icon.id='toggle';icon.type='button';icon.innerHTML=svg;icon.title='書籤管理';icon.setAttribute('aria-label',icon.title);
+  panel=document.createElement('section');panel.hidden=true;panel.setAttribute('role','region');panel.setAttribute('aria-label','書籤管理');
+  const head=document.createElement('header'),title=document.createElement('strong');title.textContent='書籤管理';
+  const collapse=document.createElement('button');collapse.type='button';collapse.textContent='−';collapse.title='收合書籤管理';collapse.setAttribute('aria-label',collapse.title);
   const close=document.createElement('button');close.type='button';close.textContent='×';close.title='隱藏本頁圖示';close.setAttribute('aria-label',close.title);
   head.append(title,collapse,close);meta=document.createElement('div');meta.id='meta';body=document.createElement('div');body.id='body';body.setAttribute('aria-live','polite');
   retry=document.createElement('button');retry.id='retry';retry.type='button';retry.textContent='產生精讀摘要';retry.hidden=true;
-  panel.append(head,meta,body,retry);root.append(style,icon,panel);document.documentElement.append(host);
-  icon.addEventListener('click',()=>{touched=true;expanded=!expanded;render();if(expanded&&!data?.summary&&!busy)void generate(true);});
+  manage=document.createElement('button');manage.type='button';manage.textContent='前往書籤管理 ↗';manage.style.cssText='width:100%;margin:4px 0 8px';
+  manage.addEventListener('click',()=>void openBookmark());
+  panel.append(head,manage,meta,body,retry);root.append(style,icon,panel);document.documentElement.append(host);
+  icon.addEventListener('click',()=>{touched=true;expanded=!expanded;render();});
   collapse.addEventListener('click',()=>{touched=true;expanded=false;render();});
   close.addEventListener('click',()=>{touched=true;hidden=true;expanded=false;render();});
   retry.addEventListener('click',()=>{touched=true;expanded=true;void generate(true);});
   window.addEventListener('scroll',place,{passive:true});window.addEventListener('resize',place,{passive:true});window.visualViewport?.addEventListener('resize',place,{passive:true});window.visualViewport?.addEventListener('scroll',place,{passive:true});
   render();place();
+ }
+ async function openBookmark(){
+  manage.disabled=true;manage.textContent='查詢書籤中…';
+  try{
+   const items=await new Promise((resolve,reject)=>GM_xmlhttpRequest({
+    method:'POST',url:endpoint.replace(/\/reading$/,'/status'),anonymous:true,redirect:'error',timeout:15000,
+    headers:{Authorization:'Bearer '+secret,'Content-Type':'application/json'},
+    data:JSON.stringify({urls:[source]}),
+    onload:r=>{try{if(r.status<200||r.status>=300)throw Error('HTTP '+r.status);resolve(JSON.parse(r.responseText));}catch(e){reject(e);}},
+    onerror:()=>reject(Error('無法查詢書籤')),ontimeout:()=>reject(Error('查詢逾時'))
+   }));
+   const id=items?.[0]?.id;
+   if(!id){manage.textContent='尚未加入或正在新增，請重試';return;}
+   const url='https://christorng.idv.tw/bookmarks/admin/?edit='+encodeURIComponent(id);
+   if(typeof GM_openInTab==='function')GM_openInTab(url,{active:true,insert:true});
+   else window.open(url,'_blank','noopener');
+   manage.textContent='前往書籤管理 ↗';
+  }catch(e){manage.textContent='查詢失敗，按此重試';}
+  finally{manage.disabled=false;}
  }
  function renderReadingMarkdown(target,text){
   const frag=document.createDocumentFragment();
@@ -2319,23 +2373,23 @@ let blogBookmarksBetaCatPageTask;
   retry.hidden=!!data?.summary||busy||!!data?.generating;
  }
  function accept(value){
-  data=value;if(value.summary&&value.auto_expand&&!touched){expanded=true;}
+  data=value;
   lastError=value.error||'';render();
  }
  function poll(){
   clearTimeout(pollTimer);if(attempt++>=45)return;
-  pollTimer=setTimeout(async()=>{try{const v=await request('lookup',source);accept(v);if(v.generating)poll();else if(!v.summary&&!touched&&v.auto_eligible&&!lastError)void generate(false);}catch(e){lastError=e.message;render();}},2200);
+  pollTimer=setTimeout(async()=>{try{const v=await request('lookup',source);accept(v);if(v.generating)poll();}catch(e){lastError=e.message;render();}},2200);
  }
  async function generate(manual){
   if(busy||data?.summary)return;
   busy=true;lastError='';partialSummary='';render();
   try{
    let text='';
-   if(!data?.has_body){
+   if(!data?.has_body||data.source!=='browser'){
     text=extract();
     if(!text){lastError='尚未取得完整正文。請完成驗證或等待原文載入後重試。';return;}
    }
-   const value=await request(manual?'manual':text?'capture':'prepare',source,text,delta=>{partialSummary+=delta;render();});
+   const value=await request('manual',source,text,delta=>{partialSummary+=delta;render();});
    accept(value);if(value.generating)poll();
   }catch(e){lastError=e.message;}
   finally{busy=false;render();}
@@ -2346,23 +2400,23 @@ let blogBookmarksBetaCatPageTask;
    const v=await request('lookup',source);
    if(!v.tracked){started=false;if(manual||location.hash==='#blog-bookmarks-reading'){make();lastError='此網址尚未收錄於書籤或 BetaCats 觀察資料。';expanded=true;render();}return;}
    make();accept(v);
-   if(manual){touched=true;expanded=true;render();if(!v.summary)await generate(true);return;}
+   if(manual){touched=true;expanded=true;render();}
    if(v.summary)return;
    if(v.generating){poll();return;}
-   if(v.has_body){if(v.auto_eligible)void generate(false);return;}
+   if(v.has_body&&v.source==='browser')return;
    // Wait for the DOM to settle. Do not send a verification page or a partial
    // first render. Retry locally only; failed extraction never spends AI.
    let prev='',stable=0;
    const timer=setInterval(()=>{
     if(busy||data?.summary){clearInterval(timer);return;}
     const text=extract();
-    if(text&&text===prev){if(++stable>=2){clearInterval(timer);busy=true;partialSummary='';render();request('capture',source,text,delta=>{partialSummary+=delta;render();}).then(v=>{accept(v);if(v.generating)poll();}).catch(e=>{lastError=e.message;}).finally(()=>{busy=false;render();});}}
+    if(text&&text===prev){if(++stable>=2){clearInterval(timer);request('store',source,text).then(v=>{if(!busy&&!data?.summary)accept(v);}).catch(e=>console.warn('Bookmark body storage:',e.message));}}
     else{prev=text;stable=0;}
    },750);
    setTimeout(()=>clearInterval(timer),60000);
   }catch(e){started=false;console.warn('Reading insights:',e.message);if(manual||location.hash==='#blog-bookmarks-reading'){make();lastError=e.message;expanded=true;render();}}
  }
- if(typeof GM_registerMenuCommand==='function')GM_registerMenuCommand('精讀摘要：顯示／恢復',()=>{if(host){hidden=false;touched=true;expanded=true;render();if(!data?.summary)void generate(true);}else void begin(true);});
+ if(typeof GM_registerMenuCommand==='function')GM_registerMenuCommand('書籤管理：顯示／恢復',()=>{if(host){hidden=false;touched=true;expanded=true;render();}else void begin(true);});
  function scan(){if(!started&&(!host||!lastError))void begin();}
  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',scan,{once:true});else scan();
  window.addEventListener('pageshow',scan);window.addEventListener('focus',scan);
