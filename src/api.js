@@ -8,7 +8,7 @@ import {autoReviewNewSummary} from './auto-summary.js';
 import {autoCompleteImage,backfillMissingImages} from './auto-image.js';
 import {triageList,scoreTriage,inspectTriage,countText} from './triage.js';
 import {previewInsights} from './preview.js';
-import {readingRequest,readingStreamResponse,attachReading} from './reading.js';
+import {readingRequest,readingStreamResponse,attachReading,cachedBrowserBody} from './reading.js';
 import {validIngestToken,rotateIngestToken} from './token.js';
 import {list,get,byUrl,create,patch,remove,tagsList,renameTag,reviewWindow,createAndAttachTag} from './data.js';
 import {bookmarkArticleHtml,bookmarkPermalink} from './public-content.js';
@@ -121,6 +121,16 @@ export async function api(req,env,url,ctx){
       await invalidateAfterWrite(env,ctx);
       return json(updated);
     }
+  }
+  if(p==='/bookmarks/api/admin/summary-repair/from-reading' && req.method==='POST'){
+    const body=await input(req);
+    if(!/^[0-9a-f-]{36}$/i.test(String(body.id||'')))return json({error:'書籤 ID 無效'},400);
+    const item=await get(env.DB,body.id,true);
+    if(!item)return json({error:'書籤不存在'},404);
+    if([3,4].includes(item.status)||!needsSummaryRepair(item.summary))return json({saved:false,summary:item.summary});
+    const content=await cachedBrowserBody(env.DB,item.normalized_url||item.url);
+    if(!content)return json({saved:false,reason:'no-body'});
+    return json(await commitArticleSummary(env,item.id,{content}));
   }
   if(p==='/bookmarks/api/admin/summary-repair/clear' && req.method==='POST'){
     const body=await input(req);
