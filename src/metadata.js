@@ -104,6 +104,11 @@ export const isSummaryCommentary=summary=>commentaryOpening.test(summary);
 export function needsSummaryRepair(summary) {
   const s=String(summary||'').trim();
   return invalidSummary(s) || isSummaryCommentary(s) ||
+    // Require both a missing/technical input signal and an explicit failure to
+    // summarize; technical articles mentioning CSS alone are not failures.
+    (/^[#*\s]*(?:抱歉[，,。\s]*)?(?:由於|因為|根據|您提供|你提供|所提供|提供的|目前提供|原文|本文片段|the (?:provided|supplied)|(?:based on|due to) the)/i.test(s) &&
+      /(?:僅|只|只有|皆為|沒有|並無|缺乏|未提供|不足|only|no (?:actual|article|body)|does not contain).{0,90}(?:CSS|HTML|JavaScript|樣式|代碼|程式碼|正文|內文|新聞內容|文章內容|article (?:content|text)|source code)/i.test(s) &&
+      /(?:無法|不能|難以|不足以|無從).{0,24}(?:摘要|總結|概述)|(?:cannot|unable to|not possible to).{0,30}summariz/i.test(s)) ||
     /^(?:常見漏洞與暴露(?:（CVE）)?|no description|not found)$/i.test(s) ||
     /(?:Google 系統偵測到來自|解開 CAPTCHA 後|請啟用 JS 並關閉|繼續操作，請登入你的 Reddit 帳號|你沒有權限存取這個伺服器|如需協助，請造訪 help\.ft\.com|請確保您的瀏覽器支援 JavaScript 和 Cookies)/i.test(s);
 }
