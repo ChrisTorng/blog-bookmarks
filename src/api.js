@@ -8,6 +8,7 @@ import {autoReviewNewSummary} from './auto-summary.js';
 import {autoCompleteImage,backfillMissingImages} from './auto-image.js';
 import {triageList,scoreTriage,inspectTriage,countText} from './triage.js';
 import {previewInsights} from './preview.js';
+import {readingRequest,attachReading} from './reading.js';
 import {validIngestToken,rotateIngestToken} from './token.js';
 import {list,get,byUrl,create,patch,remove,tagsList,renameTag,reviewWindow,createAndAttachTag} from './data.js';
 import {bookmarkArticleHtml,bookmarkPermalink} from './public-content.js';
@@ -68,7 +69,7 @@ export async function api(req,env,url,ctx){
  if(!p.startsWith('/bookmarks/api/ingest') && !safeOrigin(req)&&!['GET','HEAD'].includes(req.method))return json({error:'Origin 不符'},403);
  try{
   if(p==='/bookmarks/api/admin'||p==='/bookmarks/api/admin/'){
-   if(req.method==='GET')return json(await list(env.DB,opts(url,true)));
+   if(req.method==='GET'){const result=await list(env.DB,opts(url,true));return json({...result,items:await attachReading(env.DB,result.items)});}
    if(req.method==='POST')return json(await createCategorized(env,await input(req),ctx),201);
   }
   if(p==='/bookmarks/api/admin/triage'&&req.method==='GET')
@@ -105,8 +106,13 @@ export async function api(req,env,url,ctx){
     if(updated?.saved>0)await invalidateAfterWrite(env,ctx);
     return json(updated);
   }
-  if(p==='/bookmarks/api/admin/quick'&&req.method==='GET')
-    return json(await reviewWindow(env.DB,url.searchParams.get('size')));
+  if(p==='/bookmarks/api/admin/quick'&&req.method==='GET'){
+    const result=await reviewWindow(env.DB,url.searchParams.get('size'));
+    const groups=['recent','pending','deferred'];const all=await attachReading(env.DB,groups.flatMap(k=>result[k]||[]));
+    const byId=new Map(all.map(x=>[x.id,x]));
+    for(const k of groups)result[k]=(result[k]||[]).map(x=>byId.get(x.id));
+    return json(result);
+  }
   if(p==='/bookmarks/api/admin/summary-repair'){
     if(req.method==='GET')return json(await repairCandidates(env.DB));
     if(req.method==='POST'){
@@ -158,7 +164,7 @@ export async function api(req,env,url,ctx){
   }
   const match=p.match(/^\/bookmarks\/api\/admin\/([0-9a-f-]{36})\/?$/);
   if(match){
-   if(req.method==='GET')return json(await get(env.DB,match[1],true));
+   if(req.method==='GET'){const item=await get(env.DB,match[1],true);return json(item?(await attachReading(env.DB,[item]))[0]:null);}
    if(req.method==='PATCH'){
     const id=match[1];
     const item=await patch(env.DB,id,await input(req),
@@ -171,6 +177,13 @@ export async function api(req,env,url,ctx){
     if(deleted)await invalidateAfterWrite(env,ctx);
     return json({deleted});
    }
+  }
+  if(p==='/bookmarks/api/ingest/reading'&&req.method==='POST'){
+    if(!await validIngestToken(req,env))return json({error:'Token 無效'},401);
+    if(!req.headers.get('Content-Type')?.startsWith('application/json'))throw Error('需要 JSON 格式');
+    if(Number(req.headers.get('Content-Length')||0)>1100000)throw Error('資料過大');
+    const text=await req.text();if(text.length>1000000)throw Error('資料過大');
+    return json(await readingRequest(env,JSON.parse(text),ctx));
   }
   if(p==='/bookmarks/api/ingest/preview'&&req.method==='POST'){
     if(!await validIngestToken(req,env))return json({error:'Token 無效'},401);

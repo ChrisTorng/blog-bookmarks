@@ -1,4 +1,5 @@
 import { CLASSIFIER_MODEL } from './classify.js';
+import {previewReading} from './reading.js';
 export const PREVIEW_VERSION='betacat-personal-2026-11-19-v1';
 const clamp=n=>Math.max(0,Math.min(100,Math.round(Number(n)||0)));
 const tidy=(s,n=500)=>String(s??'').replace(/\s+/g,' ').trim().slice(0,n);
@@ -106,7 +107,8 @@ export async function previewInsights(env,raw,ctx){
  }
  const rows=await env.DB.prepare('SELECT url,title_original,summary,prediction,prediction_version FROM betacat_observations WHERE url IN ('+items.map(()=>'?').join(',')+')').bind(...items.map(x=>x.url)).all();
  const found=new Map(rows.results.map(x=>[x.url,x]));
- const predictions=items.map(x=>({url:x.url,...(cached(found.get(x.url))||previewRule(x))}));
+ const reading=await previewReading(env,items,ctx,mode);
+ const predictions=items.map(x=>({url:x.url,...(cached(found.get(x.url))||previewRule(x)),reading:reading.get(x.url)?.minutes!=null?reading.get(x.url):null}));
  const missing=mode==='selection'?[]:items.filter(x=>!cached(found.get(x.url)));
  if(ctx?.waitUntil&&mode!=='viewed'&&missing.length)ctx.waitUntil(updateScores(env,missing));
  return {version:PREVIEW_VERSION,recorded:mode==='snapshot'?items.length:0,viewed:mode==='viewed'?items.length:0,predictions};

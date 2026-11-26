@@ -5,6 +5,7 @@ import { rss } from './feeds.js';
 import { relatedNoteHtml } from './note-references.js';
 import { backfillMissingImages } from './auto-image.js';
 import { publicBookmarksList } from './public-list.js';
+import { pruneReadingBodies } from './reading.js';
 
 // The HTML, JS and CSS live exclusively on GitHub Pages.
 // This Worker serves the API and the dynamic RSS feed only.
@@ -27,6 +28,7 @@ const isPublicPage = (path) =>
 
 const worker = {
  async scheduled(event,env,ctx){
+  ctx.waitUntil(pruneReadingBodies(env.DB).catch(error=>console.warn('Article body pruning failed',String(error))));
   ctx.waitUntil(backfillMissingImages(env,6).then(async result => {
     // Published thumbnails can change without an admin save.
     // Keep their HTML and Notes references fresh after enrichment.
