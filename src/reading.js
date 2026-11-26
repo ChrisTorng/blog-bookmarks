@@ -10,7 +10,7 @@ const MAX_HTML=1300000;
 const AUTO_LIMIT=1500, TOTAL_LIMIT=2500;
 const iso=()=>new Date().toISOString();
 const MAX_OUTPUT=1200;
-const metaFields='url,chars,words,minutes,cjk,english,source,fetch_at,captured_at';
+const metaFields='url,chars,words,minutes,cjk,english,source,fetch_at,captured_at,body IS NOT NULL AS has_body';
 export function readingMetrics(text){
  const clean=String(text||'').trim();
  return {...countText(clean),cjk:(clean.match(/[\u3400-\u9fff\u3040-\u30ff]/g)||[]).length,
@@ -72,8 +72,12 @@ export async function attachReading(db,items){
  const map=await readingMetadata(db,items.map(x=>x.normalized_url||x.url));
  return items.map(x=>{
   const r=map.get(x.normalized_url||x.url);
-  return {...x,reading:r?.minutes!=null?{chars:r.chars,words:r.words,minutes:r.minutes,cjk:r.cjk,english:r.english}:null};
+  return {...x,reading:r?.minutes!=null?{chars:r.chars,words:r.words,minutes:r.minutes,cjk:r.cjk,english:r.english,has_body:!!r.has_body&&r.source==='browser'}:null};
  });
+}
+export async function cachedBrowserBody(db,url){
+ const row=await db.prepare("SELECT body FROM article_reading WHERE url=? AND source='browser' AND body IS NOT NULL").bind(url).first();
+ return row?.body&&row.body.length<=150000&&safeText(row.body)?row.body:null;
 }
 async function storeBody(db,url,text,source){
  const clean=String(text||'').trim();
