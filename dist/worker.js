@@ -33305,19 +33305,21 @@ async function summarize(env, row, automatic, score, onProgress, ctx) {
 __name(summarize, "summarize");
 async function readingRequest(env, raw, ctx, onProgress) {
   const mode = raw?.mode || "lookup";
-  if (!["lookup", "prepare", "capture", "manual"].includes(mode)) throw Error("\u6587\u7AE0\u6458\u8981\u64CD\u4F5C\u7121\u6548");
+  if (!["lookup", "prepare", "capture", "store", "manual"].includes(mode)) throw Error("\u6587\u7AE0\u6458\u8981\u64CD\u4F5C\u7121\u6548");
   const url = await knownReadingUrl(env.DB, raw?.url);
   if (!url) return { tracked: false };
   const score = await readingScore(env.DB, url);
   let row = await rowFor(env.DB, url);
+  const previousHash = row?.body_hash;
   if (mode === "lookup") return { ...publicReading(row, score), url };
-  if (mode === "capture" || mode === "manual") {
+  if (mode === "capture" || mode === "store" || mode === "manual") {
     if (typeof raw.content === "string" && raw.content.trim()) {
       if (raw.content.length > MAX_BODY) throw Error("\u6587\u7AE0\u6B63\u6587\u8D85\u904E\u55AE\u6B21\u8655\u7406\u4E0A\u9650");
       if (raw.complete !== true) throw Error("\u5C1A\u672A\u78BA\u8A8D\u5B8C\u6574\u6587\u7AE0\u6B63\u6587");
       row = await storeBody(env.DB, url, raw.content, "browser");
-    } else if (mode === "capture") throw Error("\u672A\u63D0\u4F9B\u6587\u7AE0\u6B63\u6587");
+    } else if (mode === "capture" || mode === "store") throw Error("\u672A\u63D0\u4F9B\u6587\u7AE0\u6B63\u6587");
   }
+  if (mode === "store") return { ...publicReading(row, score), url, body_changed: previousHash !== row?.body_hash };
   if (mode === "prepare" && !row?.body && !publicReading(row, score).summary) {
     return { ...publicReading(row, score), url };
   }
@@ -33723,7 +33725,16 @@ async function api(req, env, url, ctx) {
       if (text2.length > 1e6) throw Error("\u8CC7\u6599\u904E\u5927");
       const raw = JSON.parse(text2);
       if (raw.stream === true && ["manual", "prepare", "capture"].includes(raw.mode)) return readingStreamResponse(env, raw, ctx);
-      return json2(await readingRequest(env, raw, ctx));
+      const result = await readingRequest(env, raw, ctx);
+      if (raw.mode === "store" && result.body_changed && result.has_body && ctx?.waitUntil && env.AI) {
+        ctx.waitUntil((async () => {
+          const item = await byUrl(env.DB, result.url);
+          if (!item || ![0, 1, 5].includes(item.status) || !needsSummaryRepair(item.summary)) return;
+          const content = await cachedBrowserBody(env.DB, result.url);
+          if (content) await commitArticleSummary(env, item.id, { content });
+        })().catch((error2) => console.warn("Browser short summary fallback:", String(error2))));
+      }
+      return json2(result);
     }
     if (p === "/bookmarks/api/ingest/preview" && req.method === "POST") {
       if (!await validIngestToken(req, env)) return json2({ error: "Token \u7121\u6548" }, 401);
