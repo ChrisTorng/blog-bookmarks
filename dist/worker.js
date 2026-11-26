@@ -31411,9 +31411,11 @@ function readingDisplay(row) {
   const original = { chars: row.chars, words: row.words, cjk: row.cjk, english: row.english, minutes: row.minutes };
   const summary = textMetrics(markdownText(row.summary));
   const reduction_percent = original.chars > 0 ? Math.round((1 - summary.chars / original.chars) * 100) : null;
-  const label = /* @__PURE__ */ __name((name, m) => name + " " + (m.chars ?? "\u672A\u77E5") + " \u5B57\u5143" + (m.cjk || m.english ? "\uFF08" + [m.cjk ? m.cjk + " \u4E2D\u6587\u5B57" : "", m.english ? m.english + " \u82F1\u6587\u55AE\u5B57" : ""].filter(Boolean).join(" / ") + "\uFF09" : "") + (m.minutes != null ? " \xB7 \u7D04 " + m.minutes + " \u5206\u9418" : ""), "label");
-  const stats_lines = [label("\u539F\u6587", original), label("\u6458\u8981", summary)];
-  if (reduction_percent !== null) stats_lines.push((reduction_percent >= 0 ? "\u7E2E\u6E1B " : "\u589E\u52A0 ") + Math.abs(reduction_percent) + "%" + (original.minutes != null && original.minutes > summary.minutes ? " \xB7 \u7BC0\u7701\u7D04 " + (original.minutes - summary.minutes) + " \u5206\u9418" : ""));
+  const stats_lines = [
+    "\u539F\u6587 " + (original.chars ?? "\u672A\u77E5") + " \u5B57",
+    "\u6458\u8981 " + summary.chars + " \u5B57",
+    reduction_percent === null ? "\u7E2E\u6E1B\u672A\u77E5" : (reduction_percent >= 0 ? "\u7E2E\u6E1B " : "\u589E\u52A0 ") + Math.abs(reduction_percent) + "%"
+  ];
   return { summary: row.summary, original, summary_metrics: summary, reduction_percent, stats_lines };
 }
 __name(readingDisplay, "readingDisplay");
@@ -31939,6 +31941,17 @@ function renderSummary(markdown, baseUrl) {
   });
 }
 __name(renderSummary, "renderSummary");
+function readingStatsHtml(reading) {
+  const fmt = /* @__PURE__ */ __name((n) => Number.isFinite(n) && n >= 0 ? String(n) : "\u672A\u77E5", "fmt");
+  const original = reading.original?.chars, summary = reading.summary_metrics?.chars;
+  const reduction = Number.isFinite(reading.reduction_percent) ? reading.reduction_percent : null;
+  const green = Math.max(0, Math.min(100, reduction ?? 0));
+  const gray = 100 - green;
+  const label = reduction === null ? "\u7E2E\u6E1B\u672A\u77E5" : (reduction >= 0 ? "\u7E2E\u6E1B " : "\u589E\u52A0 ") + Math.abs(reduction) + "%";
+  const cell = /* @__PURE__ */ __name((width, color) => width > 0 ? '<td width="' + width + '%" bgcolor="' + color + '" style="width:' + width + "%;height:8px;line-height:8px;font-size:1px;padding:0;border:0;background-color:" + color + '">&nbsp;</td>' : "", "cell");
+  return '<div class="mb-2 text-xs text-gray-600 dark:text-gray-300" style="margin:4px 0 8px;font-size:.8em;line-height:1.5">' + (reduction === null ? "" : '<table role="presentation" aria-hidden="true" width="100%" cellspacing="0" cellpadding="0" style="width:100%;table-layout:fixed;border:0;border-spacing:0;border-collapse:collapse;border-radius:4px;overflow:hidden;margin:0 0 4px"><tr>' + cell(gray, "#64748b") + cell(green, "#22a06b") + "</tr></table>") + '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;table-layout:fixed;border:0;border-spacing:0;border-collapse:collapse;margin:0"><tr><td align="left" style="border:0;padding:0;text-align:left;white-space:nowrap">\u539F\u6587 ' + fmt(original) + ' \u5B57</td><td align="center" style="border:0;padding:0;text-align:center;white-space:nowrap">\u6458\u8981 ' + fmt(summary) + ' \u5B57</td><td align="right" style="border:0;padding:0;text-align:right;white-space:nowrap">' + label + "</td></tr></table></div>";
+}
+__name(readingStatsHtml, "readingStatsHtml");
 function bookmarkArticleHtml(item, categories = [], relatedNotesHtml = "", permalink = "", showAdminLink = false) {
   const target = bookmarkTarget(item), date = bookmarkDate(item);
   const english = item.title_original && item.title_original !== item.title ? '<p lang="en" class="mt-1 text-sm leading-snug text-gray-600 dark:text-gray-300">' + esc(item.title_original) + "</p>" : "";
@@ -31950,7 +31963,7 @@ function bookmarkArticleHtml(item, categories = [], relatedNotesHtml = "", perma
   }
   const thumbnail = image2 ? '<a href="' + esc(target) + '" target="_blank" rel="noopener noreferrer" class="mt-2 block w-full max-w-56 md:col-start-2 md:row-span-2 md:mt-0 md:max-w-none" aria-label="\u958B\u555F\u539F\u59CB\u6587\u7AE0"><img src="' + esc(image2) + '" alt="" width="176" loading="lazy" decoding="async" referrerpolicy="no-referrer" class="max-h-40 w-full rounded-md object-contain" style="max-width:100%;height:auto;max-height:160px;object-fit:contain"></a>' : "";
   const summary = item.summary ? '<div class="my-2 text-gray-700 dark:text-gray-200"><div class="prose max-w-none text-sm dark:prose-invert">' + renderSummary(item.summary, item.url) + "</div></div>" : "";
-  const reading = item.reading_summary?.summary ? '<section class="my-3 min-w-0" aria-label="\u7CBE\u8B80\u6458\u8981"><p class="font-bold">\u7CBE\u8B80\u6458\u8981</p><div class="mb-2 text-xs text-gray-600 dark:text-gray-300">' + (item.reading_summary.stats_lines || []).map((line) => "<div>" + esc(line) + "</div>").join("") + '</div><div class="prose max-w-none text-sm dark:prose-invert">' + renderSummary(item.reading_summary.summary, item.url) + "</div></section>" : "";
+  const reading = item.reading_summary?.summary ? '<section class="my-3 min-w-0" aria-label="\u7CBE\u8B80\u6458\u8981"><p class="font-bold">\u7CBE\u8B80\u6458\u8981</p>' + readingStatsHtml(item.reading_summary) + '<div class="prose max-w-none text-sm dark:prose-invert">' + renderSummary(item.reading_summary.summary, item.url) + "</div></section>" : "";
   const original = target !== item.url ? '<a href="' + esc(item.url) + '" target="_blank" rel="noopener noreferrer" class="hidden max-w-full truncate underline md:inline">\u539F\u59CB\u7DB2\u5740\uFF1A' + esc(item.url) + "</a>" : "";
   const tags = bookmarkTags(item, categories).map((t) => '<a class="text-primary-500" href="/bookmarks/?tag=' + encodeURIComponent(t.id) + '">#' + esc(t.name) + "</a>").join(" ");
   const status = item.status === 4 ? '<span class="text-primary-500">\u2606 \u63A8\u85A6</span>' : item.status !== 3 ? '<span class="text-gray-500">\u672A\u516C\u958B</span>' : "";
