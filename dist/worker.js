@@ -32882,7 +32882,7 @@ var AUTO_LIMIT = 1500;
 var TOTAL_LIMIT = 2500;
 var iso = /* @__PURE__ */ __name(() => (/* @__PURE__ */ new Date()).toISOString(), "iso");
 var MAX_OUTPUT = 1200;
-var metaFields = "url,chars,words,minutes,cjk,english,source,fetch_at,captured_at";
+var metaFields = "url,chars,words,minutes,cjk,english,source,fetch_at,captured_at,body IS NOT NULL AS has_body";
 function readingMetrics(text2) {
   const clean3 = String(text2 || "").trim();
   return {
@@ -32972,10 +32972,15 @@ async function attachReading(db, items) {
   const map2 = await readingMetadata(db, items.map((x) => x.normalized_url || x.url));
   return items.map((x) => {
     const r = map2.get(x.normalized_url || x.url);
-    return { ...x, reading: r?.minutes != null ? { chars: r.chars, words: r.words, minutes: r.minutes, cjk: r.cjk, english: r.english } : null };
+    return { ...x, reading: r?.minutes != null ? { chars: r.chars, words: r.words, minutes: r.minutes, cjk: r.cjk, english: r.english, has_body: !!r.has_body && r.source === "browser" } : null };
   });
 }
 __name(attachReading, "attachReading");
+async function cachedBrowserBody(db, url) {
+  const row = await db.prepare("SELECT body FROM article_reading WHERE url=? AND source='browser' AND body IS NOT NULL").bind(url).first();
+  return row?.body && row.body.length <= 15e4 && safeText(row.body) ? row.body : null;
+}
+__name(cachedBrowserBody, "cachedBrowserBody");
 async function storeBody(db, url, text2, source) {
   const clean3 = String(text2 || "").trim();
   if (!safeText(clean3)) throw Error("\u672A\u627E\u5230\u53EF\u4FE1\u7684\u6587\u7AE0\u6B63\u6587");
@@ -33517,6 +33522,16 @@ async function api(req, env, url, ctx) {
         await invalidateAfterWrite(env, ctx);
         return json2(updated);
       }
+    }
+    if (p === "/bookmarks/api/admin/summary-repair/from-reading" && req.method === "POST") {
+      const body = await input(req);
+      if (!/^[0-9a-f-]{36}$/i.test(String(body.id || ""))) return json2({ error: "\u66F8\u7C64 ID \u7121\u6548" }, 400);
+      const item = await get(env.DB, body.id, true);
+      if (!item) return json2({ error: "\u66F8\u7C64\u4E0D\u5B58\u5728" }, 404);
+      if ([3, 4].includes(item.status) || !needsSummaryRepair(item.summary)) return json2({ saved: false, summary: item.summary });
+      const content = await cachedBrowserBody(env.DB, item.normalized_url || item.url);
+      if (!content) return json2({ saved: false, reason: "no-body" });
+      return json2(await commitArticleSummary(env, item.id, { content }));
     }
     if (p === "/bookmarks/api/admin/summary-repair/clear" && req.method === "POST") {
       const body = await input(req);
