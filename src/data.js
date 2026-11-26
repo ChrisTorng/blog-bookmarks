@@ -148,6 +148,19 @@ export async function reviewWindow(db,requested=3) {
     db.prepare('SELECT COUNT(*) n FROM bookmarks WHERE stage IN (0,1) AND deferred=0').first(),
     db.prepare('SELECT COUNT(*) n FROM bookmarks WHERE stage=1 AND deferred=1').first()
   ]);
+  // Only clear invalid summaries for undecided records in this bounded window.
+  // Compare-and-set protects a summary saved by another tab or the AI meanwhile.
+  const candidates=[...deferred.results,...pending.results].filter(b=>String(b.summary||'').trim()&&needsSummaryRepair(b.summary));
+  if(candidates.length){
+    const results=await db.batch(candidates.map(b=>db.prepare(
+      "UPDATE bookmarks SET summary=NULL,updated_at=? WHERE id=? AND stage IN (0,1) AND summary IS ?"
+    ).bind(new Date().toISOString(),b.id,b.summary)));
+    for(let i=0;i<candidates.length;i++){
+      const b=candidates[i];
+      if(results[i].meta.changes)b.summary=null;
+      else {const latest=await get(db,b.id,true);if(latest)b.summary=latest.summary;}
+    }
+  }
   return {recent:recent.results.map(decode).reverse(),deferred:deferred.results.map(decode),
     pending:pending.results.map(decode),remaining:Number(pendingCount.n),
     deferredRemaining:Number(deferredCount.n),size,pending_order:'oldest'};
