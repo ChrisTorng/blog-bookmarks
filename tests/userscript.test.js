@@ -7,7 +7,7 @@ const source = readFileSync(new URL('../tampermonkey/BlogBookmarks.user.js', imp
 test('userscript installs from blog-bookmarks and parses', () => {
   assert.doesNotThrow(() => new Function(source));
   assert.match(source, /\/\/ @name\s+Blog Bookmarks\n/);
-  assert.match(source, /\/\/ @version\s+0\.5\.27\n/);
+  assert.match(source, /\/\/ @version\s+0\.5\.28\n/);
   assert.match(source, /raw\.githubusercontent\.com\/ChrisTorng\/blog-bookmarks\/main\/tampermonkey\/BlogBookmarks\.user\.js/);
   assert.match(source, /\/\/ @match\s+https:\/\/hackernews\.betacat\.io\/\*/);
   assert.doesNotMatch(source, /cloudmark-christorng|cloudmark\.site/);
@@ -226,4 +226,13 @@ test('matching direct iframe returns stable text through GM storage without open
  receive({source:parent,origin:'https://example.org',data});
  assert.equal(store.get(resultsKey)[id].content,content.trim());
  assert.equal(store.get(resultsKey)[id].url,url);
+});
+
+ test('reading insights remains a separate fixed, draggable control',()=>{
+ assert.match(source,/BEGIN READING_INSIGHTS/);
+ assert.match(source,/position:fixed!important;z-index:2147483639/);
+ assert.match(source,/pointermove/);
+ assert.match(source,/GM_setValue\(positionKey,pos\)/);
+ assert.match(source,/value\.summary&&value\.auto_expand&&!touched/);
+ assert.match(source,/精讀摘要：顯示／恢復/);
 });
