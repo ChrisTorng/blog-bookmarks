@@ -252,6 +252,7 @@ export async function readingRequest(env,raw,ctx,onProgress){
  if(!url)return {tracked:false};
  const score=await readingScore(env.DB,url);
  let row=await rowFor(env.DB,url);
+ const previousHash=row?.body_hash;
  if(mode==='lookup')return {...publicReading(row,score),url};
  if(mode==='capture'||mode==='store'||mode==='manual'){
   if(typeof raw.content==='string'&&raw.content.trim()){
@@ -261,7 +262,7 @@ export async function readingRequest(env,raw,ctx,onProgress){
   }else if(mode==='capture'||mode==='store')throw Error('未提供文章正文');
  }
  // Browser collection for the bookmark workflow must not spend deep-reading AI budget.
- if(mode==='store')return {...publicReading(row,score),url};
+ if(mode==='store')return {...publicReading(row,score),url,body_changed:previousHash!==row?.body_hash};
  if(mode==='prepare'&&!row?.body&&!publicReading(row,score).summary){
   // The browser can supply the actual rendered article after redirects or
   // verification. Do not repeatedly fetch an unknown/blocked article.
