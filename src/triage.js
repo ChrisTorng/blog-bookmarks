@@ -165,16 +165,17 @@ const decodeHtml=s=>s.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos|nbsp|ndash
   if(v[0]==='#'){const n=v[1].toLowerCase()==='x'?parseInt(v.slice(2),16):parseInt(v.slice(1),10);return n>0&&n<=0x10ffff?String.fromCodePoint(n):' ';}
   return named[v.toLowerCase()]||all;
 });
-export function extractArticle(html){
+export function extractArticle(html,{preserveHeadings=false}={}){
   const body=html.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1]||
     html.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i)?.[1]||
     html.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i)?.[1]||'';
   if(!body)return '';
   const clean=body.replace(/<!--[\s\S]*?-->/g,' ')
     .replace(/<(script|style|noscript|svg|nav|aside|header|footer|form)\b[^>]*>[\s\S]*?<\/\1>/gi,' ')
+    .replace(/<h([2-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi,(match,level,title)=>preserveHeadings?'\n'+'#'.repeat(Number(level))+' '+title.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim()+'\n':match)
     .replace(/<\/(?:p|div|li|h[1-6]|section|br|tr|blockquote)>/gi,'\n')
     .replace(/<[^>]+>/g,' ');
-  return decodeHtml(clean).replace(/[ \t]+/g,' ').replace(/\n(?:\s*\n)+/g,'\n').trim();
+  return decodeHtml(clean).replace(/[ \t]+/g,' ').replace(/\n(?:\s*\n)+/g,'\n').split('\n').map(line=>preserveHeadings?line.trim():line).join('\n').trim();
 }
 export function countText(text){
   const chars=[...text].filter(c=>!/\s/.test(c)).length;

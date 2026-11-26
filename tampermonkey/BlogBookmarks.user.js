@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.34
+// @version      0.5.35
 // @description  BetaCat reading/navigation, popularity, mobile layout, background article tabs and bookmarks
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -2182,7 +2182,14 @@ let blogBookmarksBetaCatPageTask;
   const ranked=roots.map(el=>{
    const copy=el.cloneNode(true);
    copy.querySelectorAll('script,style,noscript,nav,footer,aside,header,form,button,svg,iframe,[aria-hidden="true"],[hidden],.ads,.comments,.related-posts,.sidebar,.tm-bookmarks-reading-length').forEach(x=>x.remove());
-   copy.querySelectorAll('p,li,h1,h2,h3,h4,blockquote,pre,br,tr,section').forEach(x=>x.append(document.createTextNode('\n')));
+   // Preserve original heading structure without asking AI to invent navigation.
+   for(const h of copy.querySelectorAll('h2,h3,h4,h5,h6')){
+    const title=(h.textContent||'').replace(/\s+/g,' ').trim();
+    if(!title)continue;
+    const id=h.id&&identity(currentUrl())===identity(source)&&document.getElementById(h.id)&&document.querySelectorAll('[id="'+CSS.escape(h.id)+'"]').length===1? '[id:'+encodeURIComponent(h.id)+'] ':'';
+    h.textContent='\n'+'#'.repeat(Number(h.localName[1]))+' '+id+title+'\n';
+   }
+   copy.querySelectorAll('p,li,h1,h2,h3,h4,h5,h6,blockquote,pre,br,tr,section').forEach(x=>x.append(document.createTextNode('\n')));
    const text=(copy.textContent||'').replace(/[ \t]+/g,' ').replace(/\n\s*\n\s*\n/g,'\n\n').trim();
    const paragraphs=copy.querySelectorAll('p,li,blockquote,pre').length;
    return {text,paragraphs,semantic:el.matches('[itemprop="articleBody"],[data-testid="article-body"],.article-body,.article-content,.entry-content,.post-content,.publication-content,article')};
@@ -2225,7 +2232,7 @@ let blogBookmarksBetaCatPageTask;
   host=document.createElement('div');host.id='tm-reading-insights';host.className='notranslate';host.setAttribute('translate','no');
   host.style.cssText='position:fixed!important;z-index:2147483639!important;width:32px!important;height:32px!important;display:block!important;pointer-events:none!important;margin:0!important;padding:0!important;transform:none!important;';
   root=host.attachShadow({mode:'closed'});
-  const style=document.createElement('style');style.textContent=':host{color-scheme:light dark;font:16px/1.55 system-ui,sans-serif;color:CanvasText}button{font:inherit;color:inherit;cursor:pointer;border:1px solid color-mix(in srgb,CanvasText 22%,transparent);border-radius:7px;background:Canvas;padding:4px;min-width:38px;min-height:38px}#toggle{display:grid;place-items:center;box-sizing:border-box;width:32px;height:32px;min-width:32px;min-height:32px;opacity:.86;pointer-events:auto;box-shadow:0 1px 4px #0003;padding:0}#toggle:hover,#toggle:focus-visible{opacity:1}#toggle[data-busy=true]{outline:2px dotted currentColor}section{position:absolute;box-sizing:border-box;width:min(420px,calc(100vw - 16px));background:Canvas;border:1px solid color-mix(in srgb,CanvasText 22%,transparent);border-radius:10px;padding:10px 13px;box-shadow:0 3px 16px #0003;overflow:auto;overscroll-behavior:contain;pointer-events:auto}section[hidden]{display:none!important}header{display:flex;align-items:center;gap:5px;position:sticky;top:-10px;background:Canvas;z-index:1;padding:3px 0}header{padding-right:38px}#toggle[hidden]{display:none!important}strong{flex:1}#meta{font-size:14px;opacity:.7;margin:3px 0 8px}#body{overflow-wrap:anywhere;font-size:16px;line-height:1.6}#body p{margin:.55em 0}#body h1,#body h2,#body h3,#body h4{font-size:1.12em;line-height:1.35;margin:.85em 0 .35em}#body ul,#body ol{padding-inline-start:1.35em;margin:.4em 0}#body li{margin:.3em 0}#body code{white-space:pre-wrap;background:color-mix(in srgb,CanvasText 9%,Canvas);border-radius:3px;padding:0 .15em}#body pre{white-space:pre-wrap;margin:.5em 0}#body blockquote{margin:.5em 0;padding-inline-start:.7em;border-inline-start:3px solid currentColor}#retry{margin-top:8px;width:100%}#retry[hidden]{display:none!important}';
+  const style=document.createElement('style');style.textContent=':host{color-scheme:light dark;font:16px/1.55 system-ui,sans-serif;color:CanvasText}button{font:inherit;color:inherit;cursor:pointer;border:1px solid color-mix(in srgb,CanvasText 22%,transparent);border-radius:7px;background:Canvas;padding:4px;min-width:38px;min-height:38px}#toggle{display:grid;place-items:center;box-sizing:border-box;width:32px;height:32px;min-width:32px;min-height:32px;opacity:.86;pointer-events:auto;box-shadow:0 1px 4px #0003;padding:0}#toggle:hover,#toggle:focus-visible{opacity:1}#toggle[data-busy=true]{outline:2px dotted currentColor}section{position:absolute;box-sizing:border-box;width:min(420px,calc(100vw - 16px));background:Canvas;border:1px solid color-mix(in srgb,CanvasText 22%,transparent);border-radius:10px;padding:10px 13px;box-shadow:0 3px 16px #0003;overflow:auto;overscroll-behavior:contain;pointer-events:auto}section[hidden]{display:none!important}header{display:flex;align-items:center;gap:5px;position:sticky;top:-10px;background:Canvas;z-index:1;padding:3px 0}header{padding-right:38px}#toggle[hidden]{display:none!important}strong{flex:1}#meta{font-size:14px;opacity:.8;margin:3px 0 8px;white-space:pre-line}#body a{color:LinkText;text-decoration:underline}#body{overflow-wrap:anywhere;font-size:16px;line-height:1.6}#body p{margin:.55em 0}#body h1,#body h2,#body h3,#body h4{font-size:1.12em;line-height:1.35;margin:.85em 0 .35em}#body ul,#body ol{padding-inline-start:1.35em;margin:.4em 0}#body li{margin:.3em 0}#body code{white-space:pre-wrap;background:color-mix(in srgb,CanvasText 9%,Canvas);border-radius:3px;padding:0 .15em}#body pre{white-space:pre-wrap;margin:.5em 0}#body blockquote{margin:.5em 0;padding-inline-start:.7em;border-inline-start:3px solid currentColor}#retry{margin-top:8px;width:100%}#retry[hidden]{display:none!important}';
   icon=document.createElement('button');icon.id='toggle';icon.type='button';icon.innerHTML=svg;icon.title='精讀摘要';icon.setAttribute('aria-label',icon.title);
   panel=document.createElement('section');panel.hidden=true;panel.setAttribute('role','region');panel.setAttribute('aria-label','精讀摘要');
   const head=document.createElement('header'),title=document.createElement('strong');title.textContent='精讀摘要';
@@ -2259,7 +2266,28 @@ let blogBookmarksBetaCatPageTask;
    if(code){code.append(document.createTextNode(line+'\n'));continue;}
    if(!line.trim()){list=paragraph=null;continue;}
    const heading=line.match(/^\s*(#{1,6})\s+(.+)$/),item=line.match(/^\s*([-+*]|\d+[.)])\s+(.+)$/);
-   if(heading){list=paragraph=null;const h=document.createElement('h'+Math.min(4,heading[1].length));inline(h,heading[2]);frag.append(h);continue;}
+   if(heading){
+    list=paragraph=null;const h=document.createElement('h'+Math.min(6,heading[1].length));
+    const link=heading[2].match(/^\[((?:\\.|[^\]])+)\]\((https?:\/\/[^\s)]+)\)$/);
+    let url;try{if(link)url=new URL(link[2]);}catch{}
+    if(url&&url.hash&&identity(url.href)===identity(source)){
+     const a=document.createElement('a');a.href=url.href;a.textContent=link[1].replace(/\\([\[\]\\])/g,'$1');
+     a.addEventListener('click',event=>{
+      if(event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
+      const hash=url.hash.slice(1);let target=null;
+      try{
+       if(hash.startsWith(':~:text=')){
+        const phrase=decodeURIComponent(hash.slice(8));
+        const matches=[...document.querySelectorAll('h1,h2,h3,h4,h5,h6')].filter(el=>(el.textContent||'').replace(/\s+/g,' ').trim()===phrase);
+        if(matches.length===1)target=matches[0];
+       }else if(identity(currentUrl())===identity(source))target=document.getElementById(decodeURIComponent(hash));
+      }catch{}
+      touched=true;expanded=false;render();
+      if(target){event.preventDefault();target.scrollIntoView({block:'start',behavior:'instant'});}
+     });h.append(a);
+    }else inline(h,heading[2].replace(/^\[S\d+\]\s*/,''));
+    frag.append(h);continue;
+   }
    if(item){paragraph=null;const tag=/^\d/.test(item[1])?'ol':'ul';if(!list||list.localName!==tag){list=document.createElement(tag);frag.append(list);}const li=document.createElement('li');inline(li,item[2]);list.append(li);continue;}
    list=null;
    if(/^\s*>\s?/.test(line)){paragraph=null;const q=document.createElement('blockquote');inline(q,line.replace(/^\s*>\s?/,''));frag.append(q);continue;}
@@ -2271,7 +2299,7 @@ let blogBookmarksBetaCatPageTask;
  function render(){
   if(!host)return;
   syncVisibility();panel.hidden=!expanded;icon.hidden=expanded;icon.setAttribute('aria-expanded',String(expanded));icon.dataset.busy=String(busy||!!data?.generating);
-  meta.textContent=data?.minutes!=null?((data.cjk||0)>0?data.cjk+' 字'+(data.english?' / '+data.english+' words':''):data.english+' words')+' · 約 '+data.minutes+' 分鐘':'文章長度未知';
+  meta.textContent=data?.reading_summary?.stats_lines?.join('\n')||(data?.minutes!=null?((data.cjk||0)>0?data.cjk+' 字'+(data.english?' / '+data.english+' words':''):data.english+' words')+' · 約 '+data.minutes+' 分鐘':'文章長度未知');
   const markdown=data?.summary||(busy&&partialSummary?partialSummary:'');
   if(markdown)renderReadingMarkdown(body,markdown);else body.textContent=busy||data?.generating?'正在產生精讀摘要…':lastError||data?.error||'按下按鈕產生精讀摘要。';
   retry.hidden=!!data?.summary||busy||!!data?.generating;

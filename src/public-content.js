@@ -79,6 +79,9 @@ export function bookmarkArticleHtml(item,categories=[],relatedNotesHtml='',perma
   const summary=item.summary
     ? '<div class="my-2 text-gray-700 dark:text-gray-200"><div class="prose max-w-none text-sm dark:prose-invert">'+
       renderSummary(item.summary,item.url)+'</div></div>' : '';
+  const reading=item.reading_summary?.summary
+    ? '<section class="my-3 min-w-0" aria-label="精讀摘要"><p class="font-bold">精讀摘要</p><div class="mb-2 text-xs text-gray-600 dark:text-gray-300">'+
+      (item.reading_summary.stats_lines||[]).map(line=>'<div>'+esc(line)+'</div>').join('')+'</div><div class="prose max-w-none text-sm dark:prose-invert">'+renderSummary(item.reading_summary.summary,item.url)+'</div></section>' : '';
   const original=target!==item.url
     ? '<a href="'+esc(item.url)+'" target="_blank" rel="noopener noreferrer" class="hidden max-w-full truncate underline md:inline">原始網址：'+esc(item.url)+'</a>' : '';
   const tags=bookmarkTags(item,categories).map(t=>
@@ -98,7 +101,7 @@ export function bookmarkArticleHtml(item,categories=[],relatedNotesHtml='',perma
     '<div class="'+(image?'grid grid-cols-1 gap-x-4 md:grid-cols-[minmax(0,1fr)_11rem]':'block')+'">'+
     '<div class="min-w-0"><h1 class="text-xl leading-snug font-bold"><a class="text-primary-500 hover:text-primary-600 dark:hover:text-primary-400" href="'+
     esc(target)+'" target="_blank" rel="noopener noreferrer">'+esc(item.title)+'</a></h1>'+
-    english+'</div>'+thumbnail+(summary?'<div class="min-w-0">'+summary+'</div>':'')+'</div>'+
+    english+'</div>'+thumbnail+(summary?'<div class="min-w-0">'+summary+'</div>':'')+'</div>'+reading+
     '<div class="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600 dark:text-gray-300">'+
     bookmarkSource(item.url)+original+'</div>'+
     (referenceLink?'<p class="mt-2 text-xs">'+referenceLink+'</p>':'')+bookmarkReferences(item)+

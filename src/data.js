@@ -1,6 +1,7 @@
 import { preferredRedirect, primaryUrl } from './redirect.js';
 import { ensureSlug, translatedBookmarkSlug } from './slug.js';
 import { needsSummaryRepair } from './metadata.js';
+import { attachPublicReading } from './reading-format.js';
 const fields = "b.id,b.slug,b.rss_guid,b.url,b.normalized_url,b.redirect_url,b.title,b.title_original,b.title_zh,b.summary,b.image_url,b.source,b.reference_links,CASE WHEN b.stage=1 AND b.deferred=1 THEN 5 ELSE b.stage END AS status,b.created_at,b.updated_at,b.read_at,b.published_at,b.starred_at, CASE WHEN b.stage=4 THEN COALESCE(b.starred_at,b.published_at,b.created_at) WHEN b.stage=3 THEN COALESCE(b.published_at,b.created_at) ELSE b.created_at END AS status_at,COALESCE((SELECT json_group_array(t.name) FROM bookmark_tags bt JOIN tags t ON t.id=bt.tag_id WHERE bt.bookmark_id=b.id),'[]') AS tags";
 const decode = row => {
   if(!row)return row;
@@ -80,16 +81,16 @@ export function validate(raw) {
 }
 export async function get(db,id,includePrivate=false) {
   const row=await db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.id=?${includePrivate?'':' AND b.stage>=3'}`).bind(id).first();
-  return includePrivate?decode(row):publicEntry(decode(row));
+  return includePrivate?decode(row):(await attachPublicReading(db,[publicEntry(decode(row))]))[0];
 }
 export async function getBySlug(db,slug) {
   const row=await db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.slug=? AND b.stage>=3 LIMIT 1`).bind(slug).first();
-  return publicEntry(decode(row));
+  return (await attachPublicReading(db,[publicEntry(decode(row))]))[0];
 }
 export async function getByOldSlug(db,slug) {
   const row=await db.prepare(`SELECT ${fields} FROM bookmark_slug_redirects r JOIN bookmarks b ON b.id=r.bookmark_id
     WHERE r.slug=? AND b.stage>=3 LIMIT 1`).bind(slug).first();
-  return publicEntry(decode(row));
+  return (await attachPublicReading(db,[publicEntry(decode(row))]))[0];
 }
 export async function byUrl(db,url) {
   const row=await db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.normalized_url=? OR b.redirect_url=? LIMIT 1`).bind(normalUrl(url),normalUrl(url)).first();
@@ -129,7 +130,8 @@ export async function list(db, {privateList=false,filter='pending',page=1,tag=''
   const dateCol=privateList?'b.created_at':'status_at';
   const order=sort==='old'?`${dateCol} ASC,b.id ASC`:sort==='title'?'b.title COLLATE NOCASE ASC,b.id DESC':sort==='recommended'?`b.stage DESC,${dateCol} DESC,b.id DESC`:`${dateCol} DESC,b.id DESC`;
   const rows=await db.prepare(`SELECT ${fields} FROM bookmarks b${where} ORDER BY ${order} LIMIT 20 OFFSET ?`).bind(...params,(n-1)*20).all();
-  return {items:rows.results.map(decode).map(row=>privateList?row:publicEntry(row)),page:n,pages:Math.max(1,Math.ceil(total/20)),total};
+  const items=rows.results.map(decode).map(row=>privateList?row:publicEntry(row));
+  return {items:privateList?items:await attachPublicReading(db,items),page:n,pages:Math.max(1,Math.ceil(total/20)),total};
 }
 // Fast review: show newest decisions above the oldest undecided bookmarks.
 // Reading an item must not alter its chronological position in the queue.
@@ -311,7 +313,7 @@ export async function publicFeedItems(db, tag = '') {
   const filter = tag ? ' AND EXISTS (SELECT 1 FROM bookmark_tags bt WHERE bt.bookmark_id=b.id AND bt.tag_id=?)' : '';
   const statement = db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.stage>=3${filter} ORDER BY status_at DESC,b.id DESC LIMIT 100`);
   const rows = await (tag ? statement.bind(tag.toLowerCase()) : statement).all();
-  return rows.results.map(decode).map(publicEntry);
+  return attachPublicReading(db,rows.results.map(decode).map(publicEntry));
 }
 
 // Sitemap needs only the permanent slug and public Taiwan-local status date.
