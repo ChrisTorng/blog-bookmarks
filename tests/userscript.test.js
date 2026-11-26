@@ -7,7 +7,7 @@ const source = readFileSync(new URL('../tampermonkey/BlogBookmarks.user.js', imp
 test('userscript installs from blog-bookmarks and parses', () => {
   assert.doesNotThrow(() => new Function(source));
   assert.match(source, /\/\/ @name\s+Blog Bookmarks\n/);
-  assert.match(source, /\/\/ @version\s+0\.5\.30\n/);
+  assert.match(source, /\/\/ @version\s+0\.5\.31\n/);
   assert.match(source, /raw\.githubusercontent\.com\/ChrisTorng\/blog-bookmarks\/main\/tampermonkey\/BlogBookmarks\.user\.js/);
   assert.match(source, /\/\/ @match\s+https:\/\/hackernews\.betacat\.io\/\*/);
   assert.doesNotMatch(source, /cloudmark-christorng|cloudmark\.site/);
@@ -247,4 +247,12 @@ test('matching direct iframe returns stable text through GM storage without open
  assert.match(source,/onprogress:r=>/);
  assert.match(source,/partialSummary\+=delta/);
  assert.match(source,/摘要串流未正常完成/);
+});
+
+test('cross-archive capture requires matching original URL and renders Markdown without HTML injection',()=>{
+ assert.match(source,/articleIds\(j\.source\)/);
+ assert.match(source,/matches\.length===1\?matches\[0\]:null/);
+ assert.match(source,/renderReadingMarkdown\(body,markdown\)/);
+ assert.match(source,/target\.replaceChildren\(frag\)/);
+ assert.match(source,/1\/\(v\?\.scale\|\|1\)/);
 });
