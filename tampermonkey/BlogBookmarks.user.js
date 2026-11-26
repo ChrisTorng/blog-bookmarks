@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.26
+// @version      0.5.27
 // @description  BetaCat reading/navigation, popularity, mobile layout, background article tabs and bookmarks
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -162,6 +162,8 @@ let blogBookmarksBetaCatPageTask;
  const requestFrame=manual=>{
   if(viewer)return false;
   const frames=[...document.querySelectorAll('iframe')].map(frame=>{
+   if(!frame.contentWindow||!frame.getAttribute?.('src'))return {frame,area:0};
+   try{const u=new URL(frame.getAttribute('src'),location.href);if(!/^https?:$/.test(u.protocol)||/(^|\.)(youtube\.com|youtube-nocookie\.com|vimeo\.com|google\.com|recaptcha\.net|doubleclick\.net)$/.test(u.hostname))return {frame,area:0};}catch{return {frame,area:0};}
    const rect=frame.getBoundingClientRect?.();
    return {frame,area:rect&&rect.width>=180&&rect.height>=85?rect.width*rect.height:0};
   }).filter(item=>item.area&&item.frame.contentWindow).sort((a,b)=>b.area-a.area);
@@ -177,6 +179,8 @@ let blogBookmarksBetaCatPageTask;
   button.style.cssText='position:fixed!important;right:12px!important;bottom:max(16px,env(safe-area-inset-bottom))!important;z-index:2147483647!important;padding:11px 15px!important;border-radius:999px!important;border:2px solid #fff!important;background:#126a4f!important;color:#fff!important;font:600 14px/1.3 system-ui,sans-serif!important;box-shadow:0 2px 12px #0006!important;max-width:calc(100vw - 24px)!important;cursor:pointer!important';
   button.addEventListener('click',()=>{
    if(isChallenge()){button.textContent='先完成機器人驗證，再按此鈕';return;}
+   const normal=extract(false);
+   if(normal){send(normal.text);return;}
    if(requestFrame(true)){button.textContent='正在擷取內嵌正文…';return;}
    const article=extract(true);
    if(!article){button.textContent='尚未取得正文，請稍後再按';return;}
@@ -195,15 +199,16 @@ let blogBookmarksBetaCatPageTask;
  const check=()=>{
   if(done)return;
   if(live(jobsKey)[job.id]?.nonce!==job.nonce||live(resultsKey)[job.id]?.nonce===job.nonce){stop();return;}
-  if(!isChallenge()&&requestFrame(job.manual))return;
-  const found=extract(job.manual);
+  let found=extract(false);
+  if(!found&&!isChallenge()&&requestFrame(job.manual))return;
+  if(!found&&job.manual)found=extract(true);
   if(!found){last='';stableAt=0;return;}
   if(last!==found.text){last=found.text;stableAt=Date.now();return;}
   if(Date.now()-stableAt>=1100)send(found.text);
  };
  function begin(){
   if(done)return;
-  if(job.manual){showButton();if(!isChallenge()&&!requestFrame(true)){const found=extract(true);if(found){send(found.text);return;}}}
+  if(job.manual){showButton();const normal=extract(false);if(normal){send(normal.text);return;}if(!isChallenge()&&!requestFrame(true)){const found=extract(true);if(found){send(found.text);return;}}}
   check();
   timer=setInterval(check,1700);
   observer=new MutationObserver(()=>{if(!done){clearTimeout(checkTimeout);checkTimeout=setTimeout(check,850);}});
