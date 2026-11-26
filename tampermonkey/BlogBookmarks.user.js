@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.29
+// @version      0.5.30
 // @description  BetaCat reading/navigation, popularity, mobile layout, background article tabs and bookmarks
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -2057,13 +2057,34 @@ let blogBookmarksBetaCatPageTask;
  }catch{return '';}};
  const archive=host=>/^archive\.(?:is|today|ph|vn|md)$/.test(host);
  const jobs=()=>{const x=GM_getValue(jobsKey,{});return Object.fromEntries(Object.entries(x&&typeof x==='object'?x:{}).filter(([,v])=>v?.source&&Date.now()-v.at<ttl&&Date.now()>=v.at));};
- function request(mode,url,content){
+ function request(mode,url,content,onChunk){
   return new Promise((resolve,reject)=>{
+   let offset=0,result=null,error='';
+   function consume(value){
+    if(typeof value!=='string')return;
+    // GM onprogress may omit responseText on some Android versions. Final
+    // onload parses the remaining frames and works even without progress.
+    const last=value.lastIndexOf('\n\n');if(last<offset)return;
+    const events=value.slice(offset,last+2).split('\n\n');offset=last+2;
+    for(const raw of events){
+     if(!raw.startsWith('data:'))continue;
+     try{const event=JSON.parse(raw.slice(5));
+      if(event.type==='chunk'&&typeof event.text==='string')onChunk?.(event.text);
+      if(event.type==='result')result=event.result;
+      if(event.type==='error')error=event.error;
+     }catch{}
+    }
+   }
    GM_xmlhttpRequest({method:'POST',url:endpoint,anonymous:true,redirect:'error',timeout:115000,
     headers:{Authorization:'Bearer '+secret,'Content-Type':'application/json'},
-    data:JSON.stringify({mode,url,...(content?{content,complete:true}:{})}),
+    data:JSON.stringify({mode,url,...(content?{content,complete:true}:{}),...(onChunk?{stream:true}:{})}),
+    responseType:'text',
+    onprogress:r=>{if(onChunk&&(!r.finalUrl||new URL(r.finalUrl).origin===new URL(endpoint).origin))consume(r.responseText);},
     onload:r=>{try{
      if(r.finalUrl&&new URL(r.finalUrl).origin!==new URL(endpoint).origin)throw Error('非預期的 API 重導向');
+     if(onChunk&&r.status>=200&&r.status<300&&String(r.responseText).startsWith('data:')){
+      consume(r.responseText);if(error)throw Error(error);if(!result)throw Error('摘要串流未正常完成，請重新查詢。');resolve(result);return;
+     }
      const data=JSON.parse(r.responseText);if(r.status<200||r.status>=300)throw Error(data.error||'HTTP '+r.status);resolve(data);
     }catch(e){reject(e);}},
     onerror:()=>reject(Error('無法連線至摘要服務')),ontimeout:()=>reject(Error('摘要服務逾時'))});
@@ -2157,7 +2178,7 @@ let blogBookmarksBetaCatPageTask;
   const result=(semantic.length?semantic:ranked).sort((a,b)=>b.text.length-a.text.length)[0];
   return result?.text||'';
  }
- let source='',host,root,icon,panel,body,meta,retry,expanded=false,hidden=false,touched=false,data=null,busy=false,lastError='',started=false,attempt=0,pollTimer;
+ let source='',host,root,icon,panel,body,meta,retry,expanded=false,hidden=false,touched=false,data=null,busy=false,lastError='',partialSummary='',started=false,attempt=0,pollTimer;
  let pos=GM_getValue(positionKey,{x:8,y:8});
  if(!pos||!Number.isFinite(pos.x)||!Number.isFinite(pos.y))pos={x:8,y:8};
  function viewport(){const v=window.visualViewport;return {w:v?.width||innerWidth,h:v?.height||innerHeight,x:v?.offsetLeft||0,y:v?.offsetTop||0};}
@@ -2203,7 +2224,7 @@ let blogBookmarksBetaCatPageTask;
   if(!host)return;
   host.style.setProperty('display',hidden?'none':'block','important');panel.hidden=!expanded;icon.setAttribute('aria-expanded',String(expanded));icon.dataset.busy=String(busy||!!data?.generating);
   meta.textContent=data?.minutes!=null?((data.cjk||0)>0?data.cjk+' 字'+(data.english?' / '+data.english+' words':''):data.english+' words')+' · 約 '+data.minutes+' 分鐘':'文章長度未知';
-  body.textContent=data?.summary||(busy||data?.generating?'正在產生精讀摘要…':lastError||data?.error||'按下按鈕產生精讀摘要。');
+  body.textContent=data?.summary||(busy&&partialSummary?partialSummary:busy||data?.generating?'正在產生精讀摘要…':lastError||data?.error||'按下按鈕產生精讀摘要。');
   retry.hidden=!!data?.summary||busy||!!data?.generating;
  }
  function accept(value){
@@ -2216,14 +2237,14 @@ let blogBookmarksBetaCatPageTask;
  }
  async function generate(manual){
   if(busy||data?.summary)return;
-  busy=true;lastError='';render();
+  busy=true;lastError='';partialSummary='';render();
   try{
    let text='';
    if(!data?.has_body){
     text=extract();
     if(!text){lastError='尚未取得完整正文。請完成驗證或等待原文載入後重試。';return;}
    }
-   const value=await request(manual?'manual':text?'capture':'prepare',source,text);
+   const value=await request(manual?'manual':text?'capture':'prepare',source,text,delta=>{partialSummary+=delta;render();});
    accept(value);if(value.generating)poll();
   }catch(e){lastError=e.message;}
   finally{busy=false;render();}
@@ -2244,7 +2265,7 @@ let blogBookmarksBetaCatPageTask;
    const timer=setInterval(()=>{
     if(busy||data?.summary){clearInterval(timer);return;}
     const text=extract();
-    if(text&&text===prev){if(++stable>=2){clearInterval(timer);busy=true;render();request('capture',source,text).then(v=>{accept(v);if(v.generating)poll();}).catch(e=>{lastError=e.message;}).finally(()=>{busy=false;render();});}}
+    if(text&&text===prev){if(++stable>=2){clearInterval(timer);busy=true;partialSummary='';render();request('capture',source,text,delta=>{partialSummary+=delta;render();}).then(v=>{accept(v);if(v.generating)poll();}).catch(e=>{lastError=e.message;}).finally(()=>{busy=false;render();});}}
     else{prev=text;stable=0;}
    },750);
    setTimeout(()=>clearInterval(timer),60000);

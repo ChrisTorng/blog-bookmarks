@@ -216,6 +216,31 @@ try{
  const check=await req('/bookmarks/api/ingest/status','POST',{urls:['https://example.org/sample?keep=1']},false,{Authorization:'Bearer '+rotated.body.token});
  assert.equal(check.status,200,check.text);
  assert.equal(check.body[0].status,4);
+
+ // Reading metrics use the same ingest authorization, and private bodies must
+ // not be exposed in public list/detail endpoints.
+ const readingPath='/bookmarks/api/ingest/reading';
+ const readingUrl='https://example.org/sample?keep=1';
+ const readingAuth={Authorization:'Bearer '+rotated.body.token};
+ assert.equal((await req(readingPath,'POST',{mode:'lookup',url:readingUrl})).status,401);
+ const tracked=await req(readingPath,'POST',{mode:'lookup',url:readingUrl},false,readingAuth);
+ assert.equal(tracked.status,200,tracked.text);
+ assert.equal(tracked.body.tracked,true);
+ assert.equal((await req(readingPath,'POST',{mode:'lookup',url:'https://unrelated.example/unknown'},false,readingAuth)).body.tracked,false);
+ const original='This paragraph explains an actual example of writing and reading. '.repeat(4);
+ const captured=await req(readingPath,'POST',{mode:'capture',url:readingUrl,content:original,complete:true,stream:true},false,readingAuth);
+ assert.equal(captured.status,200,captured.text);
+ const frames=captured.text.split('\n\n').filter(x=>x.startsWith('data: ')).map(x=>JSON.parse(x.slice(6)));
+ assert.equal(frames[0].type,'start');
+ const readingResult=frames.find(x=>x.type==='result')?.result;
+ assert.equal(readingResult?.tracked,true,captured.text);
+ assert.ok(readingResult.minutes>0);
+ assert.equal(readingResult.summary,null);
+ assert.equal(readingResult.body,undefined);
+ const adminReading=(await req('/bookmarks/api/admin/'+id,'GET',undefined,true)).body.reading;
+ assert.equal(adminReading.minutes,readingResult.minutes);
+ assert.equal((await req('/bookmarks/api/'+id)).body.reading,undefined);
+
  const unstarred=await req('/bookmarks/api/admin/'+id,'PATCH',{status:3},true);
  assert.equal(unstarred.body.status,3);
  const privateAgain=await req('/bookmarks/api/admin/'+id,'PATCH',{status:2},true);

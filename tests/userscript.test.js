@@ -7,7 +7,7 @@ const source = readFileSync(new URL('../tampermonkey/BlogBookmarks.user.js', imp
 test('userscript installs from blog-bookmarks and parses', () => {
   assert.doesNotThrow(() => new Function(source));
   assert.match(source, /\/\/ @name\s+Blog Bookmarks\n/);
-  assert.match(source, /\/\/ @version\s+0\.5\.29\n/);
+  assert.match(source, /\/\/ @version\s+0\.5\.30\n/);
   assert.match(source, /raw\.githubusercontent\.com\/ChrisTorng\/blog-bookmarks\/main\/tampermonkey\/BlogBookmarks\.user\.js/);
   assert.match(source, /\/\/ @match\s+https:\/\/hackernews\.betacat\.io\/\*/);
   assert.doesNotMatch(source, /cloudmark-christorng|cloudmark\.site/);
@@ -241,4 +241,10 @@ test('matching direct iframe returns stable text through GM storage without open
  assert.match(source,/blog-bookmarks:reading-known:v1/);
  assert.match(source,/#blog-bookmarks-reading/);
  assert.match(source,/document\.referrer/);
+});
+
+ test('reading controls consume SSE increments without requiring progress support',()=>{
+ assert.match(source,/onprogress:r=>/);
+ assert.match(source,/partialSummary\+=delta/);
+ assert.match(source,/摘要串流未正常完成/);
 });

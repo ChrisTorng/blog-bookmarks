@@ -8,7 +8,7 @@ import {autoReviewNewSummary} from './auto-summary.js';
 import {autoCompleteImage,backfillMissingImages} from './auto-image.js';
 import {triageList,scoreTriage,inspectTriage,countText} from './triage.js';
 import {previewInsights} from './preview.js';
-import {readingRequest,attachReading} from './reading.js';
+import {readingRequest,readingStreamResponse,attachReading} from './reading.js';
 import {validIngestToken,rotateIngestToken} from './token.js';
 import {list,get,byUrl,create,patch,remove,tagsList,renameTag,reviewWindow,createAndAttachTag} from './data.js';
 import {bookmarkArticleHtml,bookmarkPermalink} from './public-content.js';
@@ -183,7 +183,9 @@ export async function api(req,env,url,ctx){
     if(!req.headers.get('Content-Type')?.startsWith('application/json'))throw Error('需要 JSON 格式');
     if(Number(req.headers.get('Content-Length')||0)>1100000)throw Error('資料過大');
     const text=await req.text();if(text.length>1000000)throw Error('資料過大');
-    return json(await readingRequest(env,JSON.parse(text),ctx));
+    const raw=JSON.parse(text);
+    if(raw.stream===true&&['manual','prepare','capture'].includes(raw.mode))return readingStreamResponse(env,raw,ctx);
+    return json(await readingRequest(env,raw,ctx));
   }
   if(p==='/bookmarks/api/ingest/preview'&&req.method==='POST'){
     if(!await validIngestToken(req,env))return json({error:'Token 無效'},401);
