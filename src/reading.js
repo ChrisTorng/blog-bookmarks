@@ -247,19 +247,21 @@ async function summarize(env,row,automatic,score,onProgress,ctx){
 }
 export async function readingRequest(env,raw,ctx,onProgress){
  const mode=raw?.mode||'lookup';
- if(!['lookup','prepare','capture','manual'].includes(mode))throw Error('文章摘要操作無效');
+ if(!['lookup','prepare','capture','store','manual'].includes(mode))throw Error('文章摘要操作無效');
  const url=await knownReadingUrl(env.DB,raw?.url);
  if(!url)return {tracked:false};
  const score=await readingScore(env.DB,url);
  let row=await rowFor(env.DB,url);
  if(mode==='lookup')return {...publicReading(row,score),url};
- if(mode==='capture'||mode==='manual'){
+ if(mode==='capture'||mode==='store'||mode==='manual'){
   if(typeof raw.content==='string'&&raw.content.trim()){
    if(raw.content.length>MAX_BODY)throw Error('文章正文超過單次處理上限');
    if(raw.complete!==true)throw Error('尚未確認完整文章正文');
    row=await storeBody(env.DB,url,raw.content,'browser');
-  }else if(mode==='capture')throw Error('未提供文章正文');
+  }else if(mode==='capture'||mode==='store')throw Error('未提供文章正文');
  }
+ // Browser collection for the bookmark workflow must not spend deep-reading AI budget.
+ if(mode==='store')return {...publicReading(row,score),url};
  if(mode==='prepare'&&!row?.body&&!publicReading(row,score).summary){
   // The browser can supply the actual rendered article after redirects or
   // verification. Do not repeatedly fetch an unknown/blocked article.
