@@ -38,7 +38,7 @@ test('old Pinyin bookmark URL redirects to the English canonical URL',async()=>{
   const oldSlug='shi-yong-unicode-yi-chang-zi-yuan-de-wang-yu-po-jie-2018';
   const newSlug='domain-hacks-with-unusual-unicode-characters-2018';
   const db={prepare(sql){return {bind(){
-    return {async first(){
+    return {async all(){return {results:[]}},async first(){
       if(!sql.includes('bookmark_slug_redirects'))return null;
       return {id:'98cb0ffc-09c8-42b0-89e8-cb31d0f5e86a',
         slug:newSlug,url:'https://example.org/',status:4,
