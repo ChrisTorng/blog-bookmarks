@@ -33997,6 +33997,10 @@ var worker = {
       return new Response(null, { status: response.status, headers: response.headers });
     }
     const url = new URL(req.url), path = url.pathname;
+    if (req.method === "GET" && rssImagePattern.test(path) && url.search && [...url.searchParams.keys()].every((key2) => /^(?:utm_[a-z0-9_]+|fbclid|gclid|msclkid)$/i.test(key2))) {
+      url.search = "";
+      return new Response(null, { status: 308, headers: { Location: url.href, "Cache-Control": "public, max-age=3600" } });
+    }
     if (!inner && req.method === "GET" && env.AUTH_MODE !== "local" && (isPublicPage(path) || !url.search && rssImagePattern.test(path)) && ctx?.exports?.PublicCache?.fetch) {
       const publicRequest = new Request(req);
       publicRequest.headers.delete("Authorization");
