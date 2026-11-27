@@ -15,10 +15,8 @@ export class PublicCache extends WorkerEntrypoint {
   async fetch(request) {
     const response = await worker.fetch(request, this.env, this.ctx, true);
     const type = response.headers.get('Content-Type') || '';
-    // Cache ONLY successful public HTML, XML and fixed public images. Never cache redirects,
+    // Cache ONLY successful public HTML and XML. Never cache redirects,
     // errors, JSON (including public API), access responses, or static origin.
-    const path = new URL(request.url).pathname;
-    if (response.status === 200 && ((type === 'image/jpeg' && path.startsWith('/bookmarks/rss-image/')) || (type === 'image/webp' && path.startsWith('/bookmarks/preview-image/')))) return response;
     if (response.status !== 200 || !/(text\/html|\/xml|\+xml)/i.test(type)) return response;
     const headers = new Headers(response.headers);
     headers.set('Cache-Control', 'public, max-age=0, s-maxage=300');
