@@ -1,4 +1,5 @@
 import { esc } from './data.js';
+import { plainMathTitle } from './math-content.js';
 import { bookmarkArticleHtml, bookmarkPermalink, bookmarkTags } from './public-content.js';
 
 const siteTitle = 'ChrisTorng 學習天地';
@@ -38,10 +39,10 @@ export function rss(items, siteUrl, tag = '', tagLabel = '', categories = [], no
   + items.map((item, index) => {
    const url = base + bookmarkPermalink(item);
    const guid = item.rss_guid || url;
-   const content = bookmarkArticleHtml(item, categories, noteHtmlById[item.id],url).replace(/\b(href|src)="\/(?!\/)/g,(_,attr)=>attr+'="'+base+'/');
+   const content = bookmarkArticleHtml(item, categories, noteHtmlById[item.id],url,false,{mathMode:'rss'}).replace(/\b(href|src)="\/(?!\/)/g,(_,attr)=>attr+'="'+base+'/');
    const labels = bookmarkTags(item, categories);
    // A migrated bookmark keeps its original GUID to avoid RSS duplicates.
-   return '<item><title>' + esc(item.title) + '</title><link>' + esc(url) + '</link>'
+   return '<item><title>' + esc(plainMathTitle(item.title)) + '</title><link>' + esc(url) + '</link>'
     + '<guid isPermaLink="true">' + esc(guid) + '</guid><pubDate>' + dates[index] + '</pubDate>'
     + labels.map(t => '<category>' + esc(t.name) + '</category>').join('')
     + '<description>' + esc(content) + '</description>'
