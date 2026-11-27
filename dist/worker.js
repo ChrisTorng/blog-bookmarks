@@ -31881,6 +31881,64 @@ async function recommendBookmarkForPublishedNote(env, id, { load = get, update =
 }
 __name(recommendBookmarkForPublishedNote, "recommendBookmarkForPublishedNote");
 
+// src/rss-image.js
+function rssPreviewPath(id, source) {
+  if (!/^[0-9a-f-]{36}$/.test(id || "") || !source) return "";
+  let hash2 = 2166136261;
+  for (const c of String(source)) {
+    hash2 ^= c.charCodeAt(0);
+    hash2 = Math.imul(hash2, 16777619);
+  }
+  return "/bookmarks/rss-image/" + id + "/" + (hash2 >>> 0).toString(16).padStart(8, "0") + ".jpg";
+}
+__name(rssPreviewPath, "rssPreviewPath");
+var rssImagePattern = /^\/bookmarks\/rss-image\/([0-9a-f-]{36})\/[0-9a-f]{8}\.jpg$/;
+function rssPreviewHtml(html, siteUrl) {
+  const base2 = siteUrl.replace(/\/$/, "");
+  return String(html).replace(/<img\b[^>]*>/gi, (tag) => {
+    const path = tag.match(/\bdata-rss-preview="([^"]+)"/)?.[1];
+    if (!path || !rssImagePattern.test(path)) return tag;
+    return tag.replace(/\bsrc="[^"]*"/, 'src="' + base2 + path + '"').replace(/\sdata-rss-preview="[^"]*"/, "").replace(/\sloading="lazy"/, "").replace(/\sdecoding="async"/, "");
+  });
+}
+__name(rssPreviewHtml, "rssPreviewHtml");
+async function rssImage(request, db, fetcher = fetch) {
+  const url = new URL(request.url), match2 = rssImagePattern.exec(url.pathname);
+  const fail = /* @__PURE__ */ __name((status) => new Response(null, { status, headers: { "Cache-Control": "no-store" } }), "fail");
+  if (!match2 || url.search) return fail(404);
+  const row = await db.prepare("SELECT image_url FROM bookmarks WHERE id=? AND stage>=3").bind(match2[1]).first();
+  if (!row?.image_url || rssPreviewPath(match2[1], row.image_url) !== url.pathname) return fail(404);
+  let source;
+  try {
+    source = new URL(row.image_url);
+    if (source.protocol !== "https:" || source.username || source.password || source.port || !source.hostname.includes(".") || /^(?:localhost|\d+(?:\.\d+){0,3}|\[|0x)/i.test(source.hostname) || /\.(?:local|localhost|internal|test|invalid)$/.test(source.hostname) || source.hostname === url.hostname || source.hostname.endsWith("." + url.hostname)) return fail(404);
+  } catch {
+    return fail(404);
+  }
+  try {
+    const response = await fetcher(source.href, {
+      redirect: "manual",
+      signal: AbortSignal.timeout(15e3),
+      headers: { Accept: "image/*" },
+      cf: { image: { format: "jpeg", width: 640, fit: "scale-down", quality: 85, metadata: "none" } }
+    });
+    if (!response.ok || !/^image\/jpeg(?:;|$)/i.test(response.headers.get("Content-Type") || "")) {
+      await response.body?.cancel().catch(() => {
+      });
+      return fail(502);
+    }
+    const headers = new Headers({ "Content-Type": "image/jpeg", "Cache-Control": "public, max-age=3600, s-maxage=86400", "X-Content-Type-Options": "nosniff" });
+    for (const key2 of ["etag", "cf-resized"]) {
+      const value = response.headers.get(key2);
+      if (value) headers.set(key2, value);
+    }
+    return new Response(response.body, { status: 200, headers });
+  } catch {
+    return fail(502);
+  }
+}
+__name(rssImage, "rssImage");
+
 // src/public-content.js
 var md2 = new lib_default({ html: false, linkify: true, breaks: true, typographer: false });
 var bookmarkPermalink = /* @__PURE__ */ __name((item) => item.slug ? "/bookmarks/" + encodeURIComponent(item.slug) + "/" : "/bookmarks/view/?id=" + encodeURIComponent(item.id), "bookmarkPermalink");
@@ -31961,7 +32019,8 @@ function bookmarkArticleHtml(item, categories = [], relatedNotesHtml = "", perma
     if (uri.protocol === "https:" && !uri.username && !uri.password) image2 = uri.href;
   } catch {
   }
-  const thumbnail = image2 ? '<a href="' + esc(target) + '" target="_blank" rel="noopener noreferrer" class="mt-2 block w-full max-w-56 md:col-start-2 md:row-span-2 md:mt-0 md:max-w-none" aria-label="\u958B\u555F\u539F\u59CB\u6587\u7AE0"><img src="' + esc(image2) + '" alt="" width="176" loading="lazy" decoding="async" referrerpolicy="no-referrer" class="max-h-40 w-full rounded-md object-contain" style="max-width:100%;height:auto;max-height:160px;object-fit:contain"></a>' : "";
+  const rssPath = image2 && rssPreviewPath(item.id, image2);
+  const thumbnail = image2 ? '<a href="' + esc(target) + '" target="_blank" rel="noopener noreferrer" class="mt-2 block w-full max-w-56 md:col-start-2 md:row-span-2 md:mt-0 md:max-w-none" aria-label="\u958B\u555F\u539F\u59CB\u6587\u7AE0"><img src="' + esc(image2) + '" ' + (rssPath ? 'data-rss-preview="' + esc(rssPath) + '" ' : "") + 'alt="" width="176" loading="lazy" decoding="async" referrerpolicy="no-referrer" class="max-h-40 w-full rounded-md object-contain" style="max-width:100%;height:auto;max-height:160px;object-fit:contain"></a>' : "";
   const summary = item.summary ? '<div class="my-2 text-gray-700 dark:text-gray-200"><div class="prose max-w-none text-sm dark:prose-invert">' + renderSummary(item.summary, item.url) + "</div></div>" : "";
   const reading = item.reading_summary?.summary ? '<section class="my-3 min-w-0" aria-label="\u7CBE\u8B80\u6458\u8981"><p class="font-bold">\u7CBE\u8B80\u6458\u8981</p>' + readingStatsHtml(item.reading_summary) + '<div class="prose max-w-none text-sm dark:prose-invert">' + renderSummary(item.reading_summary.summary, item.url) + "</div></section>" : "";
   const original = target !== item.url ? '<a href="' + esc(item.url) + '" target="_blank" rel="noopener noreferrer" class="hidden max-w-full truncate underline md:inline">\u539F\u59CB\u7DB2\u5740\uFF1A' + esc(item.url) + "</a>" : "";
@@ -33834,7 +33893,7 @@ function rss(items, siteUrl, tag = "", tagLabel = "", categories = [], noteHtmlB
   return '<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>' + esc(title) + "</title><link>" + esc(feedLink) + "</link><description>ChrisTorng \u5206\u4EAB\u7684\u66F8\u7C64</description><language>zh-TW</language>" + items.map((item, index) => {
     const url = base2 + bookmarkPermalink(item);
     const guid = item.rss_guid || url;
-    const content = bookmarkArticleHtml(item, categories, noteHtmlById[item.id]);
+    const content = rssPreviewHtml(bookmarkArticleHtml(item, categories, noteHtmlById[item.id]), base2);
     const labels = bookmarkTags(item, categories);
     return "<item><title>" + esc(item.title) + "</title><link>" + esc(url) + '</link><guid isPermaLink="true">' + esc(guid) + "</guid><pubDate>" + dates[index] + "</pubDate>" + labels.map((t) => "<category>" + esc(t.name) + "</category>").join("") + "<description>" + esc(content) + "</description><content:encoded><![CDATA[" + content.replaceAll("]]>", "]]]]><![CDATA[>") + "]]></content:encoded></item>";
   }).join("") + "</channel></rss>";
@@ -33938,12 +33997,13 @@ var worker = {
       return new Response(null, { status: response.status, headers: response.headers });
     }
     const url = new URL(req.url), path = url.pathname;
-    if (!inner && req.method === "GET" && env.AUTH_MODE !== "local" && isPublicPage(path) && ctx?.exports?.PublicCache?.fetch) {
+    if (!inner && req.method === "GET" && env.AUTH_MODE !== "local" && (isPublicPage(path) || !url.search && rssImagePattern.test(path)) && ctx?.exports?.PublicCache?.fetch) {
       const publicRequest = new Request(req);
       publicRequest.headers.delete("Authorization");
       publicRequest.headers.delete("Cookie");
       return ctx.exports.PublicCache.fetch(publicRequest);
     }
+    if (rssImagePattern.test(path) && req.method === "GET") return rssImage(req, env.DB);
     if (path === "/bookmarks/" || path === "/bookmarks") {
       if (req.method === "GET") return publicBookmarksList(req, env);
     }
@@ -34009,6 +34069,7 @@ var PublicCache = class extends WorkerEntrypoint {
   async fetch(request) {
     const response = await index_default.fetch(request, this.env, this.ctx, true);
     const type = response.headers.get("Content-Type") || "";
+    if (response.status === 200 && type === "image/jpeg" && new URL(request.url).pathname.startsWith("/bookmarks/rss-image/")) return response;
     if (response.status !== 200 || !/(text\/html|\/xml|\+xml)/i.test(type)) return response;
     const headers = new Headers(response.headers);
     headers.set("Cache-Control", "public, max-age=0, s-maxage=300");
