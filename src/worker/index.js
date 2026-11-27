@@ -17,6 +17,7 @@ export class PublicCache extends WorkerEntrypoint {
     const type = response.headers.get('Content-Type') || '';
     // Cache ONLY successful public HTML and XML. Never cache redirects,
     // errors, JSON (including public API), access responses, or static origin.
+    if (response.status === 200 && type === 'image/jpeg' && new URL(request.url).pathname.startsWith('/bookmarks/rss-image/')) return response;
     if (response.status !== 200 || !/(text\/html|\/xml|\+xml)/i.test(type)) return response;
     const headers = new Headers(response.headers);
     headers.set('Cache-Control', 'public, max-age=0, s-maxage=300');

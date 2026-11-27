@@ -6,6 +6,7 @@ import { relatedNoteHtml } from './note-references.js';
 import { backfillMissingImages } from './auto-image.js';
 import { publicBookmarksList } from './public-list.js';
 import { pruneReadingBodies } from './reading.js';
+import { rssImage, rssImagePattern } from './rss-image.js';
 
 // The HTML, JS and CSS live exclusively on GitHub Pages.
 // This Worker serves the API and the dynamic RSS feed only.
@@ -48,12 +49,13 @@ const worker = {
   // The default entrypoint always runs. Only anonymous public HTML/XML can
   // reach the separate cacheable entrypoint. Never cache admin or JSON APIs.
   if (!inner && req.method === 'GET' && env.AUTH_MODE !== 'local' &&
-      isPublicPage(path) && ctx?.exports?.PublicCache?.fetch) {
+      (isPublicPage(path) || (!url.search && rssImagePattern.test(path))) && ctx?.exports?.PublicCache?.fetch) {
     const publicRequest = new Request(req);
     publicRequest.headers.delete('Authorization');
     publicRequest.headers.delete('Cookie');
     return ctx.exports.PublicCache.fetch(publicRequest);
   }
+  if (rssImagePattern.test(path) && req.method==='GET') return rssImage(req,env.DB);
   if (path === '/bookmarks/' || path === '/bookmarks') {
     if (req.method === 'GET') return publicBookmarksList(req,env);
   }
