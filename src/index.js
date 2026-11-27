@@ -6,7 +6,7 @@ import { relatedNoteHtml } from './note-references.js';
 import { backfillMissingImages } from './auto-image.js';
 import { publicBookmarksList } from './public-list.js';
 import { pruneReadingBodies } from './reading.js';
-import { rssImage, rssImagePattern } from './rss-image.js';
+import { rssImage, rssImagePattern, webImage, webImagePattern } from './rss-image.js';
 
 // The HTML, JS and CSS live exclusively on GitHub Pages.
 // This Worker serves the API and the dynamic RSS feed only.
@@ -46,9 +46,10 @@ const worker = {
    return new Response(null,{status:response.status,headers:response.headers});
   }
   const url=new URL(req.url), path=url.pathname;
+  const imagePath = rssImagePattern.test(path) || webImagePattern.test(path);
   // Link wrappers append tracking parameters. Canonicalize before the public
   // cache so all readers share one JPEG cache key. No query controls the source.
-  if (req.method === 'GET' && rssImagePattern.test(path) && url.search &&
+  if (req.method === 'GET' && imagePath && url.search &&
       [...url.searchParams.keys()].every(key => /^(?:utm_[a-z0-9_]+|fbclid|gclid|msclkid)$/i.test(key))) {
     url.search = '';
     return new Response(null,{status:308,headers:{Location:url.href,'Cache-Control':'public, max-age=3600'}});
@@ -56,13 +57,14 @@ const worker = {
   // The default entrypoint always runs. Only anonymous public HTML/XML can
   // reach the separate cacheable entrypoint. Never cache admin or JSON APIs.
   if (!inner && req.method === 'GET' && env.AUTH_MODE !== 'local' &&
-      (isPublicPage(path) || (!url.search && rssImagePattern.test(path))) && ctx?.exports?.PublicCache?.fetch) {
+      (isPublicPage(path) || (!url.search && imagePath)) && ctx?.exports?.PublicCache?.fetch) {
     const publicRequest = new Request(req);
     publicRequest.headers.delete('Authorization');
     publicRequest.headers.delete('Cookie');
     return ctx.exports.PublicCache.fetch(publicRequest);
   }
   if (rssImagePattern.test(path) && req.method==='GET') return rssImage(req,env.DB);
+  if (webImagePattern.test(path) && req.method==='GET') return webImage(req,env.DB);
   if (path === '/bookmarks/' || path === '/bookmarks') {
     if (req.method === 'GET') return publicBookmarksList(req,env);
   }

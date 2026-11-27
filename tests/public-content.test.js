@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { bookmarkArticleHtml, renderSummary } from '../src/public-content.js'
 import { rss } from '../src/feeds.js'
-import { rssPreviewHtml } from '../src/rss-image.js'
+import { rssPreviewHtml, webPreviewPath } from '../src/rss-image.js'
 
 const categories=[{id:'tech',name:'Tech',name_zh:'科技',count:1}]
 const item={
@@ -52,15 +52,15 @@ test('remote thumbnail appears once in permalink, RSS and embedded HTML; mobile 
   const withImage={...item,image_url:'https://hackernews.betacat.io/image/sample.webp'};
   const html=bookmarkArticleHtml(withImage,categories);
   const rssXml=rss([withImage],'https://christorng.idv.tw','','',categories);
-  assert.match(html, /src="https:\/\/hackernews\.betacat\.io\/image\/sample\.webp"/);
+  assert.ok(html.includes('src="'+webPreviewPath(withImage.id,withImage.image_url)+'"'));
   assert.match(html, /md:grid-cols-\[minmax\(0,1fr\)_11rem\]/);
-  assert.ok(html.indexOf('<h1') < html.indexOf('sample.webp'));
-  assert.ok(html.indexOf('sample.webp') < html.indexOf('my-2 text-gray-700'));
+  assert.ok(html.indexOf('<h1') < html.indexOf('/preview-image/'));
+  assert.ok(html.indexOf('/preview-image/') < html.indexOf('my-2 text-gray-700'));
   assert.ok(rssXml.includes('<content:encoded><![CDATA['+rssPreviewHtml(html,'https://christorng.idv.tw')+']]></content:encoded>'));
   assert.doesNotMatch(rssXml,/sample\.webp/);
   assert.match(rssXml,/https:\/\/christorng\.idv\.tw\/bookmarks\/rss-image\//);
-  assert.equal((html.match(/sample\.webp/g)||[]).length,1);
-  assert.doesNotMatch(bookmarkArticleHtml({...item,image_url:null},categories),/md:grid-cols-|sample.webp/);
+  assert.equal((html.match(/\/preview-image\//g)||[]).length,1);
+  assert.doesNotMatch(bookmarkArticleHtml({...item,image_url:null},categories),/md:grid-cols-|preview-image/);
   assert.doesNotMatch(bookmarkArticleHtml({...item,image_url:'javascript:alert(1)'},categories),/javascript:alert/);
 });
 

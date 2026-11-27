@@ -56,3 +56,33 @@ export async function rssImage(request, db, fetcher = fetch) {
     return new Response(response.body,{status:200,headers});
   } catch { return fail(502); }
 }
+
+// Keep the exact BetaCats WebP for the website, but deliver it through the
+// site's own origin. Only public, database-backed images can be requested.
+const betaCatsWebp = /^https:\/\/hackernews\.betacat\.io\/image\/[a-zA-Z0-9_-]{1,128}\.webp$/;
+export function webPreviewPath(id, source) {
+  if (!betaCatsWebp.test(String(source || ''))) return '';
+  return rssPreviewPath(id, source).replace('/rss-image/', '/preview-image/').replace(/\.jpg$/, '.webp');
+}
+export const webImagePattern = /^\/bookmarks\/preview-image\/([0-9a-f-]{36})\/[0-9a-f]{8}\.webp$/;
+
+export async function webImage(request, db, fetcher = fetch) {
+  const url = new URL(request.url), match = webImagePattern.exec(url.pathname);
+  const fail = status => new Response(null,{status,headers:{'Cache-Control':'no-store'}});
+  if (!match || url.search) return fail(404);
+  const row = await db.prepare('SELECT image_url FROM bookmarks WHERE id=? AND stage>=3')
+    .bind(match[1]).first();
+  if (!row?.image_url || webPreviewPath(match[1],row.image_url) !== url.pathname) return fail(404);
+  try {
+    const response = await fetcher(row.image_url,{
+      redirect:'manual',signal:AbortSignal.timeout(15000),headers:{Accept:'image/webp'}
+    });
+    if (!response.ok || !/^image\/webp(?:;|$)/i.test(response.headers.get('Content-Type') || '')) {
+      await response.body?.cancel().catch(()=>{});
+      return fail(response.status===404 ? 404 : 502);
+    }
+    const headers = new Headers({'Content-Type':'image/webp','Cache-Control':'public, max-age=3600, s-maxage=86400','X-Content-Type-Options':'nosniff'});
+    const etag = response.headers.get('etag'); if (etag) headers.set('etag',etag);
+    return new Response(response.body,{status:200,headers});
+  } catch { return fail(502); }
+}
