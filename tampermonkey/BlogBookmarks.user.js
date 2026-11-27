@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.37
+// @version      0.5.38
 // @description  BetaCat reading/navigation, popularity, mobile layout, background article tabs and bookmarks
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -9,6 +9,7 @@
 // @match        https://hackernews.betacat.io/*
 // @match        *://*/*
 // @connect      christorng.idv.tw
+// @require      https://cdn.jsdelivr.net/npm/katex@0.16.45/dist/katex.min.js
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_addValueChangeListener
@@ -2305,12 +2306,21 @@ let blogBookmarksBetaCatPageTask;
  function renderReadingMarkdown(target,text){
   const frag=document.createDocumentFragment();
   const inline=(node,value)=>{
-   const pattern=/(\*\*([^*\n]+)\*\*|__([^_\n]+)__|`([^`\n]+)`|\*([^*\n]+)\*)/g;
+   const pattern=/`([^`\n]+)`|\\\((.+?)\\\)|\\\[(.+?)\\\]|\$\$([^$\r\n]+?)\$\$|\$(?![\s$])([^$\r\n]+?)(?<![\s\\])\$(?![\d$])|\*\*([^*\n]+)\*\*|__([^_\n]+)__|\*([^*\n]+)\*/g;
    let last=0;
    for(const m of value.matchAll(pattern)){
     node.append(document.createTextNode(value.slice(last,m.index)));
-    const child=document.createElement(m[2]||m[3]?'strong':m[4]?'code':'em');
-    child.textContent=m[2]||m[3]||m[4]||m[5];node.append(child);last=m.index+m[0].length;
+    const tex=m[2]??m[3]??m[4]??m[5];
+    if(tex!==undefined){
+     const math=document.createElement('span');math.className='notranslate';
+     try{if(typeof katex==='undefined'||tex.length>4000)throw Error('math');katex.render(tex,math,{output:'mathml',displayMode:!!(m[3]||m[4]),throwOnError:true,trust:false,maxExpand:1000,maxSize:20});}
+     catch{math.textContent=m[0];}
+     node.append(math);
+    }else{
+     const child=document.createElement(m[1]?'code':m[6]||m[7]?'strong':'em');
+     child.textContent=m[1]||m[6]||m[7]||m[8];node.append(child);
+    }
+    last=m.index+m[0].length;
    }
    node.append(document.createTextNode(value.slice(last)));
   };
@@ -2325,7 +2335,7 @@ let blogBookmarksBetaCatPageTask;
     const link=heading[2].match(/^\[((?:\\.|[^\]])+)\]\((https?:\/\/[^\s)]+)\)$/);
     let url;try{if(link)url=new URL(link[2]);}catch{}
     if(url&&url.hash&&identity(url.href)===identity(source)){
-     const a=document.createElement('a');a.href=url.href;a.textContent=link[1].replace(/\\([\[\]\\])/g,'$1');
+     const a=document.createElement('a');a.href=url.href;inline(a,link[1].replace(/\\([\[\]\\])/g,'$1'));
      a.addEventListener('click',event=>{
       if(event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
       const hash=url.hash.slice(1);let target=null;
