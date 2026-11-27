@@ -31938,6 +31938,39 @@ async function rssImage(request, db, fetcher = fetch) {
   }
 }
 __name(rssImage, "rssImage");
+var betaCatsWebp = /^https:\/\/hackernews\.betacat\.io\/image\/[a-zA-Z0-9_-]{1,128}\.webp$/;
+function webPreviewPath(id, source) {
+  if (!betaCatsWebp.test(String(source || ""))) return "";
+  return rssPreviewPath(id, source).replace("/rss-image/", "/preview-image/").replace(/\.jpg$/, ".webp");
+}
+__name(webPreviewPath, "webPreviewPath");
+var webImagePattern = /^\/bookmarks\/preview-image\/([0-9a-f-]{36})\/[0-9a-f]{8}\.webp$/;
+async function webImage(request, db, fetcher = fetch) {
+  const url = new URL(request.url), match2 = webImagePattern.exec(url.pathname);
+  const fail = /* @__PURE__ */ __name((status) => new Response(null, { status, headers: { "Cache-Control": "no-store" } }), "fail");
+  if (!match2 || url.search) return fail(404);
+  const row = await db.prepare("SELECT image_url FROM bookmarks WHERE id=? AND stage>=3").bind(match2[1]).first();
+  if (!row?.image_url || webPreviewPath(match2[1], row.image_url) !== url.pathname) return fail(404);
+  try {
+    const response = await fetcher(row.image_url, {
+      redirect: "manual",
+      signal: AbortSignal.timeout(15e3),
+      headers: { Accept: "image/webp" }
+    });
+    if (!response.ok || !/^image\/webp(?:;|$)/i.test(response.headers.get("Content-Type") || "")) {
+      await response.body?.cancel().catch(() => {
+      });
+      return fail(response.status === 404 ? 404 : 502);
+    }
+    const headers = new Headers({ "Content-Type": "image/webp", "Cache-Control": "public, max-age=3600, s-maxage=86400", "X-Content-Type-Options": "nosniff" });
+    const etag = response.headers.get("etag");
+    if (etag) headers.set("etag", etag);
+    return new Response(response.body, { status: 200, headers });
+  } catch {
+    return fail(502);
+  }
+}
+__name(webImage, "webImage");
 
 // src/public-content.js
 var md2 = new lib_default({ html: false, linkify: true, breaks: true, typographer: false });
@@ -32020,7 +32053,8 @@ function bookmarkArticleHtml(item, categories = [], relatedNotesHtml = "", perma
   } catch {
   }
   const rssPath = image2 && rssPreviewPath(item.id, image2);
-  const thumbnail = image2 ? '<a href="' + esc(target) + '" target="_blank" rel="noopener noreferrer" class="mt-2 block w-full max-w-56 md:col-start-2 md:row-span-2 md:mt-0 md:max-w-none" aria-label="\u958B\u555F\u539F\u59CB\u6587\u7AE0"><img src="' + esc(image2) + '" ' + (rssPath ? 'data-rss-preview="' + esc(rssPath) + '" ' : "") + 'alt="" width="176" loading="lazy" decoding="async" referrerpolicy="no-referrer" class="max-h-40 w-full rounded-md object-contain" style="max-width:100%;height:auto;max-height:160px;object-fit:contain"></a>' : "";
+  const webPath = [3, 4].includes(item.status) && webPreviewPath(item.id, image2);
+  const thumbnail = image2 ? '<a href="' + esc(target) + '" target="_blank" rel="noopener noreferrer" class="mt-2 block w-full max-w-56 md:col-start-2 md:row-span-2 md:mt-0 md:max-w-none" aria-label="\u958B\u555F\u539F\u59CB\u6587\u7AE0"><img src="' + esc(webPath || image2) + '" ' + (rssPath ? 'data-rss-preview="' + esc(rssPath) + '" ' : "") + 'alt="" width="176" loading="lazy" decoding="async" referrerpolicy="no-referrer" class="max-h-40 w-full rounded-md object-contain" style="max-width:100%;height:auto;max-height:160px;object-fit:contain"></a>' : "";
   const summary = item.summary ? '<div class="my-2 text-gray-700 dark:text-gray-200"><div class="prose max-w-none text-sm dark:prose-invert">' + renderSummary(item.summary, item.url) + "</div></div>" : "";
   const reading = item.reading_summary?.summary ? '<section class="my-3 min-w-0" aria-label="\u7CBE\u8B80\u6458\u8981"><p class="font-bold">\u7CBE\u8B80\u6458\u8981</p>' + readingStatsHtml(item.reading_summary) + '<div class="prose max-w-none text-sm dark:prose-invert">' + renderSummary(item.reading_summary.summary, item.url) + "</div></section>" : "";
   const original = target !== item.url ? '<a href="' + esc(item.url) + '" target="_blank" rel="noopener noreferrer" class="hidden max-w-full truncate underline md:inline">\u539F\u59CB\u7DB2\u5740\uFF1A' + esc(item.url) + "</a>" : "";
@@ -33997,17 +34031,19 @@ var worker = {
       return new Response(null, { status: response.status, headers: response.headers });
     }
     const url = new URL(req.url), path = url.pathname;
-    if (req.method === "GET" && rssImagePattern.test(path) && url.search && [...url.searchParams.keys()].every((key2) => /^(?:utm_[a-z0-9_]+|fbclid|gclid|msclkid)$/i.test(key2))) {
+    const imagePath = rssImagePattern.test(path) || webImagePattern.test(path);
+    if (req.method === "GET" && imagePath && url.search && [...url.searchParams.keys()].every((key2) => /^(?:utm_[a-z0-9_]+|fbclid|gclid|msclkid)$/i.test(key2))) {
       url.search = "";
       return new Response(null, { status: 308, headers: { Location: url.href, "Cache-Control": "public, max-age=3600" } });
     }
-    if (!inner && req.method === "GET" && env.AUTH_MODE !== "local" && (isPublicPage(path) || !url.search && rssImagePattern.test(path)) && ctx?.exports?.PublicCache?.fetch) {
+    if (!inner && req.method === "GET" && env.AUTH_MODE !== "local" && (isPublicPage(path) || !url.search && imagePath) && ctx?.exports?.PublicCache?.fetch) {
       const publicRequest = new Request(req);
       publicRequest.headers.delete("Authorization");
       publicRequest.headers.delete("Cookie");
       return ctx.exports.PublicCache.fetch(publicRequest);
     }
     if (rssImagePattern.test(path) && req.method === "GET") return rssImage(req, env.DB);
+    if (webImagePattern.test(path) && req.method === "GET") return webImage(req, env.DB);
     if (path === "/bookmarks/" || path === "/bookmarks") {
       if (req.method === "GET") return publicBookmarksList(req, env);
     }
@@ -34073,7 +34109,8 @@ var PublicCache = class extends WorkerEntrypoint {
   async fetch(request) {
     const response = await index_default.fetch(request, this.env, this.ctx, true);
     const type = response.headers.get("Content-Type") || "";
-    if (response.status === 200 && type === "image/jpeg" && new URL(request.url).pathname.startsWith("/bookmarks/rss-image/")) return response;
+    const path = new URL(request.url).pathname;
+    if (response.status === 200 && (type === "image/jpeg" && path.startsWith("/bookmarks/rss-image/") || type === "image/webp" && path.startsWith("/bookmarks/preview-image/"))) return response;
     if (response.status !== 200 || !/(text\/html|\/xml|\+xml)/i.test(type)) return response;
     const headers = new Headers(response.headers);
     headers.set("Cache-Control", "public, max-age=0, s-maxage=300");
