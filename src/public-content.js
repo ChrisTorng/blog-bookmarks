@@ -114,9 +114,9 @@ export function bookmarkArticleHtml(item,categories=[],relatedNotesHtml='',perma
     '<div class="'+(image?'grid grid-cols-1 gap-x-4 md:grid-cols-[minmax(0,1fr)_11rem]':'block')+'">'+
     '<div class="min-w-0"><h1 class="text-xl leading-snug font-bold"><a class="text-primary-500 hover:text-primary-600 dark:hover:text-primary-400" href="'+
     esc(permalink || bookmarkPermalink(item))+'">'+renderMathTitle(item.title,mathMode)+'</a></h1>'+
-    english+'</div>'+thumbnail+(summary?'<div class="min-w-0">'+summary+'</div>':'')+'</div>'+reading+
-    '<div class="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600 dark:text-gray-300">'+
-    bookmarkSource(item.url)+original+'</div>'+
+    english+
+    '<div class="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600 dark:text-gray-300">'+
+    bookmarkSource(item.url)+original+'</div></div>'+thumbnail+(summary?'<div class="min-w-0">'+summary+'</div>':'')+'</div>'+reading+
     bookmarkReferences(item)+
     '<div class="mt-2 flex flex-wrap items-center gap-3 text-sm">'+tags+'</div>'+relatedNotes+'</article>';
 }
