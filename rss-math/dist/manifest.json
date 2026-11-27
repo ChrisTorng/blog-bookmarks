@@ -1,0 +1,15 @@
+{
+  "wasmBytes": 2478606,
+  "parts": [
+    "resvg-0.b64",
+    "resvg-1.b64",
+    "resvg-2.b64",
+    "resvg-3.b64",
+    "resvg-4.b64",
+    "resvg-5.b64",
+    "resvg-6.b64",
+    "resvg-7.b64",
+    "resvg-8.b64"
+  ],
+  "compressed": 1530974
+}
