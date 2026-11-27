@@ -22,6 +22,23 @@
 // Share the existing no-store original-title response with the reading controls.
 let blogBookmarksBetaCatPageTask;
 
+
+// Extract explicit TeX before removing hidden accessibility trees or MathJax SVGs.
+function preserveBookmarkMath(root) {
+ const selectors='.katex-display,.katex,mjx-container,.MathJax,.ltx_Math,math,script[type^="math/tex"]';
+ const candidates=[...root.querySelectorAll(selectors)].filter(el=>!el.parentElement?.closest(selectors));
+ for(const el of candidates){
+  const annotation=el.querySelector('annotation[encoding="application/x-tex"],annotation[encoding="application/x-latex"]');
+  const tex=(annotation?.textContent||el.getAttribute('data-tex')||el.getAttribute('data-latex')||(el.matches('script[type^="math/tex"]')?el.textContent:'')||el.getAttribute('alttext')||el.querySelector('math[alttext]')?.getAttribute('alttext')||'').trim();
+  if(!tex||tex.length>4000)continue;
+  const display=el.matches('.katex-display,[display="block"],[display="true"],[type*="mode=display"]')||!!el.querySelector('math[display="block"]');
+  const value=tex.replace(/^\$\$([\s\S]*)\$\$$|^\$([\s\S]*)\$$|^\\\[([\s\S]*)\\\]$|^\\\(([\s\S]*)\\\)$/,(m,...groups)=>groups.slice(0,4).find(x=>x!==undefined)??m);
+  const node=root.ownerDocument.createElement('span');
+  node.textContent=display?'\n$$\n'+value+'\n$$\n':'$'+value+'$';
+  el.replaceWith(node);
+ }
+}
+
 // Cross-tab article capture. Idle on all non-BetaCat sites unless the admin
 // explicitly queued a matching URL. No separate installed script is required.
 (function articleCaptureBridge() {
@@ -106,6 +123,7 @@ let blogBookmarksBetaCatPageTask;
  }
  function extractEmbedded(root,manual){
   const copy=root.cloneNode(true);
+  preserveBookmarkMath(copy);
   copy.querySelectorAll('script,style,noscript,nav,footer,aside,form,button,svg,iframe,[aria-hidden="true"],[hidden],.ads,.comments,.related-posts,.sidebar').forEach(el=>el.remove());
   const text=(copy.innerText||copy.textContent||'').trim().slice(0,90000);
   if(/^(just a moment|attention required|verify you are human|checking your browser|access denied|security verification|安全驗證)/i.test(document.title||''))return '';
@@ -155,6 +173,7 @@ let blogBookmarksBetaCatPageTask;
  };
  const read=node=>{
   const copy=node.cloneNode(true);
+  preserveBookmarkMath(copy);
   copy.querySelectorAll('script,style,noscript,nav,footer,aside,form,button,svg,iframe,[aria-hidden="true"],.ads,.comments,.related-posts,.sidebar').forEach(el=>el.remove());
   const blocks=[...copy.querySelectorAll('h1,h2,h3,p,li,blockquote')]
    .map(el=>(el.textContent||'').replace(/\s+/g,' ').trim()).filter(t=>t.length>=28);
@@ -2215,6 +2234,7 @@ let blogBookmarksBetaCatPageTask;
   const roots=[...document.querySelectorAll('[itemprop="articleBody"],[data-testid="article-body"],.article-body,.article-content,.entry-content,.post-content,.publication-content,article,main,[role="main"]')];
   const ranked=roots.map(el=>{
    const copy=el.cloneNode(true);
+  preserveBookmarkMath(copy);
    copy.querySelectorAll('script,style,noscript,nav,footer,aside,header,form,button,svg,iframe,[aria-hidden="true"],[hidden],.ads,.comments,.related-posts,.sidebar,.tm-bookmarks-reading-length').forEach(x=>x.remove());
    // Preserve original heading structure without asking AI to invent navigation.
    for(const h of copy.querySelectorAll('h2,h3,h4,h5,h6')){
@@ -2325,7 +2345,22 @@ let blogBookmarksBetaCatPageTask;
    node.append(document.createTextNode(value.slice(last)));
   };
   let list=null,paragraph=null,code=null;
-  for(const line of String(text||'').split(/\r?\n/)){
+  const lines=String(text||'').split(/\r?\n/);
+  for(let i=0;i<lines.length;i++){
+   const line=lines[i];
+   if(!code&&/^\s*(\$\$|\\\[)\s*$/.test(line)){
+    const close=line.trim()==='$$'?'$$':'\\]';
+    let end=i+1;
+    while(end<lines.length&&lines[end].trim()!==close)end++;
+    if(end<lines.length){
+     list=paragraph=null;
+     const block=document.createElement('div');block.style.overflowX='auto';
+     const tex=lines.slice(i+1,end).join('\n');
+     try{if(typeof katex==='undefined'||tex.length>4000)throw Error('math');katex.render(tex,block,{output:'mathml',displayMode:true,throwOnError:true,trust:false,maxExpand:1000,maxSize:20});}
+     catch{block.textContent=lines.slice(i,end+1).join('\n');}
+     frag.append(block);i=end;continue;
+    }
+   }
    if(/^\s*```/.test(line)){list=paragraph=null;if(code){code=null;}else{code=document.createElement('pre');frag.append(code);}continue;}
    if(code){code.append(document.createTextNode(line+'\n'));continue;}
    if(!line.trim()){list=paragraph=null;continue;}
