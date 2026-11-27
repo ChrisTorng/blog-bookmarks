@@ -97,6 +97,7 @@ export function bookmarkArticleHtml(item,categories=[],relatedNotesHtml='',perma
       renderSummary(item.summary,item.url,mathMode)+'</div></div>' : '';
   const reading=showReading && item.reading_summary?.summary
     ? '<section class="my-3 min-w-0" aria-label="精讀摘要"><p class="font-bold">精讀摘要</p>'+readingStatsHtml(item.reading_summary)+'<div class="prose max-w-none text-sm dark:prose-invert">'+renderSummary(item.reading_summary.summary,item.url,mathMode)+'</div></section>' : '';
+  // Keep source metadata with the title, before the thumbnail and all summaries.
   const original=target!==item.url
     ? '<a href="'+esc(item.url)+'" target="_blank" rel="noopener noreferrer" class="hidden max-w-full truncate underline md:inline">原始網址：'+esc(item.url)+'</a>' : '';
   const tags=bookmarkTags(item,categories).map(t=>
