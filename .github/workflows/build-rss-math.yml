@@ -29,6 +29,8 @@ jobs:
           if test -f package-lock.json; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
       - run: npm test
       - run: npm run build
+      - name: Verify live PNG route
+        run: node live.test.mjs
       - name: Publish reproducible bundle and locked dependencies
         if: github.event_name != 'pull_request'
         run: |
