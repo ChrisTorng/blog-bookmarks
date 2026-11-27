@@ -1,6 +1,6 @@
 import MarkdownIt from 'markdown-it';
 import { esc } from './data.js';
-import { rssPreviewPath } from './rss-image.js';
+import { rssPreviewPath, webPreviewPath } from './rss-image.js';
 
 // Mirrors the public site's SafeMarkdown: untrusted inline HTML is inert,
 // CommonMark/GFM tables and autolinks work, and soft line breaks stay legible.
@@ -88,10 +88,11 @@ export function bookmarkArticleHtml(item,categories=[],relatedNotesHtml='',perma
     if(uri.protocol==='https:' && !uri.username && !uri.password)image=uri.href;
   }catch{}
   const rssPath=image && rssPreviewPath(item.id,image);
+  const webPath=[3,4].includes(item.status) && webPreviewPath(item.id,image);
   const thumbnail=image
     ? '<a href="'+esc(target)+'" target="_blank" rel="noopener noreferrer" '+
       'class="mt-2 block w-full max-w-56 md:col-start-2 md:row-span-2 md:mt-0 md:max-w-none" aria-label="開啟原始文章">'+
-      '<img src="'+esc(image)+'" '+(rssPath?'data-rss-preview="'+esc(rssPath)+'" ':'')+'alt="" width="176" loading="lazy" decoding="async" referrerpolicy="no-referrer" '+
+      '<img src="'+esc(webPath||image)+'" '+(rssPath?'data-rss-preview="'+esc(rssPath)+'" ':'')+'alt="" width="176" loading="lazy" decoding="async" referrerpolicy="no-referrer" '+
       'class="max-h-40 w-full rounded-md object-contain" style="max-width:100%;height:auto;max-height:160px;object-fit:contain"></a>'
     : '';
   const summary=item.summary
