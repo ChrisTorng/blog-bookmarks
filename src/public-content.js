@@ -1,9 +1,10 @@
 import MarkdownIt from 'markdown-it';
+import { mathMarkdown, renderMathTitle } from './math-content.js';
 import { esc } from './data.js';
 
 // Mirrors the public site's SafeMarkdown: untrusted inline HTML is inert,
 // CommonMark/GFM tables and autolinks work, and soft line breaks stay legible.
-const md = new MarkdownIt({html:false,linkify:true,breaks:true,typographer:false});
+const md = mathMarkdown(new MarkdownIt({html:false,linkify:true,breaks:true,typographer:false}));
 
 export const bookmarkPermalink = item => item.slug
   ? '/bookmarks/' + encodeURIComponent(item.slug) + '/'
@@ -49,8 +50,8 @@ export function bookmarkReferences(item) {
         icon+'<span class="min-w-0 break-words">'+esc(label)+'</span></a>';
     }).join('')+'</div>';
 }
-export function renderSummary(markdown,baseUrl) {
-  return md.render(String(markdown||'')).replace(/\b(href|src)="([^"]*)"/gi,(full,attr,encoded)=>{
+export function renderSummary(markdown,baseUrl,mathMode='web') {
+  return md.render(String(markdown||''),{mathMode}).replace(/\b(href|src)="([^"]*)"/gi,(full,attr,encoded)=>{
     const value=encoded.replaceAll('&amp;','&');
     try {
       const u=new URL(value,baseUrl);
@@ -77,9 +78,9 @@ export function readingStatsHtml(reading) {
 }
 // The article is the canonical public content contract: the Worker detail and
 // both RSS representations use this exact complete HTML, not parallel summaries.
-export function bookmarkArticleHtml(item,categories=[],relatedNotesHtml='',permalink='',showAdminLink=false,{showReading=true}={}) {
+export function bookmarkArticleHtml(item,categories=[],relatedNotesHtml='',permalink='',showAdminLink=false,{showReading=true,mathMode='web'}={}) {
   const target=bookmarkTarget(item),date=bookmarkDate(item);
-  const english='<p class="mt-1 text-sm leading-snug"><a class="text-primary-500 hover:text-primary-600" href="'+esc(target)+'" target="_blank" rel="noopener noreferrer">'+esc(item.title_original && item.title_original!==item.title ? item.title_original : '原始網頁')+'</a></p>';
+  const english='<p class="mt-1 text-sm leading-snug"><a class="text-primary-500 hover:text-primary-600" href="'+esc(target)+'" target="_blank" rel="noopener noreferrer">'+renderMathTitle(item.title_original && item.title_original!==item.title ? item.title_original : '原始網頁',mathMode)+'</a></p>';
   let image=null;
   try {
     const uri=new URL(item.image_url||'');
@@ -93,9 +94,9 @@ export function bookmarkArticleHtml(item,categories=[],relatedNotesHtml='',perma
     : '';
   const summary=item.summary
     ? '<div class="my-2 text-gray-700 dark:text-gray-200"><div class="prose max-w-none text-sm dark:prose-invert">'+
-      renderSummary(item.summary,item.url)+'</div></div>' : '';
+      renderSummary(item.summary,item.url,mathMode)+'</div></div>' : '';
   const reading=showReading && item.reading_summary?.summary
-    ? '<section class="my-3 min-w-0" aria-label="精讀摘要"><p class="font-bold">精讀摘要</p>'+readingStatsHtml(item.reading_summary)+'<div class="prose max-w-none text-sm dark:prose-invert">'+renderSummary(item.reading_summary.summary,item.url)+'</div></section>' : '';
+    ? '<section class="my-3 min-w-0" aria-label="精讀摘要"><p class="font-bold">精讀摘要</p>'+readingStatsHtml(item.reading_summary)+'<div class="prose max-w-none text-sm dark:prose-invert">'+renderSummary(item.reading_summary.summary,item.url,mathMode)+'</div></section>' : '';
   const original=target!==item.url
     ? '<a href="'+esc(item.url)+'" target="_blank" rel="noopener noreferrer" class="hidden max-w-full truncate underline md:inline">原始網址：'+esc(item.url)+'</a>' : '';
   const tags=bookmarkTags(item,categories).map(t=>
@@ -112,7 +113,7 @@ export function bookmarkArticleHtml(item,categories=[],relatedNotesHtml='',perma
     '<time class="text-gray-500" datetime="'+esc(date)+'">'+esc(date)+'</time>'+status+adminLink+'</div>'+
     '<div class="'+(image?'grid grid-cols-1 gap-x-4 md:grid-cols-[minmax(0,1fr)_11rem]':'block')+'">'+
     '<div class="min-w-0"><h1 class="text-xl leading-snug font-bold"><a class="text-primary-500 hover:text-primary-600 dark:hover:text-primary-400" href="'+
-    esc(permalink || bookmarkPermalink(item))+'">'+esc(item.title)+'</a></h1>'+
+    esc(permalink || bookmarkPermalink(item))+'">'+renderMathTitle(item.title,mathMode)+'</a></h1>'+
     english+'</div>'+thumbnail+(summary?'<div class="min-w-0">'+summary+'</div>':'')+'</div>'+reading+
     '<div class="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600 dark:text-gray-300">'+
     bookmarkSource(item.url)+original+'</div>'+

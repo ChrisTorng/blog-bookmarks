@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Blog Bookmarks
 // @namespace    https://christorng.idv.tw/
-// @version      0.5.37
+// @version      0.5.38
 // @description  BetaCat reading/navigation, popularity, mobile layout, background article tabs and bookmarks
 // @homepageURL  https://github.com/ChrisTorng/blog-bookmarks
 // @updateURL    https://raw.githubusercontent.com/ChrisTorng/blog-bookmarks/main/tampermonkey/BlogBookmarks.user.js
@@ -9,6 +9,7 @@
 // @match        https://hackernews.betacat.io/*
 // @match        *://*/*
 // @connect      christorng.idv.tw
+// @require      https://cdn.jsdelivr.net/npm/katex@0.16.45/dist/katex.min.js
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_addValueChangeListener
@@ -20,6 +21,23 @@
 
 // Share the existing no-store original-title response with the reading controls.
 let blogBookmarksBetaCatPageTask;
+
+
+// Extract explicit TeX before removing hidden accessibility trees or MathJax SVGs.
+function preserveBookmarkMath(root) {
+ const selectors='.katex-display,.katex,mjx-container,.MathJax,.ltx_Math,math,script[type^="math/tex"]';
+ const candidates=[...root.querySelectorAll(selectors)].filter(el=>!el.parentElement?.closest(selectors));
+ for(const el of candidates){
+  const annotation=el.querySelector('annotation[encoding="application/x-tex"],annotation[encoding="application/x-latex"]');
+  const tex=(annotation?.textContent||el.getAttribute('data-tex')||el.getAttribute('data-latex')||(el.matches('script[type^="math/tex"]')?el.textContent:'')||el.getAttribute('alttext')||el.querySelector('math[alttext]')?.getAttribute('alttext')||'').trim();
+  if(!tex||tex.length>4000)continue;
+  const display=el.matches('.katex-display,[display="block"],[display="true"],[type*="mode=display"]')||!!el.querySelector('math[display="block"]');
+  const value=tex.replace(/^\$\$([\s\S]*)\$\$$|^\$([\s\S]*)\$$|^\\\[([\s\S]*)\\\]$|^\\\(([\s\S]*)\\\)$/,(m,...groups)=>groups.slice(0,4).find(x=>x!==undefined)??m);
+  const node=root.ownerDocument.createElement('span');
+  node.textContent=display?'\n$$\n'+value+'\n$$\n':'$'+value+'$';
+  el.replaceWith(node);
+ }
+}
 
 // Cross-tab article capture. Idle on all non-BetaCat sites unless the admin
 // explicitly queued a matching URL. No separate installed script is required.
@@ -105,6 +123,7 @@ let blogBookmarksBetaCatPageTask;
  }
  function extractEmbedded(root,manual){
   const copy=root.cloneNode(true);
+  preserveBookmarkMath(copy);
   copy.querySelectorAll('script,style,noscript,nav,footer,aside,form,button,svg,iframe,[aria-hidden="true"],[hidden],.ads,.comments,.related-posts,.sidebar').forEach(el=>el.remove());
   const text=(copy.innerText||copy.textContent||'').trim().slice(0,90000);
   if(/^(just a moment|attention required|verify you are human|checking your browser|access denied|security verification|安全驗證)/i.test(document.title||''))return '';
@@ -154,6 +173,7 @@ let blogBookmarksBetaCatPageTask;
  };
  const read=node=>{
   const copy=node.cloneNode(true);
+  preserveBookmarkMath(copy);
   copy.querySelectorAll('script,style,noscript,nav,footer,aside,form,button,svg,iframe,[aria-hidden="true"],.ads,.comments,.related-posts,.sidebar').forEach(el=>el.remove());
   const blocks=[...copy.querySelectorAll('h1,h2,h3,p,li,blockquote')]
    .map(el=>(el.textContent||'').replace(/\s+/g,' ').trim()).filter(t=>t.length>=28);
@@ -2214,6 +2234,7 @@ let blogBookmarksBetaCatPageTask;
   const roots=[...document.querySelectorAll('[itemprop="articleBody"],[data-testid="article-body"],.article-body,.article-content,.entry-content,.post-content,.publication-content,article,main,[role="main"]')];
   const ranked=roots.map(el=>{
    const copy=el.cloneNode(true);
+  preserveBookmarkMath(copy);
    copy.querySelectorAll('script,style,noscript,nav,footer,aside,header,form,button,svg,iframe,[aria-hidden="true"],[hidden],.ads,.comments,.related-posts,.sidebar,.tm-bookmarks-reading-length').forEach(x=>x.remove());
    // Preserve original heading structure without asking AI to invent navigation.
    for(const h of copy.querySelectorAll('h2,h3,h4,h5,h6')){
@@ -2305,17 +2326,41 @@ let blogBookmarksBetaCatPageTask;
  function renderReadingMarkdown(target,text){
   const frag=document.createDocumentFragment();
   const inline=(node,value)=>{
-   const pattern=/(\*\*([^*\n]+)\*\*|__([^_\n]+)__|`([^`\n]+)`|\*([^*\n]+)\*)/g;
+   const pattern=/`([^`\n]+)`|\\\((.+?)\\\)|\\\[(.+?)\\\]|\$\$([^$\r\n]+?)\$\$|\$(?![\s$])([^$\r\n]+?)(?<![\s\\])\$(?![\d$])|\*\*([^*\n]+)\*\*|__([^_\n]+)__|\*([^*\n]+)\*/g;
    let last=0;
    for(const m of value.matchAll(pattern)){
     node.append(document.createTextNode(value.slice(last,m.index)));
-    const child=document.createElement(m[2]||m[3]?'strong':m[4]?'code':'em');
-    child.textContent=m[2]||m[3]||m[4]||m[5];node.append(child);last=m.index+m[0].length;
+    const tex=m[2]??m[3]??m[4]??m[5];
+    if(tex!==undefined){
+     const math=document.createElement('span');math.className='notranslate';
+     try{if(typeof katex==='undefined'||tex.length>4000)throw Error('math');katex.render(tex,math,{output:'mathml',displayMode:!!(m[3]||m[4]),throwOnError:true,trust:false,maxExpand:1000,maxSize:20});}
+     catch{math.textContent=m[0];}
+     node.append(math);
+    }else{
+     const child=document.createElement(m[1]?'code':m[6]||m[7]?'strong':'em');
+     child.textContent=m[1]||m[6]||m[7]||m[8];node.append(child);
+    }
+    last=m.index+m[0].length;
    }
    node.append(document.createTextNode(value.slice(last)));
   };
   let list=null,paragraph=null,code=null;
-  for(const line of String(text||'').split(/\r?\n/)){
+  const lines=String(text||'').split(/\r?\n/);
+  for(let i=0;i<lines.length;i++){
+   const line=lines[i];
+   if(!code&&/^\s*(\$\$|\\\[)\s*$/.test(line)){
+    const close=line.trim()==='$$'?'$$':'\\]';
+    let end=i+1;
+    while(end<lines.length&&lines[end].trim()!==close)end++;
+    if(end<lines.length){
+     list=paragraph=null;
+     const block=document.createElement('div');block.style.overflowX='auto';
+     const tex=lines.slice(i+1,end).join('\n');
+     try{if(typeof katex==='undefined'||tex.length>4000)throw Error('math');katex.render(tex,block,{output:'mathml',displayMode:true,throwOnError:true,trust:false,maxExpand:1000,maxSize:20});}
+     catch{block.textContent=lines.slice(i,end+1).join('\n');}
+     frag.append(block);i=end;continue;
+    }
+   }
    if(/^\s*```/.test(line)){list=paragraph=null;if(code){code=null;}else{code=document.createElement('pre');frag.append(code);}continue;}
    if(code){code.append(document.createTextNode(line+'\n'));continue;}
    if(!line.trim()){list=paragraph=null;continue;}
@@ -2325,7 +2370,7 @@ let blogBookmarksBetaCatPageTask;
     const link=heading[2].match(/^\[((?:\\.|[^\]])+)\]\((https?:\/\/[^\s)]+)\)$/);
     let url;try{if(link)url=new URL(link[2]);}catch{}
     if(url&&url.hash&&identity(url.href)===identity(source)){
-     const a=document.createElement('a');a.href=url.href;a.textContent=link[1].replace(/\\([\[\]\\])/g,'$1');
+     const a=document.createElement('a');a.href=url.href;inline(a,link[1].replace(/\\([\[\]\\])/g,'$1'));
      a.addEventListener('click',event=>{
       if(event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
       const hash=url.hash.slice(1);let target=null;

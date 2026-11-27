@@ -11,7 +11,8 @@
     "test:integration": "node tests/integration.mjs"
   },
   "dependencies": {
-    "markdown-it": "^14.1.0"
+    "markdown-it": "^14.1.0",
+    "katex": "0.16.45"
   },
   "devDependencies": {
     "wrangler": "^4.153.0"
