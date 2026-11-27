@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {rssPreviewPath,rssPreviewHtml,rssImage} from '../src/rss-image.js';
+import {rssPreviewPath,rssPreviewHtml,rssImage,webPreviewPath,webImage} from '../src/rss-image.js';
 import {bookmarkArticleHtml} from '../src/public-content.js';
 import {rss} from '../src/feeds.js';
 const id='12345678-1234-1234-1234-123456789abc', source='https://hackernews.betacat.io/image/123.webp', origin='https://example.com';
@@ -8,11 +8,13 @@ const item={id,slug:'example',url:'https://example.net/article',title:'Test',sta
 const path=rssPreviewPath(id,source);
 test('public article retains original image; both RSS representations use the same absolute JPEG URL',()=>{
  const html=bookmarkArticleHtml(item);
- assert.ok(html.includes('src="'+source+'"'));
+ assert.ok(html.includes('src="'+webPreviewPath(id,source)+'"'));
+ assert.ok(bookmarkArticleHtml({...item,status:2}).includes('src="'+source+'"'));
  assert.ok(html.includes('data-rss-preview="'+path+'"'));
  const feed=rss([item],origin);
  assert.equal(feed.split(origin+path).length-1,2);
  assert.ok(!feed.includes(source));
+ assert.ok(!feed.includes('/preview-image/'));
  assert.ok(feed.includes('https://www.google.com/s2/favicons?'));
  assert.ok(feed.includes('<guid isPermaLink="true">'+origin+'/bookmarks/example/'));
  assert.ok(!rssPreviewHtml(html,origin).includes('loading="lazy" decoding="async" referrerpolicy="no-referrer" class="max-h-40'));
@@ -46,4 +48,24 @@ test('tracking parameters redirect to the same canonical image without database 
  }
  const result=await worker.fetch(new Request(origin+path+'?url=https://other.net'),env,{});
  assert.equal(result.status,404);
+});
+
+test('public web preview relays original BetaCats bytes without JPEG transformation',async()=>{
+ const web=webPreviewPath(id,source);
+ assert.match(web,/\/preview-image\/.*\.webp$/);
+ assert.equal(webPreviewPath(id,'https://other.net/test.webp'),'');
+ const bytes=new Uint8Array([82,73,70,70,4,0,0,0,87,69,66,80]);
+ const result=await webImage(new Request(origin+web),db({image_url:source}),async(url,opts)=>{
+   assert.equal(url,source);assert.equal(opts.headers.Accept,'image/webp');assert.equal(opts.redirect,'manual');assert.equal(opts.cf,undefined);
+   return new Response(bytes,{headers:{'Content-Type':'image/webp'}});
+ });
+ assert.equal(result.status,200);assert.equal(result.headers.get('Content-Type'),'image/webp');
+ assert.deepEqual(new Uint8Array(await result.arrayBuffer()),bytes);
+ assert.equal((await webImage(new Request(origin+web),db(null))).status,404);
+ assert.equal((await webImage(new Request(origin+web),db({image_url:'https://other.net/test.webp'}))).status,404);
+ assert.equal((await webImage(new Request(origin+web),db({image_url:source}),async()=>new Response('x',{status:404}))).status,404);
+ assert.equal((await webImage(new Request(origin+web),db({image_url:source}),async()=>new Response('x',{headers:{'Content-Type':'text/html'}}))).status,502);
+ const {default:worker}=await import('../src/index.js');
+ const tracked=await worker.fetch(new Request(origin+web+'?utm_source=chatgpt.com'),{}, {});
+ assert.equal(tracked.status,308);assert.equal(tracked.headers.get('Location'),origin+web);
 });
