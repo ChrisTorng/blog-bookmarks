@@ -48,35 +48,7 @@ export function mathMarkdown(md){
  // Markdown-it skips code spans/fences before invoking these rules.
  md.inline.ruler.before('escape','math_inline',(state,silent)=>{
   const start=state.pos;
-  if(state.src[start]!=='
-  const part=mathParts(tail)[0];
-  if(!part||part.tex===undefined)return false;
-  if(!silent){const token=state.push('math_inline','math',0);token.content=part.tex;}
-  state.pos+=part.raw.length;
-  return true;
- });
- md.block.ruler.before('fence','math_block',(state,start,end,silent)=>{
-  const first=state.src.slice(state.bMarks[start]+state.tShift[start],state.eMarks[start]);
-  const open=first.startsWith('$$')?'$$':first.startsWith('\\[')?'\\[':null;
-  if(!open)return false;
-  const close=open==='$$'?'$$':'\\]';
-  let text=first.slice(2),line=start;
-  while(!text.trimEnd().endsWith(close)&&++line<end){
-   text+='\n'+state.src.slice(state.bMarks[line]+state.tShift[line],state.eMarks[line]);
-  }
-  if(!text.trimEnd().endsWith(close))return false;
-  const value=text.trimEnd().slice(0,-2).trim();
-  if(!value)return false;
-  if(silent)return true;
-  const token=state.push('math_block','math',0);token.block=true;token.content=value;token.map=[start,line+1];
-  state.line=line+1;
-  return true;
- },{alt:['paragraph','reference','blockquote','list']});
- md.renderer.rules.math_inline=(tokens,i,options,env)=>formula(tokens[i].content,false,env.mathMode);
- md.renderer.rules.math_block=(tokens,i,options,env)=>'<div>'+formula(tokens[i].content,true,env.mathMode)+'</div>\n';
- return md;
-}
-&&state.src[start]!=='\\')return false;
+  if(state.src[start]!=='$'&&state.src[start]!=='\\')return false;
   const tail=state.src.slice(start);
   const part=mathParts(tail)[0];
   if(!part||part.tex===undefined)return false;
