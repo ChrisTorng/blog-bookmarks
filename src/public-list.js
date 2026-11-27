@@ -48,10 +48,10 @@ export async function publicBookmarksList(req, env) {
   const cards = result.items.map(item =>
     bookmarkArticleHtml(item, categories, notes[item.id] || '', bookmarkPermalink(item), true, {showReading:false})
   ).join('');
-  const prev = result.page > 1 ? '<a class="text-primary-500" href="' +
-    esc(buildLink({ page:result.page-1 })) + '">← 上一頁</a>' : '<span></span>';
-  const next = result.page < result.pages ? '<a class="text-primary-500" href="' +
-    esc(buildLink({ page:result.page+1 })) + '">下一頁 →</a>' : '<span></span>';
+  const prev = result.page > 1 ? '<a class="text-primary-500" aria-label="上一頁" href="' +
+    esc(buildLink({ page:result.page-1 })) + '">←</a>' : '<span></span>';
+  const next = result.page < result.pages ? '<a class="text-primary-500" aria-label="下一頁" href="' +
+    esc(buildLink({ page:result.page+1 })) + '">→</a>' : '<span></span>';
   const pageLinks = result.pages > 1 ? '<nav aria-label="分頁" class="mt-6 flex items-center justify-between gap-3 text-sm">' +
     prev + '<span>' + result.page + ' / ' + result.pages + '</span>' + next + '</nav>' : '';
   const body = '<section class="w-full py-5 pb-12">' +

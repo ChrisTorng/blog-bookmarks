@@ -6,8 +6,8 @@ const pageUrl = item => '/bookmarks/' + encodeURIComponent(item.slug) + '/';
 
 function adjacentNavigation({prev,next}={}) {
   if (!prev && !next) return '';
-  const link=(item,direction)=>item ? '<a href="'+esc(pageUrl(item))+'" rel="'+direction+'" class="min-w-0 break-words '+(direction==='next'?'text-right ':'')+'text-primary-500 hover:text-primary-600">'+(direction==='prev'?'← 上一篇：'+esc(item.title):'下一篇：'+esc(item.title)+' →')+'</a>' : '<span></span>';
-  return '<nav aria-label="上下一篇" class="my-3 grid grid-cols-2 gap-3 text-sm">'+link(prev,'prev')+link(next,'next')+'</nav>';
+  const link=(item,direction)=>item ? '<a href="'+esc(pageUrl(item))+'" rel="'+direction+'" aria-label="'+(direction==='prev'?'上一篇：':'下一篇：')+esc(item.title)+'" class="min-w-0 break-words '+(direction==='next'?'text-right ':'')+'text-primary-500 hover:text-primary-600">'+(direction==='prev'?'← '+esc(item.title):esc(item.title)+' →')+'</a>' : '<span class="hidden sm:block"></span>';
+  return '<nav aria-label="上下一篇" class="my-2 grid grid-cols-1 gap-1 text-sm sm:grid-cols-2 sm:gap-3">'+link(prev,'prev')+link(next,'next')+'</nav>';
 }
 
 export async function publicBookmarkPage(request,item,categories=[],relatedNotesHtml='',adjacent={}) {
@@ -17,7 +17,7 @@ export async function publicBookmarkPage(request,item,categories=[],relatedNotes
   const description = String(item.summary || item.title).replace(/\[([^\]]+)\]\([^)]+\)/g,'$1')
     .replace(/[*_~#]/g,'').slice(0,180);
   const body = '<section class="w-full py-5 pb-12">'+
-    '<a class="text-primary-500 text-sm" href="/bookmarks/">← 書籤列表</a>'+
+    '<a class="text-primary-500 text-sm" href="/bookmarks/"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" class="inline-block align-text-bottom"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4" cy="6" r="1" fill="currentColor"/><circle cx="4" cy="12" r="1" fill="currentColor"/><circle cx="4" cy="18" r="1" fill="currentColor"/></svg> 書籤列表</a>'+
     adjacentNavigation(adjacent)+'<div class="mt-4">'+bookmarkArticleHtml(item,categories,relatedNotesHtml,'',true)+'</div>'+adjacentNavigation(adjacent)+'</section>';
   const meta = '<meta name="description" content="'+esc(description)+'">'+
     '<meta name="robots" content="index,follow">'+
