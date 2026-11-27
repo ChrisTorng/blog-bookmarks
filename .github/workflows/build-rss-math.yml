@@ -7,6 +7,10 @@ on:
       - 'rss-math/package.json'
       - 'rss-math/package-lock.json'
       - '.github/workflows/build-rss-math.yml'
+  pull_request:
+    paths:
+      - 'rss-math/**'
+      - '.github/workflows/build-rss-math.yml'
   workflow_dispatch:
 permissions:
   contents: write
@@ -26,6 +30,7 @@ jobs:
       - run: npm test
       - run: npm run build
       - name: Publish reproducible bundle and locked dependencies
+        if: github.event_name != 'pull_request'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
