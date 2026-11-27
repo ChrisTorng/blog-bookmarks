@@ -79,9 +79,9 @@ export function validate(raw) {
   if(tags.length>30 || tags.some(x=>x.length>80)) throw new Error('標籤過多或過長');
   return {url,normalized_url,redirect_url:normalizedRedirect,title,title_original:title_original||null,title_zh:title_zh||null,summary,image_url,tags,references:normalizeReferences(raw.references||[])};
 }
-export async function get(db,id,includePrivate=false) {
+export async function get(db,id,includePrivate=false,includeReading=true) {
   const row=await db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.id=?${includePrivate?'':' AND b.stage>=3'}`).bind(id).first();
-  return includePrivate?decode(row):(await attachPublicReading(db,[publicEntry(decode(row))]))[0];
+  return includePrivate?decode(row):includeReading?(await attachPublicReading(db,[publicEntry(decode(row))]))[0]:publicEntry(decode(row));
 }
 export async function getBySlug(db,slug) {
   const row=await db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.slug=? AND b.stage>=3 LIMIT 1`).bind(slug).first();

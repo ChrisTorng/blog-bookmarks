@@ -253,10 +253,11 @@ export async function api(req,env,url,ctx){
   // A private/deleted bookmark is never exposed by the embed endpoint.
   const embed=p.match(/^\/bookmarks\/api\/embed\/([0-9a-f-]{36})\/?$/);
   if(embed && req.method==='GET'){
-    const item=await get(env.DB,embed[1]);
+    const showReading=url.searchParams.get('reading')!=='0';
+    const item=await get(env.DB,embed[1],false,showReading);
     if(!item)return json({error:'書籤未公開或不存在'},404);
     const categories=await tagsList(env.DB);
-    return new Response(bookmarkArticleHtml(item,categories,'',bookmarkPermalink(item),false,{showReading:url.searchParams.get('reading')!=='0'}),{
+    return new Response(bookmarkArticleHtml(item,categories,'',bookmarkPermalink(item),false,{showReading}),{
       headers:{'Content-Type':'text/html; charset=utf-8',
         'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}
     });

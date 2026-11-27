@@ -80,3 +80,14 @@ test('list shows short summary only, detail and RSS retain reading summary and s
   assert.match(bookmarkArticleHtml(entry,categories),/完整精讀內容/);
   assert.match(rss([entry],'https://christorng.idv.tw','','',categories),/完整精讀內容/);
 });
+
+
+test('canonical short embed keeps both title destinations and never exposes long reading summary',()=>{
+  const entry={...item,reading_summary:{summary:'LONG_READING_SUMMARY'}};
+  const html=bookmarkArticleHtml(entry,categories,'',bookmarkPermalinkForTest(entry),false,{showReading:false});
+  assert.doesNotMatch(html,/LONG_READING_SUMMARY|書籤永久連結/);
+  assert.match(html,/<h1[^>]*><a[^>]*href="\/bookmarks\/[^"]+"[^>]*>/);
+  assert.match(html,/<p class="mt-1 text-sm leading-snug"><a[^>]*target="_blank"/);
+  assert.match(html,/#科技/);
+});
+function bookmarkPermalinkForTest(entry){return '/bookmarks/'+entry.slug+'/'}
