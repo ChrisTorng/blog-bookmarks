@@ -65,7 +65,7 @@ const worker = {
         const [items,tags]=await Promise.all([publicFeedItems(env.DB,tag),tagsList(env.DB)]);
         const selected=tags.find(t=>t.id===tag);
         const tagLabel=selected?.name_zh||selected?.name||tag;
-        const notes=await relatedNoteHtml(env,items);
+        const notes=await relatedNoteHtml(env,items,'rss');
         return reply(rss(items,env.SITE_URL||'https://christorng.idv.tw',tag,tagLabel,tags,notes),'application/rss+xml; charset=utf-8');
       }catch(error){
         console.error('Bookmark RSS failed',String(error));
