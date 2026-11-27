@@ -1,4 +1,5 @@
 import { esc } from './data.js';
+import { rssPreviewHtml } from './rss-image.js';
 import { bookmarkArticleHtml, bookmarkPermalink, bookmarkTags } from './public-content.js';
 
 const siteTitle = 'ChrisTorng 學習天地';
@@ -38,7 +39,7 @@ export function rss(items, siteUrl, tag = '', tagLabel = '', categories = [], no
   + items.map((item, index) => {
    const url = base + bookmarkPermalink(item);
    const guid = item.rss_guid || url;
-   const content = bookmarkArticleHtml(item, categories, noteHtmlById[item.id]);
+   const content = rssPreviewHtml(bookmarkArticleHtml(item, categories, noteHtmlById[item.id]),base);
    const labels = bookmarkTags(item, categories);
    // A migrated bookmark keeps its original GUID to avoid RSS duplicates.
    return '<item><title>' + esc(item.title) + '</title><link>' + esc(url) + '</link>'
