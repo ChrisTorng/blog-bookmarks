@@ -7,7 +7,7 @@ const source = readFileSync(new URL('../tampermonkey/BlogBookmarks.user.js', imp
 test('userscript installs from blog-bookmarks and parses', () => {
   assert.doesNotThrow(() => new Function(source));
   assert.match(source, /\/\/ @name\s+Blog Bookmarks\n/);
-  assert.match(source, /\/\/ @version\s+0\.5\.33\n/);
+  assert.match(source, /\/\/ @version\s+0\.5\.38\n/);
   assert.match(source, /raw\.githubusercontent\.com\/ChrisTorng\/blog-bookmarks\/main\/tampermonkey\/BlogBookmarks\.user\.js/);
   assert.match(source, /\/\/ @match\s+https:\/\/hackernews\.betacat\.io\/\*/);
   assert.doesNotMatch(source, /cloudmark-christorng|cloudmark\.site/);
@@ -176,11 +176,11 @@ test('capture bridge registers only source links opened from quick review and wa
 });
 
 test('already-open source tab receives a manual capture request without navigation',()=>{
- const bridge=source.slice(source.indexOf('(function articleCaptureBridge()'),source.indexOf('\n\n(() => {'));
+ const bridge=source.slice(source.indexOf('function preserveBookmarkMath(root)'),source.indexOf('\n\n(() => {'));
  const jobsKey='blog-bookmarks:capture-jobs:v1',resultsKey='blog-bookmarks:capture-results:v1';
  const listeners=new Map(),store=new Map();
  const paragraph={textContent:'A meaningful research paragraph. '.repeat(25)};
- const article={cloneNode:()=>({querySelectorAll:q=>q.startsWith('script')?[]:[paragraph,paragraph],textContent:paragraph.textContent})};
+ const article={cloneNode:()=>({querySelectorAll:q=>q.startsWith('script')||q.startsWith('.katex-display')?[]:[paragraph,paragraph],textContent:paragraph.textContent})};
  const button={style:{},addEventListener(){},remove(){}};
  const doc={readyState:'complete',title:'Research publication',body:{textContent:paragraph.textContent,appendChild(){}},querySelectorAll:()=>[article],createElement:()=>button,addEventListener(){},removeEventListener(){}};
  const win={addEventListener(){}};
@@ -207,7 +207,7 @@ test('embedded capture is authorized by matching pending job and never posts tex
 
 
 test('matching direct iframe returns stable text through GM storage without opening a new tab',()=>{
- const bridge=source.slice(source.indexOf('(function articleCaptureBridge()'),source.indexOf('\n\n(() => {'));
+ const bridge=source.slice(source.indexOf('function preserveBookmarkMath(root)'),source.indexOf('\n\n(() => {'));
  const jobsKey='blog-bookmarks:capture-jobs:v1',resultsKey='blog-bookmarks:capture-results:v1';
  const id='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', url='https://example.org/article';
  const job={id,url,nonce:'frame-job',createdAt:Date.now()};
@@ -233,8 +233,8 @@ test('matching direct iframe returns stable text through GM storage without open
  assert.match(source,/position:fixed!important;z-index:2147483639/);
  assert.doesNotMatch(source,/blog-bookmarks:reading-position/);
  assert.match(source,/width:32px!important;height:32px!important/);
- assert.match(source,/value\.summary&&value\.auto_expand&&!touched/);
- assert.match(source,/精讀摘要：顯示／恢復/);
+ assert.doesNotMatch(source,/value\.summary&&value\.auto_expand&&!touched/);
+ assert.match(source,/書籤管理：顯示／恢復/);
 });
 
  test('directly reopened known articles and explicit test links can trigger reading insights',()=>{
