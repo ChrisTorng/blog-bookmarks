@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { bookmarkArticleHtml, renderSummary } from '../src/public-content.js'
 import { rss } from '../src/feeds.js'
+import { rssPreviewHtml } from '../src/rss-image.js'
 
 const categories=[{id:'tech',name:'Tech',name_zh:'科技',count:1}]
 const item={
@@ -55,7 +56,9 @@ test('remote thumbnail appears once in permalink, RSS and embedded HTML; mobile 
   assert.match(html, /md:grid-cols-\[minmax\(0,1fr\)_11rem\]/);
   assert.ok(html.indexOf('<h1') < html.indexOf('sample.webp'));
   assert.ok(html.indexOf('sample.webp') < html.indexOf('my-2 text-gray-700'));
-  assert.ok(rssXml.includes('<content:encoded><![CDATA['+html+']]></content:encoded>'));
+  assert.ok(rssXml.includes('<content:encoded><![CDATA['+rssPreviewHtml(html,'https://christorng.idv.tw')+']]></content:encoded>'));
+  assert.doesNotMatch(rssXml,/sample\.webp/);
+  assert.match(rssXml,/https:\/\/christorng\.idv\.tw\/bookmarks\/rss-image\//);
   assert.equal((html.match(/sample\.webp/g)||[]).length,1);
   assert.doesNotMatch(bookmarkArticleHtml({...item,image_url:null},categories),/md:grid-cols-|sample.webp/);
   assert.doesNotMatch(bookmarkArticleHtml({...item,image_url:'javascript:alert(1)'},categories),/javascript:alert/);
