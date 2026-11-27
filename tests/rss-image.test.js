@@ -33,3 +33,17 @@ test('fixed JPEG transformation; no negotiation or arbitrary URL; reject non-JPE
  assert.equal((await rssImage(req,db({image_url:source}),async()=>new Response('not jpeg',{headers:{'Content-Type':'image/webp'}}))).status,502);
  assert.equal((await rssImage(new Request(origin+path+'?url=https://other.net'),db(null))).status,404);
 });
+
+test('tracking parameters redirect to the same canonical image without database work',async()=>{
+ const {default:worker}=await import('../src/index.js');
+ const env={DB:{prepare(){throw Error('unexpected database access')}}};
+ for(const query of ['?utm_source=chatgpt.com','?utm_source=chatgpt.com&utm_medium=referral','?fbclid=123']){
+  for(const method of ['GET','HEAD']){
+   const result=await worker.fetch(new Request(origin+path+query,{method}),env,{});
+   assert.equal(result.status,308);
+   assert.equal(result.headers.get('Location'),origin+path);
+  }
+ }
+ const result=await worker.fetch(new Request(origin+path+'?url=https://other.net'),env,{});
+ assert.equal(result.status,404);
+});

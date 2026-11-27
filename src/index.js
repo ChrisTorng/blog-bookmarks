@@ -46,6 +46,13 @@ const worker = {
    return new Response(null,{status:response.status,headers:response.headers});
   }
   const url=new URL(req.url), path=url.pathname;
+  // Link wrappers append tracking parameters. Canonicalize before the public
+  // cache so all readers share one JPEG cache key. No query controls the source.
+  if (req.method === 'GET' && rssImagePattern.test(path) && url.search &&
+      [...url.searchParams.keys()].every(key => /^(?:utm_[a-z0-9_]+|fbclid|gclid|msclkid)$/i.test(key))) {
+    url.search = '';
+    return new Response(null,{status:308,headers:{Location:url.href,'Cache-Control':'public, max-age=3600'}});
+  }
   // The default entrypoint always runs. Only anonymous public HTML/XML can
   // reach the separate cacheable entrypoint. Never cache admin or JSON APIs.
   if (!inner && req.method === 'GET' && env.AUTH_MODE !== 'local' &&
