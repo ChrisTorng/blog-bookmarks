@@ -31518,9 +31518,9 @@ function validate(raw) {
   return { url, normalized_url, redirect_url: normalizedRedirect, title, title_original: title_original || null, title_zh: title_zh || null, summary, image_url, tags, references: normalizeReferences(raw.references || []) };
 }
 __name(validate, "validate");
-async function get(db, id, includePrivate = false) {
+async function get(db, id, includePrivate = false, includeReading = true) {
   const row = await db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.id=?${includePrivate ? "" : " AND b.stage>=3"}`).bind(id).first();
-  return includePrivate ? decode3(row) : (await attachPublicReading(db, [publicEntry(decode3(row))]))[0];
+  return includePrivate ? decode3(row) : includeReading ? (await attachPublicReading(db, [publicEntry(decode3(row))]))[0] : publicEntry(decode3(row));
 }
 __name(get, "get");
 async function getBySlug(db, slug) {
@@ -33783,10 +33783,11 @@ async function api(req, env, url, ctx) {
     }
     const embed = p.match(/^\/bookmarks\/api\/embed\/([0-9a-f-]{36})\/?$/);
     if (embed && req.method === "GET") {
-      const item = await get(env.DB, embed[1]);
+      const showReading = url.searchParams.get("reading") !== "0";
+      const item = await get(env.DB, embed[1], false, showReading);
       if (!item) return json2({ error: "\u66F8\u7C64\u672A\u516C\u958B\u6216\u4E0D\u5B58\u5728" }, 404);
       const categories = await tagsList(env.DB);
-      return new Response(bookmarkArticleHtml(item, categories, "", bookmarkPermalink(item), false, { showReading: url.searchParams.get("reading") !== "0" }), {
+      return new Response(bookmarkArticleHtml(item, categories, "", bookmarkPermalink(item), false, { showReading }), {
         headers: {
           "Content-Type": "text/html; charset=utf-8",
           "Cache-Control": "no-store",
