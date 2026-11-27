@@ -27,11 +27,12 @@ test('same full HTML is embedded in both public permalink and RSS, never unparse
   assert.ok(html.includes('&nbsp;<span class="min-w-0 truncate">'))
   assert.ok(!html.includes('<script>'))
   assert.ok(!html.includes('[Hacker news 討論]('))
-  assert.ok(feed.includes('<content:encoded><![CDATA['+html+']]></content:encoded>'))
+  assert.ok(feed.includes('<content:encoded><![CDATA['+html.replace(/\b(href|src)="\/(?!\/)/g,(_,attr)=>attr+'="https://christorng.idv.tw/')+']]></content:encoded>'))
   assert.ok(feed.includes('<category>科技</category>'))
   const withReference=bookmarkArticleHtml({...item,tags:['Tech','Tech']},categories,'<article><h2>隨筆內容</h2></article>','/bookmarks/'+item.slug+'/')
   assert.match(withReference, /<hr><p><strong>引用隨筆<\/strong><\/p>/)
-  assert.match(withReference, /<p class="mt-2 text-xs"><a[^>]+>書籤永久連結<\/a><\/p>/)
+  assert.doesNotMatch(withReference, /書籤永久連結/)
+  assert.match(withReference, /<h1[^>]*><a[^>]*href="\/bookmarks\/[^"]+"[^>]*>/)
   assert.match(withReference, /#科技<\/a> <a[^>]+>#科技<\/a>/)
   assert.ok(feed.includes('/bookmarks/'+item.slug+'/'))
   assert.ok(feed.includes('&lt;article'))
@@ -55,7 +56,7 @@ test('remote thumbnail appears once in permalink, RSS and embedded HTML; mobile 
   assert.match(html, /md:grid-cols-\[minmax\(0,1fr\)_11rem\]/);
   assert.ok(html.indexOf('<h1') < html.indexOf('sample.webp'));
   assert.ok(html.indexOf('sample.webp') < html.indexOf('my-2 text-gray-700'));
-  assert.ok(rssXml.includes('<content:encoded><![CDATA['+html+']]></content:encoded>'));
+  assert.ok(rssXml.includes('<content:encoded><![CDATA['+html.replace(/\b(href|src)="\/(?!\/)/g,(_,attr)=>attr+'="https://christorng.idv.tw/')+']]></content:encoded>'));
   assert.equal((html.match(/sample\.webp/g)||[]).length,1);
   assert.doesNotMatch(bookmarkArticleHtml({...item,image_url:null},categories),/md:grid-cols-|sample.webp/);
   assert.doesNotMatch(bookmarkArticleHtml({...item,image_url:'javascript:alert(1)'},categories),/javascript:alert/);
@@ -68,4 +69,14 @@ test('public page admin action opens the exact bookmark; RSS and embedded defaul
   assert.ok(html.includes('後台管理'));
   assert.ok(!bookmarkArticleHtml(item,categories).includes('/bookmarks/admin/'));
   assert.ok(!rss([item],'https://christorng.idv.tw','','',categories).includes('/bookmarks/admin/'));
+});
+
+test('list shows short summary only, detail and RSS retain reading summary and split title links',()=>{
+  const entry={...item,reading_summary:{summary:'完整精讀內容'}};
+  const list=bookmarkArticleHtml(entry,categories,'','',false,{showReading:false});
+  assert.doesNotMatch(list,/完整精讀內容|書籤永久連結/);
+  assert.match(list,/<h1[^>]*><a[^>]*href="\/bookmarks\/[^"]+\/"/);
+  assert.match(list,/<p class="mt-1 text-sm leading-snug"><a[^>]*href="https:\/\/claude.ai\/artifact\/abc" target="_blank"/);
+  assert.match(bookmarkArticleHtml(entry,categories),/完整精讀內容/);
+  assert.match(rss([entry],'https://christorng.idv.tw','','',categories),/完整精讀內容/);
 });

@@ -16,7 +16,7 @@ export async function publicBookmarksList(req, env) {
     page: Math.max(1, Math.min(100000, Number(p.get('page')) || 1)),
   };
   const [result, categories] = await Promise.all([
-    list(env.DB, { ...filter, privateList: false, filter: 'published' }),
+    list(env.DB, { ...filter, privateList: false, filter: 'published', includeReading:false }),
     tagsList(env.DB),
   ]);
   const notes = await relatedNoteHtml(env, result.items);
@@ -46,7 +46,7 @@ export async function publicBookmarksList(req, env) {
   const radio = (value,title) => '<option value="' + value + '"' + (filter.sort === value ? ' selected' : '') +
     '>' + title + '</option>';
   const cards = result.items.map(item =>
-    bookmarkArticleHtml(item, categories, notes[item.id] || '', bookmarkPermalink(item), true)
+    bookmarkArticleHtml(item, categories, notes[item.id] || '', bookmarkPermalink(item), true, {showReading:false})
   ).join('');
   const prev = result.page > 1 ? '<a class="text-primary-500" href="' +
     esc(buildLink({ page:result.page-1 })) + '">← 上一頁</a>' : '<span></span>';

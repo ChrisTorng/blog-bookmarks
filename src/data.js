@@ -96,7 +96,7 @@ export async function byUrl(db,url) {
   const row=await db.prepare(`SELECT ${fields} FROM bookmarks b WHERE b.normalized_url=? OR b.redirect_url=? LIMIT 1`).bind(normalUrl(url),normalUrl(url)).first();
   return decode(row);
 }
-export async function list(db, {privateList=false,filter='pending',page=1,tag='',sort='new',q='',from='',to=''}={}) {
+export async function list(db, {privateList=false,filter='pending',page=1,tag='',sort='new',q='',from='',to='',includeReading=true}={}) {
   const n=Math.max(1,Math.min(100000,Number(page)||1)), params=[], conditions=[];
   if(!privateList) conditions.push('b.stage>=3');
   else if(filter==='pending') conditions.push('b.stage IN (0,1) AND b.deferred=0');
@@ -131,7 +131,7 @@ export async function list(db, {privateList=false,filter='pending',page=1,tag=''
   const order=sort==='old'?`${dateCol} ASC,b.id ASC`:sort==='title'?'b.title COLLATE NOCASE ASC,b.id DESC':sort==='recommended'?`b.stage DESC,${dateCol} DESC,b.id DESC`:`${dateCol} DESC,b.id DESC`;
   const rows=await db.prepare(`SELECT ${fields} FROM bookmarks b${where} ORDER BY ${order} LIMIT 20 OFFSET ?`).bind(...params,(n-1)*20).all();
   const items=rows.results.map(decode).map(row=>privateList?row:publicEntry(row));
-  return {items:privateList?items:await attachPublicReading(db,items),page:n,pages:Math.max(1,Math.ceil(total/20)),total};
+  return {items:privateList||!includeReading?items:await attachPublicReading(db,items),page:n,pages:Math.max(1,Math.ceil(total/20)),total};
 }
 // Fast review: show newest decisions above the oldest undecided bookmarks.
 // Reading an item must not alter its chronological position in the queue.
@@ -325,4 +325,15 @@ export async function publicSitemapEntries(db) {
     FROM bookmarks b WHERE b.stage>=3 AND b.slug IS NOT NULL AND b.slug <> ''
     ORDER BY b.id`).all();
   return results;
+}
+
+// Use original timestamps (public records expose only dates) and the public list's
+// indexed sort expression. Fetch at most one public neighbor in each direction.
+export async function adjacentBookmarks(db,id) {
+  const date = "CASE WHEN stage=4 THEN COALESCE(starred_at,published_at,created_at) WHEN stage=3 THEN COALESCE(published_at,created_at) ELSE created_at END";
+  const current = await db.prepare(`SELECT (${date}) AS stamp FROM bookmarks WHERE id=? AND stage>=3`).bind(id).first();
+  if (!current) return {};
+  const lookup = (comparison, order) => db.prepare(`SELECT id,slug,title FROM bookmarks WHERE stage>=3 AND slug IS NOT NULL AND slug<>'' AND ((${date}),id) ${comparison} (?,?) ORDER BY (${date}) ${order},id ${order} LIMIT 1`).bind(current.stamp,id).first();
+  const [prev,next] = await Promise.all([lookup('<','DESC'),lookup('>','ASC')]);
+  return {prev,next};
 }

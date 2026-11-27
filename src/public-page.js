@@ -4,7 +4,13 @@ import { bookmarkArticleHtml } from './public-content.js';
 const siteTitle = 'ChrisTorng 學習天地';
 const pageUrl = item => '/bookmarks/' + encodeURIComponent(item.slug) + '/';
 
-export async function publicBookmarkPage(request,item,categories=[],relatedNotesHtml='') {
+function adjacentNavigation({prev,next}={}) {
+  if (!prev && !next) return '';
+  const link=(item,direction)=>item ? '<a href="'+esc(pageUrl(item))+'" rel="'+direction+'" class="min-w-0 break-words '+(direction==='next'?'text-right ':'')+'text-primary-500 hover:text-primary-600">'+(direction==='prev'?'← 上一篇：'+esc(item.title):'下一篇：'+esc(item.title)+' →')+'</a>' : '<span></span>';
+  return '<nav aria-label="上下一篇" class="my-3 grid grid-cols-2 gap-3 text-sm">'+link(prev,'prev')+link(next,'next')+'</nav>';
+}
+
+export async function publicBookmarkPage(request,item,categories=[],relatedNotesHtml='',adjacent={}) {
   const siteUrl = new URL(request.url).origin;
   const canonical = siteUrl + pageUrl(item);
   const title = item.title + ' | ' + siteTitle;
@@ -12,7 +18,7 @@ export async function publicBookmarkPage(request,item,categories=[],relatedNotes
     .replace(/[*_~#]/g,'').slice(0,180);
   const body = '<section class="w-full py-5 pb-12">'+
     '<a class="text-primary-500 text-sm" href="/bookmarks/">← 書籤列表</a>'+
-    '<div class="mt-4">'+bookmarkArticleHtml(item,categories,relatedNotesHtml,'',true)+'</div></section>';
+    adjacentNavigation(adjacent)+'<div class="mt-4">'+bookmarkArticleHtml(item,categories,relatedNotesHtml,'',true)+'</div>'+adjacentNavigation(adjacent)+'</section>';
   const meta = '<meta name="description" content="'+esc(description)+'">'+
     '<meta name="robots" content="index,follow">'+
     '<link rel="canonical" href="'+esc(canonical)+'">'+

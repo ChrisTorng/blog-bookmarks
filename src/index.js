@@ -1,4 +1,4 @@
-import { list, tagsList, get, getBySlug, getByOldSlug, esc, publicFeedItems, publicSitemapEntries } from './data.js';
+import { list, tagsList, get, getBySlug, getByOldSlug, esc, publicFeedItems, publicSitemapEntries, adjacentBookmarks } from './data.js';
 import { publicBookmarkPage } from './public-page.js';
 import { api, opts } from './api.js';
 import { rss } from './feeds.js';
@@ -103,8 +103,8 @@ const worker = {
         const canonical = '/bookmarks/' + published.slug + '/';
         if (url.pathname !== canonical)
           return Response.redirect(url.origin + canonical,308);
-        const [tags,notes]=await Promise.all([tagsList(env.DB),relatedNoteHtml(env,[published])]);
-        return publicBookmarkPage(req,published,tags,notes[published.id]);
+        const [tags,notes,adjacent]=await Promise.all([tagsList(env.DB),relatedNoteHtml(env,[published]),adjacentBookmarks(env.DB,published.id)]);
+        return publicBookmarkPage(req,published,tags,notes[published.id],adjacent);
       }
       return reply('找不到書籤','text/plain; charset=utf-8',404);
     }
