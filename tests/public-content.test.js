@@ -91,3 +91,18 @@ test('canonical short embed keeps both title destinations and never exposes long
   assert.match(html,/#科技/);
 });
 function bookmarkPermalinkForTest(entry){return '/bookmarks/'+entry.slug+'/'}
+
+test('source favicon and URL immediately follow original title before thumbnail and summaries in all variants',()=>{
+  const entry={...item,image_url:'https://example.org/thumbnail.webp',reading_summary:{summary:'LONG_READING_SUMMARY'}};
+  for(const options of [{},{showReading:false},{mathMode:'rss'}]){
+    const html=bookmarkArticleHtml(entry,categories,'','',false,options);
+    const titleEnd=html.indexOf('</a></p>',html.indexOf('My psychophysics as a bilateral cochlear implant user'));
+    assert.ok(titleEnd>=0);
+    assert.match(html.slice(titleEnd), /^<\/a><\/p><div class="mt-1 [^"]+"><span [^>]+title="claude\.ai\/artifact"><img src="https:\/\/www\.google\.com\/s2\/favicons/);
+    assert.ok(html.indexOf('claude.ai/artifact</span>')<html.indexOf('thumbnail.webp'));
+    assert.ok(html.indexOf('claude.ai/artifact</span>')<html.indexOf('Hacker news 討論'));
+    assert.equal((html.match(/google\.com\/s2\/favicons/g)||[]).length,1);
+  }
+  const xml=rss([entry],'https://christorng.idv.tw','','',categories);
+  assert.match(xml, /My psychophysics as a bilateral cochlear implant user<\/a><\/p><div[^>]*><span[^>]*><img[^>]*google\.com\/s2\/favicons/);
+});
