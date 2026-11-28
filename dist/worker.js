@@ -26473,7 +26473,7 @@ var getCodePoint = (
   )
 );
 function getEscaper(regex, map2) {
-  return /* @__PURE__ */ __name(function escape5(data) {
+  return /* @__PURE__ */ __name(function escape6(data) {
     let match2;
     let lastIdx = 0;
     let result = "";
@@ -46289,8 +46289,28 @@ var katex = {
   __domTree
 };
 
-// src/math-content.js
+// src/rss-math.js
+var origin = "https://christorng.idv.tw/bookmarks/math/v1/";
 var escape4 = /* @__PURE__ */ __name((s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]), "escape");
+function rssMathImage(tex, display = false) {
+  const value = String(tex ?? "").trim();
+  const bytes = new TextEncoder().encode(value);
+  const fallback = '<span class="math-fallback">' + escape4(value) + "</span>";
+  if (!bytes.length || bytes.length > 1200 || /[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(value)) return fallback;
+  if (/\\(?:includegraphics|html\w*|href|url|require|unicode|def|newcommand|renewcommand|gdef|class|style|color|bbox|verb|label|ref|tag)\b/i.test(value)) return fallback;
+  try {
+    katex.renderToString(value, { displayMode: display, throwOnError: true, trust: false, maxExpand: 200, maxSize: 20 });
+  } catch {
+    return fallback;
+  }
+  const encoded = btoa(String.fromCharCode(...bytes)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+  const src = origin + (display ? "d" : "i") + "/" + encoded + ".png";
+  return '<img src="' + src + '" alt="' + escape4(value) + '" title="' + escape4(value) + '" style="max-width:100%;height:auto;' + (display ? "display:block;margin:0.5em auto" : "vertical-align:middle") + '" />';
+}
+__name(rssMathImage, "rssMathImage");
+
+// src/math-content.js
+var escape5 = /* @__PURE__ */ __name((s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]), "escape");
 var pattern = /(?<!\\)\\\((.+?)\\\)|(?<!\\)\\\[(.+?)\\\]|(?<![\\$])\$\$([^$\r\n]+?)\$\$|(?<![\\$])\$(?![\s$])([^$\r\n]+?)(?<![\s\\])\$(?![\d$])/g;
 function mathParts(text3) {
   const input2 = String(text3 ?? "");
@@ -46311,20 +46331,18 @@ function plainMathTitle(text3) {
 __name(plainMathTitle, "plainMathTitle");
 function formula(tex, display = false, mode = "web") {
   const value = String(tex);
-  if (value.length > 4e3) return escape4(value);
+  if (value.length > 4e3) return escape5(value);
   try {
-    if (mode === "rss") {
-      return '<span class="math-fallback" style="font-family:serif;white-space:normal">' + escape4(value) + "</span>";
-    }
+    if (mode === "rss") return rssMathImage(value, display);
     const html = katex.renderToString(value, { displayMode: display, throwOnError: true, trust: false, maxExpand: 1e3, maxSize: 20 });
     return '<span class="notranslate' + (display ? " block max-w-full overflow-x-auto" : "") + '">' + html + "</span>";
   } catch {
-    return escape4(value);
+    return escape5(value);
   }
 }
 __name(formula, "formula");
 function renderMathTitle(text3, mode = "web") {
-  return mathParts(text3).map((p) => p.tex === void 0 ? escape4(p.raw) : formula(p.tex, false, mode)).join("");
+  return mathParts(text3).map((p) => p.tex === void 0 ? escape5(p.raw) : formula(p.tex, false, mode)).join("");
 }
 __name(renderMathTitle, "renderMathTitle");
 function mathMarkdown(md3) {
@@ -47999,9 +48017,9 @@ async function previewInsights(env, raw, ctx) {
 __name(previewInsights, "previewInsights");
 
 // src/note-references.js
-async function relatedNoteHtml(env, items) {
+async function relatedNoteHtml(env, items, mathMode = "web") {
   if (!env.NOTE_REFERENCES || !items.length) return {};
-  return env.NOTE_REFERENCES.publishedHtml(items.map((item) => item.id));
+  return env.NOTE_REFERENCES.publishedHtml(items.map((item) => item.id), mathMode);
 }
 __name(relatedNoteHtml, "relatedNoteHtml");
 
@@ -48264,7 +48282,7 @@ async function api(req, env, url, ctx) {
       const item = await get(env.DB, embed[1], false, showReading);
       if (!item) return json2({ error: "\u66F8\u7C64\u672A\u516C\u958B\u6216\u4E0D\u5B58\u5728" }, 404);
       const categories = await tagsList(env.DB);
-      return new Response(bookmarkArticleHtml(item, categories, "", bookmarkPermalink(item), false, { showReading }), {
+      return new Response(bookmarkArticleHtml(item, categories, "", bookmarkPermalink(item), false, { showReading, mathMode: url.searchParams.get("math") === "rss" ? "rss" : "web" }), {
         headers: {
           "Content-Type": "text/html; charset=utf-8",
           "Cache-Control": "no-store",
@@ -48447,7 +48465,7 @@ var worker = {
           const [items, tags] = await Promise.all([publicFeedItems(env.DB, tag), tagsList(env.DB)]);
           const selected = tags.find((t) => t.id === tag);
           const tagLabel = selected?.name_zh || selected?.name || tag;
-          const notes = await relatedNoteHtml(env, items);
+          const notes = await relatedNoteHtml(env, items, "rss");
           return reply(rss(items, env.SITE_URL || "https://christorng.idv.tw", tag, tagLabel, tags, notes), "application/rss+xml; charset=utf-8");
         } catch (error2) {
           console.error("Bookmark RSS failed", String(error2));
