@@ -1,3 +1,4 @@
+import { rssMathImage } from './rss-math.js';
 import katex from 'katex';
 
 const escape = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
@@ -33,10 +34,7 @@ export function formula(tex,display=false,mode='web'){
  const value=String(tex);
  if(value.length>4000)return escape(value);
  try{
-  if(mode==='rss'){
-   // RSS readers may strip MathML/CSS. Preserve a visible, lossless textual fallback.
-   return '<span class="math-fallback" style="font-family:serif;white-space:normal">'+escape(value)+'</span>';
-  }
+  if(mode==='rss')return rssMathImage(value,display);
   const html=katex.renderToString(value,{displayMode:display,throwOnError:true,trust:false,maxExpand:1000,maxSize:20});
   return '<span class="notranslate'+(display?' block max-w-full overflow-x-auto':'')+'">'+html+'</span>';
  }catch{return escape(value)}

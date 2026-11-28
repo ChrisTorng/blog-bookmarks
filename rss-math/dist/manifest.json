@@ -1,0 +1,12 @@
+{
+  "wasmBytes": 2478606,
+  "jsBytes": 1653070,
+  "parts": [
+    "resvg-0.b64",
+    "resvg-1.b64",
+    "resvg-2.b64",
+    "resvg-3.b64"
+  ],
+  "compressed": 1530974,
+  "encoding": "gzip+base64"
+}

@@ -257,7 +257,7 @@ export async function api(req,env,url,ctx){
     const item=await get(env.DB,embed[1],false,showReading);
     if(!item)return json({error:'書籤未公開或不存在'},404);
     const categories=await tagsList(env.DB);
-    return new Response(bookmarkArticleHtml(item,categories,'',bookmarkPermalink(item),false,{showReading}),{
+    return new Response(bookmarkArticleHtml(item,categories,'',bookmarkPermalink(item),false,{showReading,mathMode:url.searchParams.get('math')==='rss'?'rss':'web'}),{
       headers:{'Content-Type':'text/html; charset=utf-8',
         'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}
     });

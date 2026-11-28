@@ -1,0 +1,44 @@
+name: Build RSS PNG renderer
+on:
+  push:
+    branches: [feature/rss-png-math, main]
+    paths:
+      - 'rss-math/*.mjs'
+      - 'rss-math/package.json'
+      - 'rss-math/package-lock.json'
+      - '.github/workflows/build-rss-math.yml'
+  pull_request:
+    paths:
+      - 'rss-math/**'
+      - '.github/workflows/build-rss-math.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  renderer:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rss-math
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
+          if test -f package-lock.json; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
+      - run: npm test
+      - run: npm run build
+      - name: Verify live PNG route
+        run: node live.test.mjs
+      - name: Publish reproducible bundle and locked dependencies
+        if: github.event_name != 'pull_request'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          git add -A -f dist/
+          if ! git diff --cached --quiet; then
+            git commit -m "build: refresh RSS PNG renderer bundle [skip ci]"
+            git push
+          fi
